@@ -40,7 +40,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val openInBrowser = controller.flatMapLatest { it?.openInBrowser ?: emptyFlow() }
 
     // screen-local input
-    var input by mutableStateOf(prefs.getString("input", null) ?: "你好")
+    var input by mutableStateOf(prefs.getString("input", null) ?: app.getString(R.string.default_input))
     /** Give Pi the phone tools (needs the accessibility service). */
     var phoneMode by mutableStateOf(prefs.getBoolean("phoneMode", false))
     var useMock by mutableStateOf(false)

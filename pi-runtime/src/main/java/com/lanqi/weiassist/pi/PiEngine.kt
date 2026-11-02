@@ -46,7 +46,7 @@ class PiEngine(context: Context, private val agentName: String) {
     private val prefs = appContext.getSharedPreferences("pi", Context.MODE_PRIVATE)
     private val ready = CompletableDeferred<JSONObject>()
     private val httpReplies = ConcurrentHashMap<String, CompletableDeferred<LoopbackServer.HttpReply>>()
-    private val loopback = LoopbackServer(scope) { port, method, url ->
+    private val loopback = LoopbackServer(scope, appContext.getString(R.string.pi_back_to_app, agentName)) { port, method, url ->
         val id = UUID.randomUUID().toString()
         val reply = CompletableDeferred<LoopbackServer.HttpReply>().also { httpReplies[id] = it }
         withContext(Dispatchers.Main) {

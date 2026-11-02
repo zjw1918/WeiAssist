@@ -23,7 +23,7 @@ class PhoneActions(private val context: Context) {
         var svc = AgentAccessibilityService.instance
         var waited = 0
         while (svc == null && waited < 3_000) { kotlinx.coroutines.delay(100); waited += 100; svc = AgentAccessibilityService.instance }
-        if (svc == null) return "Accessibility is off: ask the user to turn on 小维助手 in Settings → Accessibility."
+        if (svc == null) return "Accessibility is off: ask the user to turn on this assistant in Settings → Accessibility."
         // The user opened 小维助手 to look at progress: pause instead of taking the screen back.
         // (open_app is exempt: it is how a task leaves 小维助手 in the first place.)
         val gen = generation.get()

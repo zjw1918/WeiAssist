@@ -18,6 +18,7 @@ import java.net.Socket
  */
 class LoopbackServer(
     private val scope: CoroutineScope,
+    private val backLinkText: String,
     private val onRequest: suspend (port: Int, method: String, url: String) -> HttpReply,
 ) {
     data class HttpReply(val status: Int, val headers: Map<String, String>, val body: String)
@@ -55,7 +56,7 @@ class LoopbackServer(
         Log.d(TAG, "$method ${path.substringBefore('?')}") // never log the query: it holds the auth code
         val reply = onRequest(port, method, path)
         var body = reply.body
-        if (reply.status == 200 && path.startsWith("/auth/callback")) body = body.replace("</body>", BACK_LINK + "</body>")
+        if (reply.status == 200 && path.startsWith("/auth/callback")) body = body.replace("</body>", backLink() + "</body>")
         val bytes = body.toByteArray(Charsets.UTF_8)
         val head = buildString {
             append("HTTP/1.1 ${reply.status} OK\r\n")
@@ -66,10 +67,11 @@ class LoopbackServer(
         Unit
     }
 
+    // Chrome only follows an app link on a user tap, so the success page gets a big button back.
+    private fun backLink() =
+        """<p style="text-align:center;margin-top:32px"><a href="weiassist://signed-in" style="font:600 20px sans-serif;padding:14px 28px;border-radius:24px;background:#1b5fa8;color:#fff;text-decoration:none">${android.text.Html.escapeHtml(backLinkText)}</a></p>"""
+
     companion object {
         private const val TAG = "LoopbackServer"
-        // Chrome only follows an app link on a user tap, so the success page gets a big button back.
-        private const val BACK_LINK =
-            """<p style="text-align:center;margin-top:32px"><a href="weiassist://signed-in" style="font:600 20px sans-serif;padding:14px 28px;border-radius:24px;background:#1b5fa8;color:#fff;text-decoration:none">返回小维助手</a></p>"""
     }
 }

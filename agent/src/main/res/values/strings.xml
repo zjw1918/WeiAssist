@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_name">WeiAssist</string>
+    <string name="notif_running">Working on: %1$s</string>
+    <string name="notif_stop">Stop</string>
+    <string name="notif_signin">Waiting for ChatGPT sign-in… Tap to return to WeiAssist and finish.</string>
+    <string name="notif_failed">Didn\'t finish: %1$s</string>
+    <string name="notif_ended">The task has ended.</string>
+    <string name="notif_done_title">WeiAssist: done</string>
+    <string name="notif_error_title">WeiAssist: something went wrong</string>
+    <string name="channel_working">WeiAssist working</string>
+    <string name="channel_working_desc">Shown while WeiAssist runs a task or waits for sign-in. You can stop it at any time.</string>
+    <string name="channel_results">Task results</string>
+    <string name="channel_results_desc">Tells you the result when a task finishes while you\'re away from WeiAssist.</string>
+    <string name="err_quota">Your API account is out of credit. API usage is billed separately from ChatGPT; add credit at platform.openai.com.</string>
+    <string name="err_key">The key is invalid or has expired. Sign out and sign in again.</string>
+    <string name="err_model">This account can\'t use the model %1$s. Pick another one above.</string>
+    <string name="first_hello">Hello</string>
+    <string name="confirm_title">WeiAssist wants to tap “%1$s”</string>
+    <string name="confirm_nothing_typed">(nothing was typed in this task)</string>
+</resources>

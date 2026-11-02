@@ -20,18 +20,22 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import com.lanqi.weiassist.R
 import com.lanqi.weiassist.agent.ModelInfo
 
 /** Pi's ThinkingLevel values in plain words. */
 private val LEVEL_LABEL = mapOf(
-    "off" to "不思考", "minimal" to "最少", "low" to "低", "medium" to "中", "high" to "高", "xhigh" to "很高", "max" to "最高",
+    "off" to R.string.level_off, "minimal" to R.string.level_minimal, "low" to R.string.level_low, "medium" to R.string.level_medium,
+    "high" to R.string.level_high, "xhigh" to R.string.level_xhigh, "max" to R.string.level_max,
 )
 
-private fun ModelInfo.detail() = buildString {
-    append(id)
-    if (contextWindow > 0) append(" · ${contextWindow / 1000}K 上下文")
-    if (images) append(" · 能看图")
+@Composable
+private fun ModelInfo.detail(): String {
+    val ctx = if (contextWindow > 0) " · " + stringResource(R.string.ctx_window, contextWindow / 1000) else ""
+    val img = if (images) " · " + stringResource(R.string.reads_images) else ""
+    return id + ctx + img
 }
 
 /** Model list and thinking levels both come from Pi: only what this sign-in can use, only what the model supports. */
@@ -45,8 +49,8 @@ fun ModelPicker(
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         ExposedDropdownMenuBox(expanded = open, onExpandedChange = { open = it }) {
             OutlinedTextField(
-                value = selected?.name ?: "选择模型", onValueChange = {}, readOnly = true,
-                label = { Text(if (subscription) "模型（ChatGPT 订阅可用的 ${models.size} 个）" else "模型（${models.size} 个）") },
+                value = selected?.name ?: stringResource(R.string.choose_model), onValueChange = {}, readOnly = true,
+                label = { Text(stringResource(if (subscription) R.string.models_subscription else R.string.models_count, models.size)) },
                 supportingText = { selected?.let { Text(it.detail()) } },
                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(open) },
                 modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
@@ -67,13 +71,13 @@ fun ModelPicker(
         }
         val levels = selected?.thinkingLevels.orEmpty()
         if (levels.size > 1) {
-            Text("思考程度", style = MaterialTheme.typography.labelMedium)
+            Text(stringResource(R.string.thinking), style = MaterialTheme.typography.labelMedium)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 levels.forEach { lv ->
-                    FilterChip(selected = lv == thinkingLevel, onClick = { onThinking(lv) }, label = { Text(LEVEL_LABEL[lv] ?: lv) })
+                    FilterChip(selected = lv == thinkingLevel, onClick = { onThinking(lv) }, label = { Text(LEVEL_LABEL[lv]?.let { stringResource(it) } ?: lv) })
                 }
             }
-            Text("想得越多，回答越慢、用量越多。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.thinking_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

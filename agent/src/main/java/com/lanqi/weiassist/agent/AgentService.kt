@@ -113,7 +113,7 @@ class AgentService : Service() {
         )
         val b = NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_menu_manage)
-            .setContentTitle("小维助手")
+            .setContentTitle(getString(R.string.agent_name))
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -122,10 +122,10 @@ class AgentService : Service() {
             val stop = PendingIntent.getService(
                 this, 1, Intent(this, AgentService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE,
             )
-            b.setContentText("正在执行：${w.task.orEmpty().take(60)}")
-                .addAction(android.R.drawable.ic_menu_close_clear_cancel, "停止", stop)
+            b.setContentText(getString(R.string.notif_running, w.task.orEmpty().take(60)))
+                .addAction(android.R.drawable.ic_menu_close_clear_cancel, getString(R.string.notif_stop), stop)
         } else {
-            b.setContentText("正在等待 ChatGPT 登录…点这里回到小维助手完成登录")
+            b.setContentText(getString(R.string.notif_signin))
         }
         return b.build()
     }
@@ -137,10 +137,10 @@ class AgentService : Service() {
             this, 2, openApp(),
             PendingIntent.FLAG_IMMUTABLE,
         )
-        val text = run.error?.let { "没有完成：$it" } ?: plain(run.answer).ifBlank { "任务结束了。" }
+        val text = run.error?.let { getString(R.string.notif_failed, it) } ?: plain(run.answer).ifBlank { getString(R.string.notif_ended) }
         val n = NotificationCompat.Builder(this, CHANNEL_DONE)
             .setSmallIcon(android.R.drawable.ic_menu_info_details)
-            .setContentTitle(if (run.error == null) "小维助手：完成了" else "小维助手：出了点问题")
+            .setContentTitle(getString(if (run.error == null) R.string.notif_done_title else R.string.notif_error_title))
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(open)
@@ -155,13 +155,13 @@ class AgentService : Service() {
 
     private fun createChannel() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(CHANNEL, "小维助手工作中", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "小维助手执行任务或等待登录时显示，可以随时停止。"
+            NotificationChannel(CHANNEL, getString(R.string.channel_working), NotificationManager.IMPORTANCE_LOW).apply {
+                description = getString(R.string.channel_working_desc)
             },
         )
         getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(CHANNEL_DONE, "任务结果", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                description = "你离开小维助手时，任务完成后告诉你结果。"
+            NotificationChannel(CHANNEL_DONE, getString(R.string.channel_results), NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = getString(R.string.channel_results_desc)
             },
         )
     }

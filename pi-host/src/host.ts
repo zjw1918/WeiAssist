@@ -23,7 +23,7 @@ import { OPENAI_CODEX_MODELS } from "@earendil-works/pi-ai/providers/openai-code
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { bridge, settle } from "./bridge.ts";
 import { fetchEvents, nativeFetch } from "./native-fetch.ts";
-import { PHONE_SYSTEM_PROMPT, confirmRiskyTap, phoneTools, resetPhoneSession } from "./phone-tools.ts";
+import { confirmRiskyTap, phoneSystemPrompt, phoneTools, resetPhoneSession } from "./phone-tools.ts";
 import { dispatch } from "./shims/http.ts";
 
 declare const __PI_VERSION__: string;
@@ -186,7 +186,7 @@ async function configure(cfg: { provider: string; modelId: string; thinkingLevel
 	resetPhoneSession();
 	agent = new Agent({
 		initialState: {
-			systemPrompt: cfg.systemPrompt ?? (cfg.phone ? PHONE_SYSTEM_PROMPT : "You are a helpful assistant on an Android phone."),
+			systemPrompt: cfg.systemPrompt ?? (cfg.phone ? phoneSystemPrompt(agentName) : `You are ${agentName}, a helpful assistant on the user's Android phone. Reply in the user's language.`),
 			model,
 			thinkingLevel: thinkingLevel as any,
 			tools: cfg.phone ? phoneTools : [],

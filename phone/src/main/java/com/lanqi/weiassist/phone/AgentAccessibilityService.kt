@@ -148,8 +148,8 @@ class AgentAccessibilityService : AccessibilityService() {
             addView(TextView(context).apply { text = detail; textSize = 15f; setTextColor(Color.DKGRAY); setPadding(0, pad / 2, 0, pad / 2) })
             addView(LinearLayout(context).apply {
                 gravity = Gravity.END
-                addView(Button(context).apply { text = "取消"; setOnClickListener { answer.complete(false) } })
-                addView(Button(context).apply { text = "允许"; setOnClickListener { answer.complete(true) } })
+                addView(Button(context).apply { text = getString(R.string.confirm_cancel); setOnClickListener { answer.complete(false) } })
+                addView(Button(context).apply { text = getString(R.string.confirm_allow); setOnClickListener { answer.complete(true) } })
             })
         }
         val lp = WindowManager.LayoutParams(
@@ -163,7 +163,7 @@ class AgentAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val OWN_APP =
-            "小维助手 itself is in front (the user is looking at it). Do not operate it. " +
+            "The assistant app itself is in front (the user is looking at it). Do not operate it. " +
                 "Use open_app to go back to the app you were working in, or stop and report to the user."
 
         /** The running service, or null when the user hasn't turned it on. */

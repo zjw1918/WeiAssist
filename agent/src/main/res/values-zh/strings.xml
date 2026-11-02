@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="agent_name">小维助手</string>
+    <string name="notif_running">正在执行：%1$s</string>
+    <string name="notif_stop">停止</string>
+    <string name="notif_signin">正在等待 ChatGPT 登录…点这里回到小维助手完成登录</string>
+    <string name="notif_failed">没有完成：%1$s</string>
+    <string name="notif_ended">任务结束了。</string>
+    <string name="notif_done_title">小维助手：完成了</string>
+    <string name="notif_error_title">小维助手：出了点问题</string>
+    <string name="channel_working">小维助手工作中</string>
+    <string name="channel_working_desc">小维助手执行任务或等待登录时显示，可以随时停止。</string>
+    <string name="channel_results">任务结果</string>
+    <string name="channel_results_desc">你离开小维助手时，任务完成后告诉你结果。</string>
+    <string name="err_quota">API 账户余额不足：API 和 ChatGPT 订阅分开计费，请到 platform.openai.com 充值。</string>
+    <string name="err_key">密钥无效或已过期，请退出后重新登录。</string>
+    <string name="err_model">这个账号用不了模型 %1$s，在上面换一个试试。</string>
+    <string name="first_hello">你好</string>
+    <string name="confirm_title">小维助手要点「%1$s」</string>
+    <string name="confirm_nothing_typed">（这次没有输入内容）</string>
+</resources>

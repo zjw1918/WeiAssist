@@ -19,6 +19,12 @@ let lastScreen = new Map<number, string>();
 /** What the agent typed during this task, shown in the confirmation. */
 let typed: string[] = [];
 
+/** A readable name for an input field from its read_screen line: hint, text, description or view id. */
+function fieldName(line?: string) {
+	if (!line) return "field";
+	return line.match(/hint="([^"]*)"/)?.[1] || line.match(/"([^"]*)"/)?.[1] || line.match(/\(([^)]*)\)/)?.[1] || line.match(/id=(\S+)/)?.[1] || "field";
+}
+
 export function resetPhoneSession() {
 	lastScreen = new Map();
 	typed = [];
@@ -37,7 +43,7 @@ async function readScreen(signal?: AbortSignal) {
 export const phoneTools: AgentTool<any>[] = [
 	{
 		name: "open_app",
-		label: "打开应用",
+		label: "Open app",
 		description: "Open an installed app by its name or package name, e.g. \"Gmail\" or \"com.google.android.gm\".",
 		parameters: Type.Object({ app: Type.String({ description: "App name or package name" }) }),
 		executionMode: "sequential",
@@ -45,7 +51,7 @@ export const phoneTools: AgentTool<any>[] = [
 	},
 	{
 		name: "read_screen",
-		label: "看屏幕",
+		label: "Read screen",
 		description:
 			"Read what is on the screen now: one line per element, `[id] Class \"text\" (description) flags`. " +
 			"Ids are only valid until the next read_screen. Read again after every action.",
@@ -55,7 +61,7 @@ export const phoneTools: AgentTool<any>[] = [
 	},
 	{
 		name: "tap",
-		label: "点一下",
+		label: "Tap",
 		description: "Tap the element with this id from the latest read_screen.",
 		parameters: Type.Object({ id: Type.Integer() }),
 		executionMode: "sequential",
@@ -63,18 +69,18 @@ export const phoneTools: AgentTool<any>[] = [
 	},
 	{
 		name: "type_text",
-		label: "输入文字",
+		label: "Type text",
 		description: "Replace the text of an editable element (from the latest read_screen) with the given text.",
 		parameters: Type.Object({ id: Type.Integer(), text: Type.String() }),
 		executionMode: "sequential",
 		execute: async (_id, p: any, signal) => {
-			typed.push(`${lastScreen.get(p.id) ?? `#${p.id}`} ← ${p.text}`);
+			typed.push(`${fieldName(lastScreen.get(p.id))}: ${p.text}`);
 			return text(await phone("type_text", { id: p.id, text: p.text }, signal));
 		},
 	},
 	{
 		name: "scroll",
-		label: "滑动",
+		label: "Scroll",
 		description: "Scroll a scrollable element (or the first scrollable one if id is omitted) forward (down) or backward (up).",
 		parameters: Type.Object({
 			id: Type.Optional(Type.Integer()),
@@ -85,7 +91,7 @@ export const phoneTools: AgentTool<any>[] = [
 	},
 	{
 		name: "press_key",
-		label: "按键",
+		label: "Press key",
 		description: "Press a system key: back, home or recents.",
 		parameters: Type.Object({ key: Type.Union([Type.Literal("back"), Type.Literal("home"), Type.Literal("recents")]) }),
 		executionMode: "sequential",
@@ -93,7 +99,7 @@ export const phoneTools: AgentTool<any>[] = [
 	},
 	{
 		name: "wait",
-		label: "等一下",
+		label: "Wait",
 		description: "Wait for the screen to settle, in milliseconds (max 5000).",
 		parameters: Type.Object({ ms: Type.Integer() }),
 		executionMode: "sequential",
@@ -106,6 +112,7 @@ export const phoneTools: AgentTool<any>[] = [
 	},
 ];
 
+// Button labels that mean "irreversible", in English and Chinese UIs.
 const RISKY = /^(send|post|pay|buy|place order|delete|remove|transfer|submit)\b|^(发送|发布|支付|付款|购买|下单|删除|移除|转账|提交)/i;
 
 /** Pi's beforeToolCall hook: a tap on something that looks irreversible needs the user's OK. */
@@ -116,14 +123,12 @@ export async function confirmRiskyTap({ toolCall, args }: BeforeToolCallContext)
 	// subject in a list), not a command, so only short labels count.
 	const label = (line.match(/"([^"]*)"/)?.[1] || line.match(/\(([^)]*)\)/)?.[1] || "").trim();
 	if (!label || label.length > 20 || !RISKY.test(label)) return undefined;
-	const ok = await bridgeCall("confirm", {
-		title: `小维助手要点「${label}」`,
-		detail: typed.length ? typed.join("\n") : "（这次没有输入内容）",
-	});
+	// Kotlin words the card in the user's language; we pass the button label and what was typed.
+	const ok = await bridgeCall("confirm", { label, typed });
 	return ok ? undefined : { block: true, reason: "The user declined this action. Stop and tell the user.", terminate: true };
 }
 
-export const PHONE_SYSTEM_PROMPT = `You are 小维助手, an assistant that operates the user's Android phone for them.
+export const phoneSystemPrompt = (name: string) => `You are ${name}, an assistant that operates the user's Android phone for them.
 You see the screen only through read_screen and act only through the tools.
 Work step by step: read_screen, do one action, then read_screen again to check what happened.
 Prefer the most direct route in the app's own UI. If a dialog or tip appears, dismiss it sensibly.

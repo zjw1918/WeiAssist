@@ -26,7 +26,7 @@ import org.json.JSONObject
 class AgentController(context: Context) {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val pi = PiEngine(appContext, agentName = "小维助手")
+    private val pi = PiEngine(appContext, agentName = appContext.getString(R.string.agent_name))
     private val phone = PhoneActions(appContext)
     private val prefs = appContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
@@ -49,7 +49,10 @@ class AgentController(context: Context) {
         // Pi's phone tools and its confirm hook (pi-host/src/phone-tools.ts) are served by the :phone module.
         pi.registerHostCall("phone") { phone.run(it) }
         pi.registerHostCall("confirm") { m ->
-            AgentAccessibilityService.instance?.confirm(m.getString("title"), m.getString("detail")) ?: false
+            val fields = m.optJSONArray("typed")
+            val detail = if (fields == null || fields.length() == 0) appContext.getString(R.string.confirm_nothing_typed)
+            else (0 until fields.length()).joinToString("\n") { fields.getString(it) }
+            AgentAccessibilityService.instance?.confirm(appContext.getString(R.string.confirm_title, m.getString("label")), detail) ?: false
         }
         scope.launch { pi.messages.collect(::onPi) }
         scope.launch {
@@ -82,7 +85,7 @@ class AgentController(context: Context) {
             "auth_prompt_closed" -> updateSignIn { if (it.prompt?.id == m.getString("id")) it.copy(prompt = null) else it }
             "login_done" -> {
                 _state.update { it.copy(screen = Screen.Connected, signIn = SignInState()) }
-                send("你好", phoneTools = false) // first thing after sign-in: prove the connection
+                send(appContext.getString(R.string.first_hello), phoneTools = false) // first thing after sign-in: prove the connection
             }
             "login_failed" -> {
                 val msg = m.optString("message")
@@ -225,10 +228,10 @@ class AgentController(context: Context) {
 
     /** Turn the provider's error text into something a user can act on; keep the original for the trace. */
     private fun friendly(msg: String): String = when {
-        "insufficient_quota" in msg || "429" in msg && "quota" in msg -> "API 账户余额不足：API 和 ChatGPT 订阅分开计费，请到 platform.openai.com 充值。\n$msg"
-        "401" in msg || "invalid_api_key" in msg || "Incorrect API key" in msg -> "密钥无效或已过期，请退出后重新登录。\n$msg"
+        "insufficient_quota" in msg || "429" in msg && "quota" in msg -> appContext.getString(R.string.err_quota) + "\n" + msg
+        "401" in msg || "invalid_api_key" in msg || "Incorrect API key" in msg -> appContext.getString(R.string.err_key) + "\n" + msg
         "model_not_found" in msg || "model" in msg && ("not found" in msg || "does not exist" in msg) ->
-            "这个账号用不了模型 ${_state.value.modelId}，在上面换一个试试。\n$msg"
+            appContext.getString(R.string.err_model, _state.value.modelId) + "\n" + msg
         else -> msg
     }
 
