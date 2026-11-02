@@ -284,6 +284,18 @@ test("a paused session waits at the gate before its next action, and Stop at the
 	assert.deepEqual(taps, [], "stopped: the tap never happened");
 });
 
+test("type_text can submit, and press_key has enter", async () => {
+	const calls = [];
+	const host = await startHost({ credentials: apiKeyCredentials, hostCalls: { phone: (m) => { calls.push(m); return "typed into [3]; pressed enter"; } } });
+	await configure(host, "e", { phone: true });
+	host.call("prompt", { session: "e", text: "do it [[script:submit]]" });
+	await host.waitFor("idle", (m) => m.session === "e");
+	assert.deepEqual(calls.map((c) => [c.action, c.args]), [
+		["type_text", { id: 3, text: "example.com", submit: true }],
+		["press_key", { key: "enter" }],
+	]);
+});
+
 test("transcripts drop screenshots and old screens", async () => {
 	const host = await startHost({
 		credentials: apiKeyCredentials,

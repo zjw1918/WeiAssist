@@ -187,6 +187,21 @@ class AgentAccessibilityService : AccessibilityService() {
         return if (n.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) "typed into [$id]" else "could not type into [$id]"
     }
 
+    /**
+     * Submit a text field, like the keyboard's Enter / Go / Search key (Android 11+): element [id], or the
+     * focused text field when [id] is null. False if there is none or the app ignored it.
+     */
+    fun imeEnter(id: Int?, display: Int = 0): Boolean {
+        if (android.os.Build.VERSION.SDK_INT < 30) return false
+        val n = if (id != null) node(id, display) else focusedInput(display) ?: return false
+        n.refresh()
+        return n.isEditable && n.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
+    }
+
+    /** The text field that has input focus on [display], if any. */
+    private fun focusedInput(display: Int): AccessibilityNodeInfo? =
+        rootOf(display)?.findFocus(AccessibilityNodeInfo.FOCUS_INPUT)?.takeIf { it.isEditable && it.packageName != packageName }
+
     fun scroll(id: Int, forward: Boolean, display: Int = 0): String {
         val n = if (id > 0) node(id, display) else nodesByDisplay[display]?.values?.firstOrNull { it.isScrollable } ?: return "nothing scrollable"
         val action = if (forward) AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD

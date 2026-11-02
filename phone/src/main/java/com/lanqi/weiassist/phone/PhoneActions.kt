@@ -61,11 +61,14 @@ class PhoneActions(private val context: Context) {
             "tap" -> svc.tap(a.getInt("id"), d) { x, y -> t.io.tap(x, y, 60) }.settled()
             "tap_at" -> (if (t.io.tap(a.getInt("x").toFloat(), a.getInt("y").toFloat(), 60)) "tapped at ${a.getInt("x")},${a.getInt("y")}" else "tap failed").settled()
             "long_press" -> svc.centerOf(a.getInt("id"), d).let { (x, y) -> if (t.io.tap(x, y, 700)) "long-pressed [${a.getInt("id")}]" else "long press failed" }.settled()
-            "type_text" -> svc.typeText(a.getInt("id"), a.getString("text"), d).settled()
+            "type_text" -> svc.typeText(a.getInt("id"), a.getString("text"), d).let { typed ->
+                if (!a.optBoolean("submit") || !typed.startsWith("typed")) typed else "$typed; ${enterVirtual(svc, t, a.getInt("id"))}"
+            }.settled()
             "scroll" -> svc.scroll(a.optInt("id", -1), a.getString("direction") == "forward", d).settled()
             "swipe" -> swipeVirtual(t, a.getString("direction"), a.optDouble("fraction", 0.6).toFloat()).settled()
             "press_key" -> when (a.getString("key")) {
                 "back" -> (if (t.io.key(android.view.KeyEvent.KEYCODE_BACK)) "pressed back" else "could not press back").settled()
+                "enter" -> enterVirtual(svc, t, null).settled()
                 else -> "This task runs on a screen of its own, without a home screen or recent apps: use open_app to switch apps."
             }
             "open_app" -> openOnDisplay(svc, t, a.getString("app")).settled(maxMs = 5_000)
@@ -181,15 +184,28 @@ class PhoneActions(private val context: Context) {
             "tap" -> svc.tap(a.getInt("id")).settled(svc)
             "tap_at" -> svc.tapAt(a.getInt("x"), a.getInt("y")).settled(svc)
             "long_press" -> svc.longPress(a.getInt("id")).settled(svc)
-            "type_text" -> svc.typeText(a.getInt("id"), a.getString("text")).settled(svc)
+            "type_text" -> svc.typeText(a.getInt("id"), a.getString("text")).let { typed ->
+                if (!a.optBoolean("submit") || !typed.startsWith("typed")) typed
+                else "$typed; " + if (svc.imeEnter(a.getInt("id"))) "pressed enter" else NO_ENTER
+            }.settled(svc)
             "scroll" -> svc.scroll(a.optInt("id", -1), a.getString("direction") == "forward").settled(svc)
             "swipe" -> svc.swipe(a.getString("direction"), a.optDouble("fraction", 0.6).toFloat()).settled(svc)
-            "press_key" -> svc.pressKey(a.getString("key")).settled(svc)
+            "press_key" -> (if (a.getString("key") == "enter") (if (svc.imeEnter(null)) "pressed enter" else NO_ENTER) else svc.pressKey(a.getString("key"))).settled(svc)
             "open_app" -> openApp(svc, a.getString("app")).settled(svc, maxMs = 5_000)
             "screenshot" -> svc.screenshot()
             "label_at" -> svc.labelAt(a.getInt("x"), a.getInt("y"))
             else -> "unknown action"
         }
+    }
+
+    /**
+     * Enter on a session's own display: the field's own submit action (Enter / Go / Search), else an Enter key
+     * on the display, which reaches the field the app has focused (the field the model tapped before typing).
+     */
+    private fun enterVirtual(svc: AgentAccessibilityService, t: Target.Virtual, id: Int?): String = when {
+        svc.imeEnter(id, t.displayId) -> "pressed enter"
+        t.io.key(android.view.KeyEvent.KEYCODE_ENTER) -> "pressed enter"
+        else -> NO_ENTER
     }
 
     /** Every action returns only once the screen has settled, so the next read sees the result. */
@@ -223,6 +239,7 @@ class PhoneActions(private val context: Context) {
 
     private companion object {
         const val TAG = "PhoneActions"
+        const val NO_ENTER = "could not press enter: no text field has focus. Tap the field first, or tap the app's own Go / Search button or a suggestion"
         /** Actions after which an app may have opened a new window. */
         val LAUNCHING = setOf("tap", "tap_at", "long_press", "type_text", "press_key", "open_app")
         /** How long open_app waits for a starting app to show a window, and for it to arrive on the display at all. */

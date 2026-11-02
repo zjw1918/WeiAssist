@@ -161,12 +161,14 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 	{
 		name: "type_text",
 		label: "Type text",
-		description: "Replace the text of an editable element (from the latest read_screen) with the given text.",
-		parameters: obj({ id: int(), text: str() }),
+		description:
+			"Replace the text of an editable element (from the latest read_screen) with the given text. " +
+			"submit: true then presses Enter, as the keyboard's Enter / Go / Search key does: e.g. to open a URL typed into a browser's address bar, or to search.",
+		parameters: obj({ id: int(), text: str(), submit: opt(bool({ description: "Press Enter after typing" })) }),
 		executionMode: "sequential",
 		execute: async (_id, p: any, signal) => {
 			s.noteTyped(p.id, p.text);
-			return text(await s.phone("type_text", { id: p.id, text: p.text }, signal));
+			return text(await s.phone("type_text", { id: p.id, text: p.text, submit: p.submit === true }, signal));
 		},
 	},
 	{
@@ -183,8 +185,8 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 	{
 		name: "press_key",
 		label: "Press key",
-		description: "Press a system key: back, home or recents.",
-		parameters: obj({ key: oneOf(["back", "home", "recents"]) }),
+		description: "Press a key: back, home, recents, or enter (submits the focused text field, like the keyboard's Enter / Go / Search key).",
+		parameters: obj({ key: oneOf(["back", "home", "recents", "enter"]) }),
 		executionMode: "sequential",
 		execute: async (_id, p: any, signal) => text(await s.phone("press_key", { key: p.key }, signal)),
 	},
@@ -240,6 +242,8 @@ How to work:
   a budget or preference), ask one short question instead of guessing.
 - Open the right app with open_app, then work step by step: look (read_screen), do one action, look again.
   Every action waits for the screen to settle, so you rarely need wait.
+- To open a web address or search, type it into the field with type_text and submit: true (or press_key "enter"),
+  or tap the app's own Go / Search button or a suggestion.
 - To see more of a list or feed, use swipe "up" (or scroll). Keep going until you have what you need, but don't loop:
   if the screen stops changing, you have reached the end.
 - If read_screen doesn't show what you need (pictures, prices or ratings drawn as images, video pages), take a screenshot.

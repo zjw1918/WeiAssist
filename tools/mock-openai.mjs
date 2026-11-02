@@ -66,6 +66,19 @@ export const SCRIPTS = {
 		{ text: "Both workers finished." },
 	],
 	creates: Array.from({ length: 9 }, (_, i) => ({ tool: "create_session", args: { task: `t${i}`, phone: false } })).concat([{ text: "tried nine" }]),
+	// Open a web address in Chrome: tap the address bar, type, press Enter (on a device).
+	// "$find:<regex>" is the id of the first element in the latest read_screen whose line matches.
+	chrome_url: [
+		{ tool: "open_app", args: { app: "com.android.chrome" } },
+		{ tool: "read_screen", args: {} },
+		{ tool: "tap", args: { id: "$find:id=(search_box_text|url_bar)" } },
+		{ tool: "read_screen", args: {} },
+		{ tool: "type_text", args: { id: "$find:editable", text: "example.com", submit: true } },
+		{ tool: "wait", args: { ms: 3000 } },
+		{ tool: "read_screen", args: {} },
+		{ text: "opened example.com" },
+	],
+	submit: [{ tool: "type_text", args: { id: 3, text: "example.com", submit: true } }, { tool: "press_key", args: { key: "enter" } }, { text: "submitted" }],
 	douban: [
 		{ tool: "open_app", args: { app: "com.douban.frodo" } },
 		{ tool: "read_screen", args: {} },
@@ -80,8 +93,18 @@ function scriptedTurn(body) {
 	const input = JSON.stringify(body.input ?? []);
 	const name = input.match(/\[\[script:(\w+)\]\]/)?.[1];
 	if (!name) return null;
-	const done = (body.input ?? []).filter((i) => i.type === "function_call_output").length;
-	return SCRIPTS[name][done] ?? { text: "end of script" };
+	const outputs = (body.input ?? []).filter((i) => i.type === "function_call_output");
+	const turn = SCRIPTS[name][outputs.length] ?? { text: "end of script" };
+	if (!turn.args) return turn;
+	// Resolve "$find:<regex>" against the latest read_screen.
+	const screen = outputs.map((o) => (typeof o.output === "string" ? o.output : JSON.stringify(o.output))).findLast((o) => /app: \S+  screen:/.test(o)) ?? "";
+	const args = Object.fromEntries(Object.entries(turn.args).map(([k, v]) => {
+		const re = typeof v === "string" && v.startsWith("$find:") ? new RegExp(v.slice(6)) : null;
+		if (!re) return [k, v];
+		const line = screen.split(/\\n|\n/).find((l) => /^\[\d+\]/.test(l) && re.test(l));
+		return [k, line ? Number(line.match(/^\[(\d+)\]/)[1]) : -1];
+	}));
+	return { ...turn, args };
 }
 
 const cors = {
