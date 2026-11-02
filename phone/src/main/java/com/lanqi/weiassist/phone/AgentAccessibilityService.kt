@@ -77,6 +77,35 @@ class AgentAccessibilityService : AccessibilityService() {
         }
     }
 
+    /**
+     * After an action settled: while a large WebView on [display] is still empty (an email body, a web
+     * page loading after the native screen went quiet), wait for its content, at most [maxMs].
+     */
+    suspend fun awaitContent(display: Int = 0, maxMs: Long = 3_000) {
+        val start = android.os.SystemClock.uptimeMillis()
+        if (!hasEmptyWebView(display)) return
+        while (android.os.SystemClock.uptimeMillis() - start < maxMs) {
+            delay(150)
+            if (!hasEmptyWebView(display)) { awaitIdle(display, quietMs = 300, maxMs = 1_500); return }
+        }
+    }
+
+    private fun hasEmptyWebView(display: Int): Boolean {
+        val root = rootOf(display) ?: return false
+        val screen = resources.displayMetrics.let { it.widthPixels.toLong() * it.heightPixels }
+        val r = Rect()
+        fun find(n: AccessibilityNodeInfo, depth: Int): Boolean {
+            if (depth > 40 || !n.isVisibleToUser) return false
+            if (n.className?.endsWith("WebView") == true) {
+                n.getBoundsInScreen(r)
+                // A big one only: a small empty web view (an ad slot) may stay empty.
+                return n.childCount == 0 && r.width().toLong() * r.height() * 6 >= screen
+            }
+            return (0 until n.childCount).any { i -> n.getChild(i)?.let { find(it, depth + 1) } == true }
+        }
+        return find(root, 0)
+    }
+
     /** The top app window's content on [display] (a virtual one: no active window there for the system). */
     private fun rootOf(display: Int): AccessibilityNodeInfo? {
         if (display == 0) return rootInActiveWindow
@@ -113,16 +142,22 @@ class AgentAccessibilityService : AccessibilityService() {
         var next = 1
         var omitted = 0
         val bounds = Rect()
-        fun walk(n: AccessibilityNodeInfo, depth: Int) {
+        // [parentLabel]: the text the parent was listed with. Web pages often give a cell both a View and a
+        // TextView with the same words: the second adds nothing but tokens.
+        fun walk(n: AccessibilityNodeInfo, depth: Int, parentLabel: String) {
+            // Each node is a call into the app: stop at the limit rather than walk a long page to count the rest.
+            if (next > MAX_ELEMENTS) { omitted++; return }
             if (!n.isVisibleToUser) return
             // Password fields never leave the phone: the model only learns that one is there.
             val text = if (n.isPassword) (if (n.text.isNullOrEmpty()) "" else "•••• (hidden password)")
-            else n.text?.toString()?.replace("\n", " ")?.take(120).orEmpty()
-            val desc = n.contentDescription?.toString()?.replace("\n", " ")?.take(80).orEmpty()
+            else n.text?.toString()?.replace("\n", " ")?.take(120).orEmpty().ifBlank { "" }
+            val desc = n.contentDescription?.toString()?.replace("\n", " ")?.take(80).orEmpty().ifBlank { "" }
             val hint = n.hintText?.toString().orEmpty()
-            val useful = n.isClickable || n.isEditable || n.isScrollable || n.isCheckable || text.isNotEmpty() || desc.isNotEmpty()
-            if (useful && next > MAX_ELEMENTS) omitted++
-            if (useful && next <= MAX_ELEMENTS) {
+            val label = text.ifEmpty { desc }
+            val actionable = n.isClickable || n.isEditable || n.isScrollable || n.isCheckable
+            val repeat = !actionable && label.isNotEmpty() && label == parentLabel
+            val useful = !repeat && (actionable || text.isNotEmpty() || desc.isNotEmpty())
+            if (useful) {
                 val id = next++
                 nodes[id] = n
                 val flags = buildList {
@@ -141,10 +176,10 @@ class AgentAccessibilityService : AccessibilityService() {
                 n.getBoundsInScreen(bounds)
                 out.append(' ').append(flags).append(" @").append(bounds.centerX()).append(',').append(bounds.centerY()).append('\n')
             }
-            for (i in 0 until n.childCount) n.getChild(i)?.let { walk(it, depth + 1) }
+            for (i in 0 until n.childCount) n.getChild(i)?.let { walk(it, depth + 1, if (useful) label else parentLabel) }
         }
-        walk(root, 0)
-        if (omitted > 0) out.append("(… $omitted more elements not listed; scroll or use screenshot)\n")
+        walk(root, 0, "")
+        if (omitted > 0) out.append("(… more elements not listed; scroll or use screenshot)\n")
         return out.toString()
     }
 

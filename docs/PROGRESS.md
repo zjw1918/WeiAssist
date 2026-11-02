@@ -271,8 +271,14 @@ Open points from this work:
 Passed on the Xiaomi: Douban, Bilibili, Xiaohongshu, and shopping on Taobao, JD and Pinduoduo (also in parallel
 through the supervisor).
 
-- [ ] **Daily productivity, NetEase Mail (网易邮箱大师, `com.netease.mail`):** open the latest 10 unread emails,
-  summarise them, and build a prioritised to-do list for the day.
+- [x] **Daily productivity, NetEase Mail (网易邮箱大师, `com.netease.mail`):** the latest 10 unread emails summarised
+  with a prioritised to-do list (2026-11-03, Xiaomi). What it took:
+  - a `note` tool: only the latest two screens reach the model, so it notes each email before leaving it
+    (before: it forgot each one, went back to re-check, and was stuck after ~60 steps);
+  - actions return the screen they leave, and wait while a large WebView is still empty (an email body);
+  - `read_screen` drops text that only repeats its parent's (web tables listed each cell twice) and stops at the
+    element limit instead of walking a long page to count the rest (an email read: 12 s → 0.9 s);
+  - result: 79 tool calls / 9 min 51 s → 36 / 5 min 10 s.
 - [ ] Then Gmail / Outlook, the same task.
 - [ ] For each scenario, log failures (wrong taps, missed content, loops, pop-ups) and fix them in tools, prompt or recovery logic.
 
@@ -285,6 +291,13 @@ Tested 2026-11-03 with `--ez mainOnly true` (YouTube: found the channel's subscr
   can take its app.
 
 ## Known gaps and todo
+
+- [x] **Compaction** (pi-agent-core has none): before a task, a conversation above 70 % of the model's context
+  window has its older part summarised by the session's model (`pi-host/src/compact.ts`); a reply that fails
+  with "context too long" (`isContextOverflow`) is followed by compaction and one retry, keeping the task under
+  way word for word. Tested with the mock; not yet seen on a real long conversation.
+- [ ] **WeiAssist cleared from recents** (HyperOS `OneKeyClean`) is a force stop: Android turns its accessibility
+  service off. Tell the user to lock it in recents, and say so clearly when it happens.
 
 - [ ] **Termux, later:** ask Termux to keep its own wake lock only while jobs run (today it is re-checked after each
   command and clean-up, so a job that ends by itself keeps the lock until the next one); a way to stop a finished

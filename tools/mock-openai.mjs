@@ -78,6 +78,12 @@ export const SCRIPTS = {
 		{ tool: "read_screen", args: {} },
 		{ text: "opened example.com" },
 	],
+	actions: [
+		{ tool: "tap", args: { id: 1 } },
+		{ tool: "press_key", args: { key: "back" } },
+		{ tool: "swipe", args: { direction: "up" } },
+		{ text: "done" },
+	],
 	notes: [
 		{ tool: "read_screen", args: {} },
 		{ tool: "note", args: { text: "email 1: from Ann, ship by Friday" } },
@@ -155,8 +161,16 @@ function handle(req, res, { requests, log, delayMs }) {
 			return;
 		}
 		const parsed = JSON.parse(body || "{}");
+		// [[overflow]]: answer as OpenAI does when the input is over the context window, until the
+		// conversation has been compacted (a summary request itself is answered normally).
+		const summarising = body.includes("You compact a conversation");
+		if (body.includes("[[overflow]]") && !summarising && !body.includes("[Summary of the earlier conversation")) {
+			res.writeHead(400, { ...cors, "content-type": "application/json" });
+			res.end(JSON.stringify({ error: { message: "Your input exceeds the context window of this model. Please adjust your input and try again.", type: "invalid_request_error", code: "context_length_exceeded" } }));
+			return;
+		}
 		const model = parsed.model ?? "mock";
-		const turn = scriptedTurn(parsed);
+		const turn = summarising ? { text: "SUMMARY: the user likes llamas" } : scriptedTurn(parsed);
 		const id = `resp_mock_${Date.now()}`;
 		const msg = { id: "msg_mock", type: "message", role: "assistant", status: "in_progress", content: [] };
 		const part = { type: "output_text", text: "", annotations: [] };

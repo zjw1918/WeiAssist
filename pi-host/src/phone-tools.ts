@@ -8,6 +8,8 @@ import { bridgeCall } from "./bridge.ts";
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }], details: {} });
 
 const MAX_STEPS = 120;
+/** Separates an action's result from the screen it left (see PhoneSession.act and pruneScreens). */
+export const SCREEN_NOW = "\n\nScreen now:\n";
 
 /** A readable name for an input field from its read_screen line: hint, text, description or view id. */
 function fieldName(line?: string) {
@@ -56,6 +58,16 @@ export class PhoneSession {
 		return screen;
 	}
 
+	/** An action, then the screen it leaves (already settled in Kotlin): one model call instead of two. */
+	async act(action: string, args: Record<string, unknown>, signal?: AbortSignal) {
+		return this.withScreen(await this.phone(action, args, signal), signal);
+	}
+
+	async withScreen(result: string, signal?: AbortSignal) {
+		signal?.throwIfAborted();
+		return text(`${result}${SCREEN_NOW}${await this.readScreen(signal)}`);
+	}
+
 	noteTyped(id: number, value: string) {
 		this.typed.push(`${fieldName(this.lastScreen.get(id))}: ${value}`);
 	}
@@ -88,14 +100,15 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		description: "Open an installed app by its name or package name, e.g. \"Gmail\" or \"com.google.android.gm\".",
 		parameters: obj({ app: str({ description: "App name or package name" }) }),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => text(await s.phone("open_app", { app: p.app }, signal)),
+		execute: async (_id, p: any, signal) => s.act("open_app", { app: p.app }, signal),
 	},
 	{
 		name: "read_screen",
 		label: "Read screen",
 		description:
 			"Read what is on the screen now: one line per element, `[id] Class \"text\" (description) flags @x,y` " +
-			"(@x,y is the element's centre). Ids are only valid until the next read_screen. Read again after every action.",
+			"(@x,y is the element's centre). Ids are valid until the next screen you get. Every action already returns the screen it " +
+			"leaves, so you rarely need this.",
 		parameters: obj({}),
 		executionMode: "sequential",
 		execute: async (_id, _p, signal) => text(await s.readScreen(signal)),
@@ -103,10 +116,10 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 	{
 		name: "tap",
 		label: "Tap",
-		description: "Tap the element with this id from the latest read_screen.",
+		description: "Tap the element with this id from the latest screen.",
 		parameters: obj({ id: int() }),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => text(await s.phone("tap", { id: p.id }, signal)),
+		execute: async (_id, p: any, signal) => s.act("tap", { id: p.id }, signal),
 	},
 	{
 		name: "tap_at",
@@ -114,7 +127,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		description: "Tap a screen point (pixels, as in read_screen's @x,y or a screenshot scaled to the screen size). Use when read_screen has no element for what you need.",
 		parameters: obj({ x: int(), y: int() }),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => text(await s.phone("tap_at", { x: p.x, y: p.y }, signal)),
+		execute: async (_id, p: any, signal) => s.act("tap_at", { x: p.x, y: p.y }, signal),
 	},
 	{
 		name: "long_press",
@@ -122,7 +135,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		description: "Long-press the element with this id (e.g. to open a context menu).",
 		parameters: obj({ id: int() }),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => text(await s.phone("long_press", { id: p.id }, signal)),
+		execute: async (_id, p: any, signal) => s.act("long_press", { id: p.id }, signal),
 	},
 	{
 		name: "swipe",
@@ -136,7 +149,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 			fraction: opt(num()),
 		}),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => text(await s.phone("swipe", { direction: p.direction, fraction: p.fraction ?? 0.6 }, signal)),
+		execute: async (_id, p: any, signal) => s.act("swipe", { direction: p.direction, fraction: p.fraction ?? 0.6 }, signal),
 	},
 	{
 		name: "screenshot",
@@ -168,7 +181,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		executionMode: "sequential",
 		execute: async (_id, p: any, signal) => {
 			s.noteTyped(p.id, p.text);
-			return text(await s.phone("type_text", { id: p.id, text: p.text, submit: p.submit === true }, signal));
+			return s.act("type_text", { id: p.id, text: p.text, submit: p.submit === true }, signal);
 		},
 	},
 	{
@@ -180,7 +193,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 			direction: oneOf(["forward", "backward"]),
 		}),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => text(await s.phone("scroll", { id: p.id ?? -1, direction: p.direction }, signal)),
+		execute: async (_id, p: any, signal) => s.act("scroll", { id: p.id ?? -1, direction: p.direction }, signal),
 	},
 	{
 		name: "press_key",
@@ -188,7 +201,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		description: "Press a key: back, home, recents, or enter (submits the focused text field, like the keyboard's Enter / Go / Search key).",
 		parameters: obj({ key: oneOf(["back", "home", "recents", "enter"]) }),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => text(await s.phone("press_key", { key: p.key }, signal)),
+		execute: async (_id, p: any, signal) => s.act("press_key", { key: p.key }, signal),
 	},
 	{
 		name: "wait",
@@ -199,8 +212,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		execute: async (_id, p: any, signal) => {
 			signal?.throwIfAborted();
 			await new Promise((r) => setTimeout(r, Math.min(Math.max(p.ms, 0), 5000)));
-			signal?.throwIfAborted();
-			return text("waited");
+			return s.withScreen("waited", signal);
 		},
 	},
 	{
@@ -228,20 +240,27 @@ const riskyLabel = (label: string) => !!label && label.length <= 20 && RISKY.tes
 const labelOf = (line: string) => (line.match(/"([^"]*)"/)?.[1] || line.match(/\(([^)]*)\)/)?.[1] || "").trim();
 
 /**
- * Pi's transformContext hook: screens are big and only the latest ones matter. Older read_screen and
- * screenshot results are replaced by a short note before each model call (the transcript itself is
- * untouched), so long tasks stay within the context window and cost less.
+ * Screens are big and only the latest ones matter: all but the latest [keep] screens (read_screen and
+ * screenshot results, and the screen an action returned) become a short note. An action keeps its result.
  */
-export async function pruneOldScreens(messages: AgentMessage[]): Promise<AgentMessage[]> {
-	const KEEP = 2;
+export function pruneScreens(messages: AgentMessage[], keep: number): AgentMessage[] {
+	const textOf = (m: any) => (Array.isArray(m.content) ? m.content.find((c: any) => c.type === "text")?.text ?? "" : "");
 	const screens = messages
-		.map((m: any, i) => (m.role === "toolResult" && (m.toolName === "read_screen" || m.toolName === "screenshot") ? i : -1))
+		.map((m: any, i) => (m.role === "toolResult" && (m.toolName === "read_screen" || m.toolName === "screenshot" || textOf(m).includes(SCREEN_NOW)) ? i : -1))
 		.filter((i) => i >= 0);
-	const old = new Set(screens.slice(0, Math.max(0, screens.length - KEEP)));
+	const old = new Set(screens.slice(0, Math.max(0, screens.length - keep)));
 	if (old.size === 0) return messages;
-	return messages.map((m: any, i) =>
-		old.has(i) ? { ...m, content: [{ type: "text", text: `[earlier ${m.toolName} omitted; the screen has changed since]` }] } : m,
-	);
+	return messages.map((m: any, i) => {
+		if (!old.has(i)) return m;
+		const t = textOf(m);
+		const note = t.includes(SCREEN_NOW) ? `${t.slice(0, t.indexOf(SCREEN_NOW))}\n[screen omitted; it has changed since]` : `[earlier ${m.toolName} omitted; the screen has changed since]`;
+		return { ...m, content: [{ type: "text", text: note }] };
+	});
+}
+
+/** Pi's transformContext hook: the model sees the latest two screens (the transcript itself is untouched). */
+export async function pruneOldScreens(messages: AgentMessage[]): Promise<AgentMessage[]> {
+	return pruneScreens(messages, 2);
 }
 
 export const phoneSystemPrompt = (name: string) => `You are ${name}, an assistant that operates the user's Android phone for them.
@@ -250,8 +269,8 @@ You see the screen through read_screen (text, ids, positions) and screenshot (an
 How to work:
 - First understand what the user wants. If the request is ambiguous in a way that matters (which item, which account,
   a budget or preference), ask one short question instead of guessing.
-- Open the right app with open_app, then work step by step: look (read_screen), do one action, look again.
-  Every action waits for the screen to settle, so you rarely need wait.
+- Open the right app with open_app, then work step by step, one action at a time. Every action waits for the screen
+  to settle (and for a page's content to load) and returns the screen it leaves, so you rarely need read_screen or wait.
 - To open a web address or search, type it into the field with type_text and submit: true (or press_key "enter"),
   or tap the app's own Go / Search button or a suggestion.
 - To see more of a list or feed, use swipe "up" (or scroll). Keep going until you have what you need, but don't loop:

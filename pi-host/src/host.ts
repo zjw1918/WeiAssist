@@ -12,6 +12,7 @@ import {
 	type CredentialStore,
 	createModels,
 	InMemoryCredentialStore,
+	isContextOverflow,
 	type Model,
 } from "@earendil-works/pi-ai";
 import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
@@ -24,9 +25,10 @@ import { OPENAI_CODEX_MODELS } from "@earendil-works/pi-ai/providers/openai-code
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { bridge, bridgeCall, settle } from "./bridge.ts";
 import { fetchEvents, nativeFetch } from "./native-fetch.ts";
-import { PhoneSession, phoneSystemPrompt, pruneOldScreens } from "./phone-tools.ts";
+import { PhoneSession, phoneSystemPrompt, pruneOldScreens, pruneScreens } from "./phone-tools.ts";
 import { SupervisorSession, supervisorSystemPrompt } from "./supervisor-tools.ts";
 import { bashPrompt, bashTool } from "./bash-tool.ts";
+import { compact, needsCompaction } from "./compact.ts";
 import { dispatch } from "./shims/http.ts";
 
 declare const __PI_VERSION__: string;
@@ -222,13 +224,8 @@ function forward(session: string, event: AgentEvent) {
  * them, see pruneOldScreens). Restoring it gives Pi the same conversation the model was having.
  */
 export function savableTranscript(messages: AgentMessage[]) {
-	const screens = messages
-		.map((m: any, i) => (m.role === "toolResult" && (m.toolName === "read_screen" || m.toolName === "screenshot") ? i : -1))
-		.filter((i) => i >= 0);
-	const old = new Set(screens.slice(0, Math.max(0, screens.length - 2)));
-	return messages.flatMap((m: any, i) => {
+	return pruneScreens(messages, 2).flatMap((m: any) => {
 		if (m.role === "system") return [];
-		if (old.has(i)) return { ...m, content: [{ type: "text", text: `[earlier ${m.toolName} omitted; the screen has changed since]` }] };
 		if (!Array.isArray(m.content) || !m.content.some((c: any) => c.type === "image")) return m;
 		return { ...m, content: m.content.map((c: any) => (c.type === "image" ? { type: "text", text: "[screenshot not kept]" } : c)) };
 	});
@@ -296,15 +293,45 @@ async function prompt(id: string, text: string) {
 	s.phone?.reset();
 	s.supervisor?.reset();
 	try {
+		if (needsCompaction(s.agent.state.messages, s.agent.state.model.contextWindow)) await compactSession(s);
 		await s.agent.prompt(text);
 		// Pi takes steered messages after each turn, also the last one; one that came in as the run was
 		// ending is still queued: go on with it, so nothing the user typed is left behind.
 		while (s.agent.hasQueuedMessages()) await s.agent.continue();
+		// The conversation outgrew the model after all (a long task, an estimate off): compact once, go on.
+		if (overflowed(s) && (await compactSession(s, true))) {
+			await s.agent.continue();
+			while (s.agent.hasQueuedMessages()) await s.agent.continue();
+		}
 	} finally {
 		s.running = false;
 		saveTranscript(id);
 		bridge({ type: "idle", session: id });
 	}
+}
+
+function overflowed(s: Session) {
+	const last: any = s.agent.state.messages.at(-1);
+	return last?.role === "assistant" && last.stopReason === "error" && isContextOverflow(last, s.agent.state.model.contextWindow);
+}
+
+/**
+ * Replace the older part of the session's conversation with a summary (see compact.ts). [dropFailed]: the
+ * last message is a reply that failed because the context was too long; it goes. False if nothing changed.
+ */
+async function compactSession(s: Session, dropFailed = false): Promise<boolean> {
+	const before = s.agent.state.messages;
+	const messages = dropFailed ? before.slice(0, -1) : before;
+	// After a failed reply the task under way is kept word for word; before a new task all may be summarised.
+	const after = await compact(messages, s.agent.state.model, models.completeSimple.bind(models), dropFailed).catch((e) => {
+		console.warn(`compaction failed for ${s.id}: ${e}`);
+		return null;
+	});
+	if (!after) return false;
+	s.agent.state.messages = after;
+	bridge({ type: "compacted", session: s.id, before: before.length, after: after.length });
+	saveTranscript(s.id);
+	return true;
 }
 
 /**

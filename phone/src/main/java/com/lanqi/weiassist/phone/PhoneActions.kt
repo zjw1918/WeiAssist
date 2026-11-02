@@ -53,7 +53,7 @@ class PhoneActions(private val context: Context) {
         val d = t.displayId
         // After an action that may open a window, bring back any task the session's apps opened on the
         // phone's own screen (see reclaim), then wait for this display to settle.
-        suspend fun String.settled(maxMs: Long = 3_000) = also { svc.awaitIdle(d, maxMs = maxMs) }.let { r ->
+        suspend fun String.settled(maxMs: Long = 3_000) = also { svc.awaitIdle(d, maxMs = maxMs); svc.awaitContent(d) }.let { r ->
             if (action in LAUNCHING && t.apps.isNotEmpty()) reclaim(t)?.let { "$r\n$it" } ?: r else r
         }
         return when (action) {
@@ -128,7 +128,7 @@ class PhoneActions(private val context: Context) {
             return "$label opened, but on another screen (it can have only one window, which is in use there). Use another app or wait."
         }
         if (!shown) return "opened $label ($pkg), but it is still starting (nothing to read after ${ms / 1000} s); wait a few seconds, then call read_screen"
-        return "opened $label ($pkg); call read_screen to see it"
+        return "opened $label ($pkg)"
     }
 
     /**
@@ -209,7 +209,7 @@ class PhoneActions(private val context: Context) {
     }
 
     /** Every action returns only once the screen has settled, so the next read sees the result. */
-    private suspend fun String.settled(svc: AgentAccessibilityService, maxMs: Long = 3_000) = also { svc.awaitIdle(maxMs = maxMs) }
+    private suspend fun String.settled(svc: AgentAccessibilityService, maxMs: Long = 3_000) = also { svc.awaitIdle(maxMs = maxMs); svc.awaitContent() }
 
     /** An installed app by name or package: its label and launcher component ("package/.Activity"). */
     private fun resolveApp(app: String): Result<Pair<String, String>> {
@@ -232,7 +232,7 @@ class PhoneActions(private val context: Context) {
         val pkg = component.substringBefore('/')
         val intent = context.packageManager.getLaunchIntentForPackage(pkg) ?: return "\"$app\" can't be launched."
         svc.openApp(intent)
-        return "opened $label ($pkg); call read_screen to see it"
+        return "opened $label ($pkg)"
     }
 
     fun isEnabled() = AgentAccessibilityService.instance != null

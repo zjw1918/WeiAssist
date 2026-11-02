@@ -123,16 +123,16 @@ test("tool arguments reach Kotlin intact and never clobber the bridge request id
 	const calls = [];
 	const host = await startHost({
 		credentials: apiKeyCredentials,
-		hostCalls: { phone: (m) => { calls.push(m); return `tapped [${m.args.id}]`; } },
+		hostCalls: { phone: (m) => { calls.push(m); return m.action === "tap" ? `tapped [${m.args.id}]` : "app: x"; } },
 	});
 	await phoneRun(host, "tap");
-	assert.equal(calls.length, 1);
+	assert.deepEqual(calls.map((c) => c.action), ["tap", "read_screen"]); // the action, then the screen it left
 	assert.equal(calls[0].action, "tap");
 	assert.deepEqual(calls[0].args, { id: 51 }); // the element id travels inside args …
 	assert.match(calls[0].id, /^k\d+$/); // … so the bridge's own request id survives (the Gmail hang)
 	const end = host.messages.find((m) => m.type === "tool_end" && m.tool === "tap");
 	assert.equal(end.isError, false);
-	assert.equal(end.output, "tapped [51]");
+	assert.equal(end.output, "tapped [51]\n\nScreen now:\napp: x");
 });
 
 const sendScreen = 'app: com.google.android.gm\n[1] EditText "Subject" editable\n[2] ImageButton (Send) clickable\n';
@@ -201,6 +201,21 @@ test("old screens are pruned from the model's context, the latest two are kept",
 	assert.ok(mock.requests.length - before >= 5);
 });
 
+test("actions return the screen they leave; older ones keep their result, not the screen", async () => {
+	let n = 0;
+	const host = await startHost({
+		credentials: apiKeyCredentials,
+		hostCalls: { phone: (m) => (m.action === "read_screen" ? `app: x\n[1] TextView "screen ${++n}"` : `did ${m.action}`) },
+	});
+	await phoneRun(host, "actions");
+	const outputs = JSON.parse(mock.requests.at(-1).body).input.filter((i) => i.type === "function_call_output").map((i) => JSON.stringify(i.output));
+	assert.equal(outputs.length, 3);
+	assert.match(outputs[0], /did tap.*screen omitted/);
+	assert.doesNotMatch(outputs[0], /screen 1/);
+	assert.match(outputs[1], /did press_key.*Screen now:.*screen 2/);
+	assert.match(outputs[2], /did swipe.*Screen now:.*screen 3/);
+});
+
 test("notes stay in the model's context after their screen is pruned, and never reach Kotlin", async () => {
 	const actions = [];
 	let n = 0;
@@ -265,6 +280,57 @@ test("a saved transcript is restored into a new runtime, and the model sees it",
 	assert.match(body, /which number\?/);
 });
 
+// ---- compaction -------------------------------------------------------------------------------------
+
+/** A saved conversation whose last reply reported [input] tokens, as a long one would. */
+const longHistory = (input) => [
+	{ role: "user", content: [{ type: "text", text: "old question: I like llamas" }], timestamp: 1 },
+	{ role: "assistant", content: [{ type: "text", text: "noted, llamas" }], api: "openai-responses", provider: "openai", model: "gpt-5.4-mini",
+		usage: { input, output: 10, cacheRead: 0, cacheWrite: 0, totalTokens: input + 10, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+		stopReason: "stop", timestamp: 2 },
+];
+
+test("a conversation near the context window is compacted before the next task", async () => {
+	const host = await startHost({ credentials: apiKeyCredentials });
+	await configure(host, "c", { messages: longHistory(10_000_000) });
+	const before = mock.requests.length;
+	host.call("prompt", { session: "c", text: "what do I like?" });
+	await host.waitFor("idle", (m) => m.session === "c");
+	const sent = mock.requests.slice(before).map((r) => r.body);
+	assert.equal(sent.length, 2, "one summary request, then the task");
+	assert.match(sent[0], /You compact a conversation/);
+	assert.match(sent[0], /old question: I like llamas/);
+	assert.match(sent[1], /SUMMARY: the user likes llamas/);
+	assert.doesNotMatch(sent[1], /old question/);
+	assert.match(sent[1], /what do I like\?/);
+	assert.ok(host.messages.some((m) => m.type === "compacted" && m.session === "c"));
+	const saved = host.messages.filter((m) => m.type === "transcript" && m.session === "c").at(-1).messages;
+	assert.match(JSON.stringify(saved[0]), /Summary of the earlier conversation/);
+});
+
+test("a small conversation is not compacted", async () => {
+	const host = await startHost({ credentials: apiKeyCredentials });
+	await configure(host, "c2", { messages: longHistory(500) });
+	const before = mock.requests.length;
+	host.call("prompt", { session: "c2", text: "hi" });
+	await host.waitFor("idle", (m) => m.session === "c2");
+	assert.equal(mock.requests.length - before, 1);
+	assert.equal(host.messages.some((m) => m.type === "compacted"), false);
+});
+
+test("a reply that fails with 'context too long' is followed by compaction and a retry", async () => {
+	const host = await startHost({ credentials: apiKeyCredentials });
+	await configure(host, "o", { messages: longHistory(500) });
+	const before = mock.requests.length;
+	host.call("prompt", { session: "o", text: "go on [[overflow]]" });
+	await host.waitFor("idle", (m) => m.session === "o");
+	const sent = mock.requests.slice(before).map((r) => r.body);
+	assert.equal(sent.length, 3, "the failed request, the summary, the retry");
+	assert.match(sent[1], /You compact a conversation/);
+	assert.match(sent[2], /SUMMARY: the user likes llamas/);
+	assert.match(sent[2], /go on \[\[overflow\]\]/, "the task itself is kept word for word");
+});
+
 test("the user's message is saved before the first turn ends", async () => {
 	const host = await startHost({ credentials: apiKeyCredentials, hostCalls: { phone: () => new Promise(() => {}) } });
 	await configure(host, "u", { phone: true });
@@ -307,7 +373,7 @@ test("type_text can submit, and press_key has enter", async () => {
 	await configure(host, "e", { phone: true });
 	host.call("prompt", { session: "e", text: "do it [[script:submit]]" });
 	await host.waitFor("idle", (m) => m.session === "e");
-	assert.deepEqual(calls.map((c) => [c.action, c.args]), [
+	assert.deepEqual(calls.filter((c) => c.action !== "read_screen").map((c) => [c.action, c.args]), [
 		["type_text", { id: 3, text: "example.com", submit: true }],
 		["press_key", { key: "enter" }],
 	]);
@@ -425,7 +491,7 @@ test("a message sent while a session works reaches the model after the current t
 	let finishTap;
 	const host = await startHost({
 		credentials: apiKeyCredentials,
-		hostCalls: { phone: () => new Promise((r) => { finishTap = () => r("tapped"); }) },
+		hostCalls: { phone: (m) => (m.action === "tap" ? new Promise((r) => { finishTap = () => r("tapped"); }) : "app: x") },
 	});
 	await configure(host, "st", { phone: true });
 	host.call("prompt", { session: "st", text: "do it [[script:tap]]" });
