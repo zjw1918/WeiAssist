@@ -450,7 +450,7 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
             ) {
                 if (showTrace) item {
                     Text(
-                        session.trace.joinToString("\n"), fontFamily = FontFamily.Monospace, fontSize = 11.sp,
+                        session.trace.joinToString("\n"), style = CodeStyle.copy(fontSize = 11.sp, lineHeight = 15.sp),
                         modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.small).padding(10.dp),
                     )
                 }

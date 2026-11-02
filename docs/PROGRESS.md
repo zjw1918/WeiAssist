@@ -201,6 +201,9 @@ Chat and phone sessions can now run Linux commands in Termux with a `bash` tool 
   Icons are vector drawables in `res/drawable` (no icon library). Code: `ui/Home.kt`, `Sessions.kt`,
   `Providers.kt`, `SettingsScreen.kt`, `Components.kt`, `Theme.kt`.
 - **Verified on the Xiaomi:** all three tabs, the chat page above the keyboard, clear, and the new-session sheet.
+- **Markdown on the page:** with answers no longer in bubbles, code blocks, inline code and table headers use the
+  surface-container tints (and code blocks an outline); code has its own line height (`CodeStyle`, 18sp) instead
+  of the inherited 24sp body line height.
 
 ### Messages while a session works: Pi's steering (2026-11-02)
 - **Send while working:** a message to a busy session goes to Pi's `Agent.steer`; Pi adds it to the conversation

@@ -24,7 +24,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
@@ -69,11 +71,16 @@ private fun Block(b: Markdown.Block) {
                 }
             }
         }
-        is Markdown.Code -> Box(
-            Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
-                .horizontalScroll(rememberScrollState()).padding(8.dp),
-        ) {
-            Text(b.text, fontFamily = FontFamily.Monospace, fontSize = 12.sp, softWrap = false)
+        // A tinted, outlined block on the page; long lines scroll sideways instead of wrapping.
+        is Markdown.Code -> {
+            val c = MaterialTheme.colorScheme
+            val shape = RoundedCornerShape(10.dp)
+            Box(
+                Modifier.fillMaxWidth().clip(shape).background(c.surfaceContainerHigh).border(1.dp, c.outlineVariant.copy(alpha = 0.6f), shape)
+                    .horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 10.dp),
+            ) {
+                Text(b.text, style = CodeStyle, color = c.onSurface, softWrap = false)
+            }
         }
         is Markdown.Quote -> Row(Modifier.height(IntrinsicSize.Min)) {
             Box(Modifier.width(3.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant))
@@ -91,7 +98,7 @@ private fun Block(b: Markdown.Block) {
 @Composable
 private fun Table(t: Markdown.Table) {
     val line = MaterialTheme.colorScheme.outlineVariant
-    val headerBg = MaterialTheme.colorScheme.surface
+    val headerBg = MaterialTheme.colorScheme.surfaceContainerHigh
     val style = MaterialTheme.typography.bodySmall
     val cols = t.header.size
     val rows = listOf(t.header) + t.rows
@@ -134,6 +141,9 @@ private fun Table(t: Markdown.Table) {
 
 private val MAX_CELL = 220.dp
 
+/** Monospace with its own line height: the inherited body style's 24sp would double-space code. */
+val CodeStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.5.sp, lineHeight = 18.sp)
+
 @Composable
 private fun annotated(spans: List<Markdown.Span>): AnnotatedString {
     val colors = MaterialTheme.colorScheme
@@ -145,7 +155,7 @@ private fun annotated(spans: List<Markdown.Span>): AnnotatedString {
                     fontStyle = if (s.italic) FontStyle.Italic else null,
                     textDecoration = if (s.strike) TextDecoration.LineThrough else null,
                     fontFamily = if (s.code) FontFamily.Monospace else null,
-                    background = if (s.code) colors.surface else Color.Unspecified,
+                    background = if (s.code) colors.surfaceContainerHighest else Color.Unspecified,
                 )
                 val link = s.link
                 if (link != null && (link.startsWith("http://") || link.startsWith("https://"))) {
