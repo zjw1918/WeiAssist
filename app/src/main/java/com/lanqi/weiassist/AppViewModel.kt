@@ -126,7 +126,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { open(c.startTask(text, phoneMode)) }
     }
 
-    /** A follow-up message in the open session. */
+    /** A follow-up message in the open session (while it works, it steers the task). */
     fun sendReply() {
         val c = controller.value ?: return
         val id = openId.value ?: return

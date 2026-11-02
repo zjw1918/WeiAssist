@@ -76,6 +76,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lanqi.weiassist.AppViewModel
 import com.lanqi.weiassist.R
 import com.lanqi.weiassist.agent.ChatItem
+import com.lanqi.weiassist.agent.Delivery
 import com.lanqi.weiassist.agent.Markdown
 import com.lanqi.weiassist.agent.PreviewHub
 import com.lanqi.weiassist.agent.SessionState
@@ -185,7 +186,7 @@ private fun SupervisorCard(vm: AppViewModel, s: SessionSummary?) {
             )
             Composer(
                 vm.supervisorInput, { vm.supervisorInput = it }, stringResource(R.string.supervisor_placeholder),
-                onSend = { vm.askSupervisor() }, sendEnabled = vm.supervisorInput.isNotBlank() && s?.status?.active != true, maxLines = 3,
+                onSend = { vm.askSupervisor() }, maxLines = 3,
                 extra = if (canSpeak) { { IconButton(onClick = { listen.launch(speech) }) { AppIcon(R.drawable.ic_mic, stringResource(R.string.voice_input)) } } } else null,
             )
         }
@@ -461,7 +462,8 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
                     .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 10.dp),
             ) {
                 if (s.status != SessionStatus.Idle) Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.End) { SessionActions(s, vm) }
-                Composer(vm.reply, { vm.reply = it }, stringResource(R.string.reply_hint), onSend = vm::sendReply, sendEnabled = !session.busy && vm.reply.isNotBlank())
+                // While it works, a message steers it: the model reads it after its current step.
+                Composer(vm.reply, { vm.reply = it }, stringResource(if (session.busy) R.string.steer_hint else R.string.reply_hint), onSend = vm::sendReply)
             }
         }
     }
@@ -508,10 +510,18 @@ private fun ScreenPreview(vm: AppViewModel, s: SessionSummary) {
 private fun ChatRow(item: ChatItem) {
     val c = MaterialTheme.colorScheme
     when (item) {
-        is ChatItem.User -> Row(Modifier.fillMaxWidth().padding(start = 48.dp), horizontalArrangement = Arrangement.End) {
+        is ChatItem.User -> Column(Modifier.fillMaxWidth().padding(start = 48.dp), horizontalAlignment = Alignment.End) {
+            val sent = item.delivery == Delivery.Sent
             Text(
-                item.text, style = MaterialTheme.typography.bodyLarge, color = c.onPrimaryContainer,
-                modifier = Modifier.widthIn(max = 320.dp).background(c.primaryContainer, RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp)).padding(horizontal = 14.dp, vertical = 10.dp),
+                item.text, style = MaterialTheme.typography.bodyLarge, color = if (sent) c.onPrimaryContainer else c.onSurfaceVariant,
+                modifier = Modifier.widthIn(max = 320.dp)
+                    .background(if (sent) c.primaryContainer else c.surfaceContainerHigh, RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp))
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            )
+            if (!sent) Text(
+                stringResource(if (item.delivery == Delivery.Queued) R.string.steer_queued else R.string.steer_not_delivered),
+                style = MaterialTheme.typography.labelSmall, color = if (item.delivery == Delivery.Queued) c.onSurfaceVariant else c.error,
+                modifier = Modifier.padding(top = 4.dp, end = 6.dp),
             )
         }
         // Answers read as text on the page, not as bubbles: they are often long and formatted.

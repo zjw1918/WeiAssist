@@ -369,3 +369,62 @@ test("the supervisor has no bash", async () => {
 	const end = host.messages.find((m) => m.type === "tool_end" && m.session === "sup2");
 	assert.equal(end.isError, true, "Pi rejects a tool the session doesn't have");
 });
+
+/** Until [f] gives something (polled). */
+async function until(f, timeoutMs = 5000) {
+	const end = Date.now() + timeoutMs;
+	while (!f()) {
+		if (Date.now() > end) throw new Error("timed out");
+		await new Promise((r) => setTimeout(r, 5));
+	}
+}
+
+test("a message sent while a session works reaches the model after the current turn (Pi's steering)", async () => {
+	let finishTap;
+	const host = await startHost({
+		credentials: apiKeyCredentials,
+		hostCalls: { phone: () => new Promise((r) => { finishTap = () => r("tapped"); }) },
+	});
+	await configure(host, "st", { phone: true });
+	host.call("prompt", { session: "st", text: "do it [[script:tap]]" });
+	await until(() => finishTap); // in the middle of a tap on the phone
+	const before = mock.requests.length;
+	host.call("steer", { session: "st", text: "also check the inbox" });
+	finishTap();
+	const taken = await host.waitFor("message_end", (m) => m.session === "st" && m.role === "user" && m.text === "also check the inbox");
+	assert.ok(taken, "Pi took the steered message into the conversation");
+	await host.waitFor("idle", (m) => m.session === "st");
+	const next = mock.requests.slice(before).map((r) => r.body).join("\n");
+	assert.match(next, /also check the inbox/, "the model's next request has the message");
+	assert.equal(host.messages.some((m) => m.type === "steer_late"), false);
+	assert.equal(host.messages.filter((m) => m.type === "idle" && m.session === "st").length, 1, "one run, one idle");
+});
+
+test("a message steered after the run ended comes back as steer_late, for Kotlin to send", async () => {
+	const host = await startHost({ credentials: apiKeyCredentials });
+	await configure(host, "late");
+	host.call("prompt", { session: "late", text: "hi" });
+	await host.waitFor("idle", (m) => m.session === "late");
+	host.call("steer", { session: "late", text: "one more thing" });
+	const late = await host.waitFor("steer_late", (m) => m.session === "late");
+	assert.equal(late.text, "one more thing");
+	assert.equal(host.messages.some((m) => m.type === "error"), false);
+});
+
+test("Stop drops a steered message the model hasn't read yet", async () => {
+	let finishTap;
+	const host = await startHost({
+		credentials: apiKeyCredentials,
+		hostCalls: { phone: () => new Promise((r) => { finishTap = () => r("tapped"); }) },
+	});
+	await configure(host, "ab", { phone: true });
+	host.call("prompt", { session: "ab", text: "do it [[script:tap]]" });
+	await until(() => finishTap);
+	const before = mock.requests.length;
+	host.call("steer", { session: "ab", text: "never mind that" });
+	host.call("abort", { session: "ab" });
+	finishTap();
+	await host.waitFor("idle", (m) => m.session === "ab");
+	assert.equal(host.messages.some((m) => m.type === "message_end" && m.text === "never mind that"), false);
+	assert.doesNotMatch(mock.requests.slice(before).map((r) => r.body).join("\n"), /never mind that/);
+});

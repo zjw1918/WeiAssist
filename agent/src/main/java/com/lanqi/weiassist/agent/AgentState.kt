@@ -61,11 +61,20 @@ enum class SessionStatus {
 
 /** One entry in a conversation, as the user sees it. */
 sealed interface ChatItem {
-    data class User(val text: String) : ChatItem
+    /** [delivery]: a message typed while the session works waits for Pi to take it (Pi's steering). */
+    data class User(val text: String, val delivery: Delivery = Delivery.Sent) : ChatItem
     data class Assistant(val text: String) : ChatItem
     /** A tool the agent used: [ok] is null while it runs. */
     data class Step(val tool: String, val detail: String, val ok: Boolean? = null, val result: String = "") : ChatItem
     data class Error(val text: String) : ChatItem
+}
+
+enum class Delivery {
+    Sent,
+    /** Waiting for the current turn to end; then Pi adds it to the conversation. */
+    Queued,
+    /** The task stopped (or failed) before Pi took it: the model never read it. */
+    NotDelivered,
 }
 
 /** What the session list shows for a session: small, kept for every session. */

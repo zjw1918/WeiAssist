@@ -154,4 +154,8 @@
     <string name="section_about">关于</string>
     <string name="version">版本 %1$s</string>
     <string name="runtime">运行环境</string>
+    <!-- 会话工作时发的消息（Pi 的 steering） -->
+    <string name="steer_hint">补充说明（当前这一步做完后读到）</string>
+    <string name="steer_queued">等当前这一步做完</string>
+    <string name="steer_not_delivered">未送达：任务已先停止</string>
 </resources>

@@ -57,6 +57,11 @@ class SessionManager(
     /** Bumped per session when the user stops it, so a gate waiting in a paused session gives up. */
     private val stops = HashMap<String, Int>()
     private val queue = ArrayDeque<String>()
+    /**
+     * Sessions whose task Pi has been given (PiHost.prompt called) and not yet ended: only these can be
+     * steered. Calls to Pi run in order, so a steer after the prompt always finds Pi's run.
+     */
+    private val prompted = HashSet<String>()
     private val pendingWrites = HashMap<String, Job>()
 
     /** Load the saved sessions. Sessions that were working when the process ended are marked Interrupted. */
@@ -94,7 +99,8 @@ class SessionManager(
 
     private fun evictIfUnused(id: String) {
         val s = live[id]?.value ?: return
-        if (s.busy || (watchers[id] ?: 0) > 0) return
+        // A steered message still queued may come back from Pi (steer_late) and start the next task.
+        if (s.busy || (watchers[id] ?: 0) > 0 || s.items.any { (it as? ChatItem.User)?.delivery == Delivery.Queued }) return
         flush(s)
         live.remove(id)
     }
@@ -125,11 +131,23 @@ class SessionManager(
         return id
     }
 
-    /** The user's message to a session: start (or queue) a task. False if the session is busy or unknown. */
+    /**
+     * The user's message to a session: start (or queue) a task. While the session works, the message
+     * steers it instead (Pi reads it after the current turn). False if the session is unknown.
+     */
     suspend fun send(id: String, text: String): Boolean {
         if (text.isBlank()) return false
         val flow = loadLive(id) ?: return false
-        if (flow.value.busy) return false
+        if (flow.value.busy) {
+            val now = System.currentTimeMillis()
+            // Pi hasn't been given this task yet (it waits for a screen, or is being set up): the message joins it.
+            if (id !in prompted) update(id) { SessionReducer.joinTask(it, text.trim(), now) }
+            else {
+                update(id) { SessionReducer.steered(it, text.trim(), now) }
+                pi.steer(id, text.trim())
+            }
+            return true
+        }
         val phone = flow.value.summary.phone
         val now = System.currentTimeMillis()
         val canRun = !phone || screens.acquire(id) != null
@@ -142,12 +160,25 @@ class SessionManager(
         return true
     }
 
+    /** Pi's run ended just before the steered [text] reached it: send it as the next task. */
+    private fun lateSteer(id: String, text: String) {
+        val s = live[id]?.value ?: return
+        if (s.busy) { // a new task started meanwhile: steer that one
+            if (id in prompted) scope.launch { pi.steer(id, text) } else Log.w(TAG, "late steer for $id dropped: next task not started")
+            return
+        }
+        val canRun = !s.summary.phone || screens.acquire(id) != null
+        update(id) { SessionReducer.lateSteer(it, text, queued = !canRun, now = System.currentTimeMillis()) }
+        paused.getOrPut(id) { MutableStateFlow(false) }.value = false
+        if (canRun) start(id) else queue.addLast(id)
+    }
+
     /** An interrupted session (the app's process ended mid-task) picks up where it was. */
     suspend fun continueTask(id: String) = send(id, strings.continueTask())
 
     private fun start(id: String) {
         val s = live[id]?.value ?: return
-        val task = s.pendingTask ?: return
+        if (s.pendingTask == null) return
         if (s.status == SessionStatus.Queued) update(id) { SessionReducer.withStatus(it, SessionStatus.Running, System.currentTimeMillis()) }
         scope.launch {
             val (model, thinking, mock) = settings()
@@ -160,7 +191,10 @@ class SessionManager(
                 pi.configure(id, AgentController.PROVIDER, model, thinking, mock, tools = tools, messages = history)
                 configured[id] = config
             }
+            // Read now: messages typed while Pi was being set up joined the task (see send).
+            val task = live[id]?.value?.takeIf { it.busy }?.pendingTask ?: return@launch
             pi.prompt(id, task)
+            prompted += id
         }
     }
 
@@ -174,6 +208,7 @@ class SessionManager(
         Log.d(TAG, "stop $id (${s.status})")
         onEnded(id, false)
         stops[id] = (stops[id] ?: 0) + 1
+        prompted -= id
         paused[id]?.value = false
         queue.remove(id)
         if (s.status != SessionStatus.Queued) scope.launch { pi.abort(id) }
@@ -226,6 +261,7 @@ class SessionManager(
             return
         }
         if (live[id] == null) { Log.w(TAG, "message for a session not in memory: $id ${m.optString("type")}"); return }
+        if (m.optString("type") == "steer_late") { lateSteer(id, m.optString("text")); return }
         val wasBusy = live[id]!!.value.busy
         update(id) { SessionReducer.reduce(it, m, System.currentTimeMillis(), strings::friendly) }
         if (wasBusy && !live[id]!!.value.busy) finished(id)
@@ -234,6 +270,7 @@ class SessionManager(
     /** The runtime died: every Agent is gone. Running tasks end; the next message restores each conversation. */
     fun onRuntimeRestarted() {
         configured.clear()
+        prompted.clear()
         val now = System.currentTimeMillis()
         live.keys.toList().forEach { id ->
             val wasBusy = live[id]!!.value.busy
@@ -266,6 +303,7 @@ class SessionManager(
     val finished: kotlinx.coroutines.flow.SharedFlow<String> = _finished
 
     private fun finished(id: String) {
+        prompted -= id
         releaseScreen(id, now = false)
         _finished.tryEmit(id)
         evictIfUnused(id)

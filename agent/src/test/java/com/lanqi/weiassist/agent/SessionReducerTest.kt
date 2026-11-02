@@ -105,4 +105,51 @@ class SessionReducerTest {
         listOf(ChatItem.User("u"), ChatItem.Assistant("a"), ChatItem.Error("e"), ChatItem.Step("tap", "[3]", null), ChatItem.Step("tap", "[3]", false, "no"))
             .forEach { assertEquals(it, SessionStore.itemFrom(SessionStore.itemJson(it))) }
     }
+
+    @Test fun `a message while working is queued, then delivered when Pi takes it`() {
+        var s = SessionReducer.steered(running, "also the inbox", now = 2)
+        assertEquals(ChatItem.User("also the inbox", Delivery.Queued), s.items.last())
+        assertEquals("check mail", s.pendingTask) // the task is unchanged: Pi gets the message as steering
+        assertEquals(SessionStatus.Running, s.status)
+        s = reduce(s, msg("message_end", "role" to "user", "text" to "check mail")) // the task's own message: no change
+        assertEquals(Delivery.Queued, (s.items.last() as ChatItem.User).delivery)
+        s = reduce(s, msg("message_end", "role" to "user", "text" to "also the inbox"))
+        assertEquals(ChatItem.User("also the inbox"), s.items.last())
+    }
+
+    @Test fun `stopping or failing marks queued messages as not delivered`() {
+        val queued = SessionReducer.steered(running, "wait", now = 2)
+        assertEquals(Delivery.NotDelivered, (SessionReducer.stopped(queued, now = 3).items.last() as ChatItem.User).delivery)
+        assertEquals(Delivery.NotDelivered, (reduce(queued, msg("error", "message" to "boom")).items.first { it is ChatItem.User && it.text == "wait" } as ChatItem.User).delivery)
+        assertEquals(Delivery.NotDelivered, (SessionReducer.runtimeLost(queued, "restarted", now = 3).items.first { it is ChatItem.User && it.text == "wait" } as ChatItem.User).delivery)
+    }
+
+    @Test fun `a message for a task Pi hasn't started joins the task`() {
+        val waiting = SessionReducer.userMessage(idle, "check mail", queued = true, now = 1)
+        val s = SessionReducer.joinTask(waiting, "and reply to Ann", now = 2)
+        assertEquals("check mail\n\nand reply to Ann", s.pendingTask)
+        assertEquals(ChatItem.User("and reply to Ann"), s.items.last())
+    }
+
+    @Test fun `a steer that arrived after the run ended starts the next task`() {
+        val ended = reduce(SessionReducer.steered(running, "one more", now = 2), msg("idle"))
+        assertEquals(Delivery.Queued, (ended.items.last() as ChatItem.User).delivery) // idle doesn't settle it: steer_late follows
+        val s = SessionReducer.lateSteer(ended, "one more", queued = false, now = 3)
+        assertEquals(SessionStatus.Running, s.status)
+        assertEquals("one more", s.pendingTask)
+        assertEquals(ChatItem.User("one more"), s.items.last())
+    }
+
+    @Test fun `delivery survives the storage format, and a still-queued message was not delivered`() {
+        assertEquals(ChatItem.User("x", Delivery.NotDelivered), SessionStore.itemFrom(SessionStore.itemJson(ChatItem.User("x", Delivery.NotDelivered))))
+        assertEquals(ChatItem.User("x", Delivery.NotDelivered), SessionStore.itemFrom(SessionStore.itemJson(ChatItem.User("x", Delivery.Queued))))
+        assertEquals(ChatItem.User("x"), SessionStore.itemFrom(JSONObject().put("k", "user").put("text", "x"))) // files from before
+    }
+
+    @Test fun `an error from the aborted request after Stop is not shown`() {
+        val stopped = SessionReducer.stopped(running, now = 2)
+        val s = reduce(stopped, msg("assistant_end", "text" to "", "stopReason" to "error", "errorMessage" to "AbortError: This operation was aborted"))
+        assertTrue(s.items.none { it is ChatItem.Error })
+        assertNull(s.error)
+    }
 }

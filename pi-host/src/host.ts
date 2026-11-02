@@ -186,7 +186,11 @@ function forward(session: string, event: AgentEvent) {
 					stopReason: m.stopReason, errorMessage: m.errorMessage, usage: m.usage,
 				});
 			} else {
-				send({ type: "message_end", role: m.role });
+				// A user message's text: Kotlin marks a steered message as delivered when Pi takes it.
+				const text = m.role === "user"
+					? (typeof m.content === "string" ? m.content : (m.content ?? []).filter((c: any) => c.type === "text").map((c: any) => c.text).join(""))
+					: undefined;
+				send({ type: "message_end", role: m.role, text });
 				// The user's message is in the transcript now: save, so a crash before the turn ends keeps it.
 				if (m.role === "user") saveTranscript(session);
 			}
@@ -291,11 +295,36 @@ async function prompt(id: string, text: string) {
 	s.supervisor?.reset();
 	try {
 		await s.agent.prompt(text);
+		// Pi takes steered messages after each turn, also the last one; one that came in as the run was
+		// ending is still queued: go on with it, so nothing the user typed is left behind.
+		while (s.agent.hasQueuedMessages()) await s.agent.continue();
 	} finally {
 		s.running = false;
 		saveTranscript(id);
 		bridge({ type: "idle", session: id });
 	}
+}
+
+/**
+ * The user's message to a session that is working: Pi adds it to the conversation after the current
+ * turn (Agent.steer), so the model reads it before its next step. If the run has already ended,
+ * Kotlin is told (steer_late) and sends it as a new message.
+ */
+function steer(id: string, text: string) {
+	const s = sessions.get(id);
+	if (!s?.running) {
+		bridge({ type: "steer_late", session: id, text });
+		return;
+	}
+	s.agent.steer({ role: "user", content: [{ type: "text", text }], timestamp: Date.now() } as AgentMessage);
+}
+
+/** Stop: drop what the user queued too, so the run doesn't go on with it. */
+function abort(id: string) {
+	const s = sessions.get(id);
+	if (!s) return;
+	s.agent.clearAllQueues();
+	s.agent.abort();
 }
 
 function dispose(id: string) {
@@ -334,7 +363,8 @@ const arg = (json: string) => JSON.parse(json);
 	logout: (json: string) => guard("logout", async () => { await models.logout(arg(json).provider); await status(); }),
 	configure: (json: string) => { const a = arg(json); guard("configure", () => configure(a), a.session); },
 	prompt: (json: string) => { const a = arg(json); guard("prompt", () => prompt(a.session, a.text), a.session); },
-	abort: (json: string) => sessions.get(arg(json).session)?.agent.abort(),
+	steer: (json: string) => { const a = arg(json); guard("steer", async () => steer(a.session, a.text), a.session); },
+	abort: (json: string) => abort(arg(json).session),
 	dispose: (json: string) => dispose(arg(json).session),
 	/** Sessions alive in this runtime (after a renderer restart this is empty: Kotlin reconfigures). */
 	sessions: () => bridge({ type: "sessions", ids: [...sessions.keys()], running: [...sessions.values()].filter((s) => s.running).map((s) => s.id) }),

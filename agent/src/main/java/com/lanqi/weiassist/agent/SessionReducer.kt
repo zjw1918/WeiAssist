@@ -16,7 +16,8 @@ object SessionReducer {
         "text_delta" -> s.copy(streaming = s.streaming + m.optString("delta"))
         "assistant_end" -> {
             val text = m.optString("text").ifEmpty { s.streaming }
-            val err = if (m.optString("stopReason") == "error") friendly(m.optString("errorMessage")) else null
+            // After Stop, Pi's last request fails on the aborted signal: that is the stop, not an error to show.
+            val err = if (m.optString("stopReason") == "error" && s.busy) friendly(m.optString("errorMessage")) else null
             var n = s.copy(streaming = "", error = err ?: s.error)
             if (text.isNotBlank()) n = n.add(ChatItem.Assistant(text), now).preview(Markdown.plain(text), now)
             if (err != null) n = n.add(ChatItem.Error(err), now).preview(err, now, error = true)
@@ -41,12 +42,14 @@ object SessionReducer {
         "configured" -> s.trace("configured · ${m.optString("model")} · thinking=${m.optString("thinkingLevel")} → ${m.optString("baseUrl")} · auth=${m.optString("auth")} · history=${m.optInt("messages")}")
         "error" -> {
             val err = friendly(m.optString("message"))
-            s.copy(error = err, pendingTask = null).status(SessionStatus.Idle, now)
+            s.copy(error = err, pendingTask = null).undelivered().status(SessionStatus.Idle, now)
                 .add(ChatItem.Error(err), now).preview(err, now, error = true).trace("error · ${m.optString("message")}")
         }
         "idle" -> s.copy(streaming = "", pendingTask = null).status(SessionStatus.Idle, now).trace("idle")
+        // Pi took a steered message into the conversation: it is delivered.
+        "message_end" -> if (m.optString("role") == "user") s.delivered(m.optString("text")) else s
         // A transcript is persisted by the manager; it doesn't change what the user sees.
-        "transcript", "turn_end", "message_end" -> s
+        "transcript", "turn_end" -> s
         else -> s.trace(m.optString("type"))
     }
 
@@ -56,13 +59,26 @@ object SessionReducer {
             .copy(error = null, streaming = "", pendingTask = text)
             .status(if (queued) SessionStatus.Queued else SessionStatus.Running, now)
 
+    /** A message while Pi is working: shown at once, delivered when Pi takes it after the current turn. */
+    fun steered(s: SessionState, text: String, now: Long) =
+        s.add(ChatItem.User(text, Delivery.Queued), now).preview(text, now).trace("steer · queued")
+
+    /** A message while the task waits for a screen (Pi hasn't started): it joins the task. */
+    fun joinTask(s: SessionState, text: String, now: Long) =
+        s.add(ChatItem.User(text), now).preview(text, now).copy(pendingTask = listOfNotNull(s.pendingTask, text).joinToString("\n\n"))
+
+    /** Pi's run ended just before a steered message reached it: that message starts the next task. */
+    fun lateSteer(s: SessionState, text: String, queued: Boolean, now: Long) =
+        s.delivered(text).copy(error = null, streaming = "", pendingTask = text)
+            .status(if (queued) SessionStatus.Queued else SessionStatus.Running, now).trace("steer · late, sent as a new message")
+
     fun stopped(s: SessionState, now: Long) =
-        s.copy(streaming = "", pendingTask = null).status(SessionStatus.Idle, now).trace("stopped by user")
+        s.copy(streaming = "", pendingTask = null).undelivered().status(SessionStatus.Idle, now).trace("stopped by user")
 
     /** Pi's runtime died under this session: its run is over. */
     fun runtimeLost(s: SessionState, message: String, now: Long): SessionState =
         if (!s.busy) s.trace("runtime restarted")
-        else s.copy(streaming = "", pendingTask = null, error = message).status(SessionStatus.Idle, now)
+        else s.copy(streaming = "", pendingTask = null, error = message).undelivered().status(SessionStatus.Idle, now)
             .add(ChatItem.Error(message), now).preview(message, now, error = true).trace("runtime restarted")
 
     fun withStatus(s: SessionState, status: SessionStatus, now: Long) = s.status(status, now)
@@ -85,6 +101,18 @@ object SessionReducer {
         "wait_for" -> a?.optJSONArray("ids")?.let { ids -> (0 until ids.length()).joinToString(", ") { ids.getString(it) } }.orEmpty()
         else -> ""
     }
+
+    /** The oldest queued message with this text is delivered (an exact match: Pi echoes what was steered). */
+    private fun SessionState.delivered(text: String): SessionState {
+        val queued = items.indices.filter { (items[it] as? ChatItem.User)?.delivery == Delivery.Queued }
+        val i = queued.firstOrNull { (items[it] as ChatItem.User).text == text } ?: return this
+        return copy(items = items.toMutableList().also { it[i] = (it[i] as ChatItem.User).copy(delivery = Delivery.Sent) })
+    }
+
+    /** The run is over: messages still queued were never read by the model. */
+    private fun SessionState.undelivered(): SessionState =
+        if (items.none { (it as? ChatItem.User)?.delivery == Delivery.Queued }) this
+        else copy(items = items.map { if (it is ChatItem.User && it.delivery == Delivery.Queued) it.copy(delivery = Delivery.NotDelivered) else it })
 
     private fun SessionState.status(st: SessionStatus, now: Long) = copy(summary = summary.copy(status = st, updatedAt = now))
     private fun SessionState.add(item: ChatItem, now: Long) = copy(items = (items + item).takeLast(MAX_ITEMS), summary = summary.copy(updatedAt = now))

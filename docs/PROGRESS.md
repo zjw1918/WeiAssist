@@ -202,6 +202,18 @@ Chat and phone sessions can now run Linux commands in Termux with a `bash` tool 
   `Providers.kt`, `SettingsScreen.kt`, `Components.kt`, `Theme.kt`.
 - **Verified on the Xiaomi:** all three tabs, the chat page above the keyboard, clear, and the new-session sheet.
 
+### Messages while a session works: Pi's steering (2026-11-02)
+- **Send while working:** a message to a busy session goes to Pi's `Agent.steer`; Pi adds it to the conversation
+  after the current turn, so the model reads it before its next step. The bubble shows *Waiting for the current
+  step* until Pi takes it (`message_end` echoes the text), and *Not delivered* if the task stops or fails first.
+- **Edge cases:** a message for a task Pi hasn't been given yet (waiting for a screen, or being set up) joins the
+  task; one that reaches Pi just as its run ends comes back as `steer_late` and is sent as the next message; pi-host
+  goes on with anything still queued when the run ends; Stop clears the queue (`clearAllQueues`).
+- **Fix:** after Stop during a tool, Pi's last request fails on the aborted signal; that is no longer shown as an error.
+- **Tests:** pi-host 25 (+3: steer reaches the model's next request, late steer, Stop drops it); SessionReducer 18 (+6).
+- **Verified on the Xiaomi** with the real model: during `sleep 30` in bash, "also run date" was delivered after the
+  step and answered in the same run; steering then Stop shows *Not delivered* and no error.
+
 ### Verified on a real device (realme RMX2121, Android 12)
 - ChatGPT subscription sign-in, then "你好" through Pi (`gpt-6.1-sol`).
 - Gmail: sent an email to two different addresses, each after the confirmation card.

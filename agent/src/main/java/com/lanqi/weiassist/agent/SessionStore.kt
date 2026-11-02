@@ -65,6 +65,7 @@ class SessionStore(root: File) {
 
         fun itemJson(i: ChatItem): JSONObject = when (i) {
             is ChatItem.User -> JSONObject().put("k", "user").put("text", i.text)
+                .also { if (i.delivery != Delivery.Sent) it.put("delivery", i.delivery.name) }
             is ChatItem.Assistant -> JSONObject().put("k", "assistant").put("text", i.text)
             is ChatItem.Error -> JSONObject().put("k", "error").put("text", i.text)
             is ChatItem.Step -> JSONObject().put("k", "step").put("tool", i.tool).put("detail", i.detail)
@@ -72,7 +73,11 @@ class SessionStore(root: File) {
         }
 
         fun itemFrom(o: JSONObject): ChatItem? = when (o.optString("k")) {
-            "user" -> ChatItem.User(o.getString("text"))
+            // Still queued when saved: the process ended before Pi took it.
+            "user" -> ChatItem.User(o.getString("text"), when (o.optString("delivery")) {
+                "Queued", "NotDelivered" -> Delivery.NotDelivered
+                else -> Delivery.Sent
+            })
             "assistant" -> ChatItem.Assistant(o.getString("text"))
             "error" -> ChatItem.Error(o.getString("text"))
             "step" -> ChatItem.Step(o.getString("tool"), o.optString("detail"), if (o.isNull("ok")) null else o.getBoolean("ok"), o.optString("result"))
