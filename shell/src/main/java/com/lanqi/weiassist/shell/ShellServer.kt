@@ -20,14 +20,27 @@ import java.util.concurrent.TimeUnit
  * When the app's process dies, it waits for it to come back and hands it over again. It never starts the
  * app itself. It ends on [exit], or when the app is uninstalled or updated (the app replaces it).
  */
-class ShellServer private constructor(private val appUid: Int, private val pkg: String, private val version: Long) : IShellService.Stub() {
+@android.annotation.SuppressLint("PrivateApi", "DiscouragedPrivateApi", "BlockedPrivateApi", "SoonBlockedPrivateApi") // runs as shell
+class ShellServer private constructor(
+    private val appUid: Int,
+    private val pkg: String,
+    private val version: Long,
+    private val displays: DisplayHost,
+) : IShellService.Stub() {
 
     override fun onTransact(code: Int, data: Parcel, reply: Parcel?, flags: Int): Boolean {
         val caller = Binder.getCallingUid()
         if (code != INTERFACE_TRANSACTION && caller != appUid && caller != Process.myUid()) {
             throw SecurityException("uid $caller may not use the WeiAssist shell helper")
         }
-        return super.onTransact(code, data, reply, flags)
+        // Binder carries only a few exception types back; anything else would reach the app as a silent 0/false.
+        return try {
+            super.onTransact(code, data, reply, flags)
+        } catch (e: SecurityException) { throw e } catch (e: IllegalArgumentException) { throw e } catch (e: IllegalStateException) { throw e
+        } catch (e: RuntimeException) {
+            log("call $code failed: $e")
+            throw IllegalStateException(((e as? java.lang.reflect.UndeclaredThrowableException)?.cause ?: e.cause ?: e).toString())
+        }
     }
 
     override fun getUid() = Process.myUid()
@@ -44,7 +57,32 @@ class ShellServer private constructor(private val appUid: Int, private val pkg: 
         return Bundle().apply { putInt("code", if (done) p.exitValue() else -1); putString("out", synchronized(out) { out.toString() }) }
     }
 
+    // ---- virtual displays ------------------------------------------------------------------------------
+
+    override fun createDisplay(name: String, width: Int, height: Int, densityDpi: Int): Int =
+        displays.create(name, width, height, densityDpi).also { log("display $it created for $name (${width}x$height@$densityDpi)") }
+
+    override fun releaseDisplay(displayId: Int) { displays.release(displayId); log("display $displayId released") }
+
+    override fun startActivity(displayId: Int, component: String): String {
+        require(displays.has(displayId)) { "no display $displayId" }
+        require(Regex("[\\w.]+/[\\w.$]+").matches(component)) { "bad component $component" }
+        // A task of its own (NEW_TASK | MULTIPLE_TASK): an app the user has open on the phone's screen stays there.
+        val r = exec("am start --display $displayId --user 0 -f 0x18000000 -n $component", 10_000)
+        return r.getString("out").orEmpty().trim()
+    }
+
+    override fun screenshot(displayId: Int, maxWidth: Int, quality: Int): ByteArray = displays.screenshot(displayId, maxWidth, quality)
+    override fun tap(displayId: Int, x: Float, y: Float, durationMs: Long) = displays.has(displayId) && displays.tap(displayId, x, y, durationMs)
+    override fun swipe(displayId: Int, x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long) =
+        displays.has(displayId) && displays.swipe(displayId, x1, y1, x2, y2, durationMs)
+    override fun key(displayId: Int, keyCode: Int) = displays.has(displayId) && displays.key(displayId, keyCode)
+
+    override fun activities(): String =
+        exec("dumpsys activity activities | grep -E '^Display #|mResumedActivity:|\\* Hist #'", 5_000).getString("out").orEmpty()
+
     override fun exit() {
+        displays.releaseAll()
         log("exit requested")
         Thread { Thread.sleep(100); System.exit(0) }.start()
     }
@@ -64,7 +102,8 @@ class ShellServer private constructor(private val appUid: Int, private val pkg: 
                     val gone = Object()
                     runCatching { client.linkToDeath({ synchronized(gone) { gone.notifyAll() } }, 0) }
                         .onSuccess { synchronized(gone) { while (client.isBinderAlive) gone.wait(30_000) } }
-                    log("app process gone")
+                    log("app process gone; releasing its displays")
+                    displays.releaseAll()
                     continue
                 }
             }
@@ -139,7 +178,7 @@ class ShellServer private constructor(private val appUid: Int, private val pkg: 
             val version = args[2].toLong()
             log("started uid=${Process.myUid()} pid=${Process.myPid()} for $pkg ($appUid) v$version")
             Looper.prepareMainLooper()
-            val server = ShellServer(appUid, pkg, version)
+            val server = ShellServer(appUid, pkg, version, DisplayHost(DisplayHost.shellContext()))
             Thread({ server.serve() }, "attach").start()
             Looper.loop()
         }

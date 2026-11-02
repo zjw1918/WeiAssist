@@ -107,8 +107,28 @@ run side by side. A session runs until its task ends or the user stops it; leavi
 - **Restoring:** a session gets an Agent on its first message in a runtime, with its saved transcript.
   So a session continues after the app restarts or Pi's renderer dies. Sessions that were working when
   the process died show as *Interrupted*; Continue sends a "continue where you left off" message.
-- **The screen:** phone sessions need a screen (`ScreenPool`). Today there is one, the phone's own, so
-  phone sessions take turns (*Waiting for the screen*) while chat sessions always run. Only the holder may act.
+- **The screen:** phone sessions need a screen (`ScreenPool`, in `Screens.kt`). With the shell helper running,
+  each gets a virtual display of its own (`DisplayScreenPool`, see below), so phone sessions run side by side
+  and never take the user's screen. Without it there is one screen, the phone's own: phone sessions take
+  turns (*Waiting for the screen*). Chat sessions always run. Only the holder may act on a screen.
+
+## A virtual display per phone session
+
+- **Created by the helper** (`DisplayHost`, as shell): 720×1600 at 320 dpi (a 360 dp phone layout at a third
+  of the pixels), public, untrusted (Android 12 gives shell no trusted displays), touchable, its apps closed
+  when it goes. It renders into an ImageReader in the helper that keeps only the newest frame (≤ 3 buffers).
+- **Driven per display:** reading the screen and node actions (click, set text, scroll) through the
+  accessibility service, on the display's top app window; touches, swipes, keys, app launches and
+  screenshots through the helper (`InputManager.injectInputEvent` with a display id, `am start --display`).
+  Text is set without focusing the field, so no keyboard appears on the user's screen. There is no home
+  screen on these displays: `open_app` switches apps.
+- **Lifecycle:** at most 3 at once. A display stays with its session for 3 minutes after a task ends or is
+  stopped (a follow-up finds the app as it was), and is taken back first when another session needs room.
+  Deleting a session releases it at once; the helper releases all displays when the app's process dies.
+- **One app, one task:** an app has one process, and a single-task app one window; launching it on a display
+  moves it there. So `open_app` refuses an app another *running* session has open, and a single-task app
+  the user has in front of them, and checks afterwards that the app landed on the session's display
+  (`DisplayTasks` parses `dumpsys activity activities`).
 - **Pause:** Pi's `beforeToolCall` asks Kotlin's `gate` before every tool call; a paused session waits
   there, and a phone action already waiting gives way. Stop aborts the session's Agent.
 

@@ -19,6 +19,24 @@ export const SCRIPTS = {
 	send: [{ tool: "read_screen", args: {} }, { tool: "tap", args: { id: 2 } }, { text: "sent" }],
 	buy_at: [{ tool: "tap_at", args: { x: 900, y: 2200 } }, { text: "ordered" }],
 	screens: [1, 2, 3, 4].map(() => ({ tool: "read_screen", args: {} })).concat([{ text: "read four screens" }]),
+	// A whole little task on the phone (used on a device: a session's own virtual display).
+	settings: [
+		{ tool: "open_app", args: { app: "com.android.settings" } },
+		{ tool: "read_screen", args: {} },
+		{ tool: "swipe", args: { direction: "up" } },
+		{ tool: "read_screen", args: {} },
+		{ tool: "screenshot", args: {} },
+		{ tool: "press_key", args: { key: "back" } },
+		{ text: "worked in Settings" },
+	],
+	douban: [
+		{ tool: "open_app", args: { app: "com.douban.frodo" } },
+		{ tool: "read_screen", args: {} },
+		{ tool: "wait", args: { ms: 3000 } },
+		{ tool: "read_screen", args: {} },
+		{ tool: "screenshot", args: {} },
+		{ text: "looked at Douban" },
+	],
 };
 
 function scriptedTurn(body) {

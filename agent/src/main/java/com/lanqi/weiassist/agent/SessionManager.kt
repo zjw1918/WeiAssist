@@ -18,25 +18,6 @@ import org.json.JSONObject
 import java.util.UUID
 
 /**
- * Where phone sessions get a screen to operate. For now there is one, the phone's own screen, so
- * phone sessions take turns (the others are [SessionStatus.Queued]); a session that only chats needs
- * no screen and always runs at once. Virtual displays will give each session its own.
- */
-interface ScreenPool {
-    /** Give [session] a screen, or false if none is free now. */
-    fun tryAcquire(session: String): Boolean
-    fun release(session: String)
-    fun holder(session: String): Boolean
-}
-
-class MainScreenPool : ScreenPool {
-    private var owner: String? = null
-    override fun tryAcquire(session: String) = (owner == null || owner == session).also { if (it) owner = session }
-    override fun release(session: String) { if (owner == session) owner = null }
-    override fun holder(session: String) = owner == session
-}
-
-/**
  * All conversations. Each session is its own Pi Agent in the one Pi runtime, so sessions run side by
  * side and keep running when their screen is closed; they end when their task is done or the user
  * stops them. Main thread only (state changes), with disk work on one background lane.
@@ -52,6 +33,7 @@ class SessionManager(
     private val strings: Strings,
     /** The model and thinking level a message uses, and the mock server URL in dev mode. */
     private val settings: () -> Triple<String, String, String?>,
+    private val screens: ScreenPool = MainScreenPool(),
 ) {
     /** Localized texts the manager needs (supplied by the controller, which has a Context). */
     interface Strings {
@@ -75,7 +57,6 @@ class SessionManager(
     /** Bumped per session when the user stops it, so a gate waiting in a paused session gives up. */
     private val stops = HashMap<String, Int>()
     private val queue = ArrayDeque<String>()
-    private val screens: ScreenPool = MainScreenPool()
     private val pendingWrites = HashMap<String, Job>()
 
     /** Load the saved sessions. Sessions that were working when the process ended are marked Interrupted. */
@@ -140,7 +121,7 @@ class SessionManager(
         if (flow.value.busy) return false
         val phone = flow.value.summary.phone
         val now = System.currentTimeMillis()
-        val canRun = !phone || screens.tryAcquire(id)
+        val canRun = !phone || screens.acquire(id) != null
         update(id) { s ->
             val titled = if (s.summary.title.isBlank()) s.copy(summary = s.summary.copy(title = text.trim().lineSequence().first().take(40))) else s
             SessionReducer.userMessage(titled, text.trim(), queued = !canRun, now = now)
@@ -181,7 +162,7 @@ class SessionManager(
         queue.remove(id)
         if (s.status != SessionStatus.Queued) scope.launch { pi.abort(id) }
         update(id) { SessionReducer.stopped(it, System.currentTimeMillis()) }
-        releaseScreen(id)
+        releaseScreen(id, now = false) // kept a while: the user may correct the task and go on
     }
 
     fun stopAll() = live.values.map { it.value }.filter { it.busy }.forEach { stop(it.id) }
@@ -210,6 +191,7 @@ class SessionManager(
     /** Remove the session for good: stop it, drop its Agent, delete its files. */
     fun delete(id: String) {
         stop(id)
+        screens.release(id)
         live.remove(id); watchers.remove(id); paused.remove(id); stops.remove(id); configured.remove(id)
         pendingWrites.remove(id)?.cancel()
         _summaries.update { l -> l.filterNot { it.id == id } }
@@ -257,8 +239,8 @@ class SessionManager(
 
     fun isPaused(id: String) = paused[id]?.value == true
 
-    /** Whether [id] may operate the phone's screen now (it holds the screen). */
-    fun holdsScreen(id: String) = screens.holder(id)
+    /** The screen session [id] operates now, if it holds one. */
+    fun screenOf(id: String) = screens.target(id)
 
     // ---- internals ------------------------------------------------------------------------------------
 
@@ -267,23 +249,29 @@ class SessionManager(
     val finished: kotlinx.coroutines.flow.SharedFlow<String> = _finished
 
     private fun finished(id: String) {
-        releaseScreen(id)
+        releaseScreen(id, now = false)
         _finished.tryEmit(id)
         evictIfUnused(id)
     }
 
-    /** The screen is free again: the longest-waiting phone session gets it. */
-    private fun releaseScreen(id: String) {
-        if (!screens.holder(id)) return
-        screens.release(id)
+    /**
+     * The session's task ended ([now] = false: its screen may be kept for a follow-up) or it was stopped
+     * or deleted ([now] = true). Then the longest-waiting phone session gets a screen, if one is free.
+     */
+    private fun releaseScreen(id: String, now: Boolean) {
+        if (now) screens.release(id) else screens.idle(id)
+        startQueued()
+    }
+
+    /** Start queued phone sessions while screens are free. */
+    fun startQueued() {
         while (queue.isNotEmpty()) {
             val next = queue.first()
             if (live[next]?.value?.status !in setOf(SessionStatus.Queued, SessionStatus.Paused)) { queue.removeFirst(); continue }
-            if (!screens.tryAcquire(next)) return
+            if (screens.acquire(next) == null) return
             queue.removeFirst()
             // A paused one keeps the screen; Pi's gate holds it before its first action until resumed.
             start(next)
-            return
         }
     }
 

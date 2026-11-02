@@ -40,6 +40,10 @@ class AgentController(context: Context) {
     /** Dev builds: send model calls to the local mock server (tools/mock-openai.mjs). */
     @Volatile var mockBaseUrl: String? = null
 
+    private val shell = com.lanqi.weiassist.shell.ShellBackend.get(appContext)
+    /** A virtual display per phone session while the shell helper runs; the phone's own screen otherwise. */
+    private val screens = DisplayScreenPool(shell)
+
     val sessions = SessionManager(
         pi, SessionStore(appContext.filesDir), scope,
         object : SessionManager.Strings {
@@ -47,7 +51,11 @@ class AgentController(context: Context) {
             override fun runtimeRestarted() = appContext.getString(R.string.err_runtime_restarted)
             override fun continueTask() = appContext.getString(R.string.continue_task)
         },
-    ) { Triple(_state.value.modelId, _state.value.thinkingLevel, mockBaseUrl) }
+        settings = { Triple(_state.value.modelId, _state.value.thinkingLevel, mockBaseUrl) },
+        screens = screens,
+    )
+
+    init { screens.isActive = { id -> sessions.summary(id)?.status?.active == true } }
 
     /** One-shot: Pi wants this URL opened in a browser (sign-in). */
     private val _openInBrowser = MutableSharedFlow<String>(extraBufferCapacity = 4)
@@ -61,12 +69,13 @@ class AgentController(context: Context) {
         pi.registerHostCall("gate") { m -> sessions.gate(m.getString("session")) }
         pi.registerHostCall("phone") { m ->
             val id = m.optString("session")
+            // Only the session holding a screen may act on it (see ScreenPool).
+            val target = sessions.screenOf(id)
             when {
-                // Only the session holding the screen may act on it (see ScreenPool).
-                !sessions.holdsScreen(id) -> "Another task is using the screen; this one has been stopped."
+                target == null -> "This task has no screen any more (the shell helper stopped, or another task took it). Stop and tell the user."
                 // Paused (or stopped) since Pi's gate let this call through: hold it here too.
                 !sessions.gate(id) -> "stopped by the user"
-                else -> phone.run(m) { sessions.isPaused(id) }
+                else -> phone.run(m, target) { sessions.isPaused(id) }
             }
         }
         pi.registerHostCall("confirm") { m ->
@@ -78,6 +87,12 @@ class AgentController(context: Context) {
             AgentAccessibilityService.instance?.confirm(if (title.isBlank()) head else "$head\n· $title", detail) ?: false
         }
         scope.launch { pi.messages.collect(::onPi) }
+        // The shell helper came: queued phone sessions get displays. It went: so did its displays.
+        scope.launch {
+            shell.state.collect { st ->
+                if (st is com.lanqi.weiassist.shell.ShellState.Running) sessions.startQueued() else screens.helperGone()
+            }
+        }
         scope.launch {
             sessions.load()
             loaded.complete(Unit)

@@ -16,13 +16,13 @@ class PhoneActions(private val context: Context) {
      * [paused]: the session was paused while this action waited (the user looking at the app); the
      * action then gives way, and Pi's gate holds the session before its next one.
      */
-    suspend fun run(m: JSONObject, paused: () -> Boolean = { false }): String {
+    suspend fun run(m: JSONObject, target: Target = Target.Main, paused: () -> Boolean = { false }): String {
         val action = m.getString("action")
-        android.util.Log.d(TAG, "$action start")
-        return runAction(m, paused).also { android.util.Log.d(TAG, "$action → ${it.lineSequence().firstOrNull()?.take(60)}") }
+        android.util.Log.d(TAG, "$action start (display ${target.displayId})")
+        return runAction(m, target, paused).also { android.util.Log.d(TAG, "$action → ${it.lineSequence().firstOrNull()?.take(60)}") }
     }
 
-    private suspend fun runAction(m: JSONObject, paused: () -> Boolean): String {
+    private suspend fun runAction(m: JSONObject, target: Target, paused: () -> Boolean): String {
         // Right after an update or reboot the system reconnects the service a moment later: wait briefly.
         var svc = AgentAccessibilityService.instance
         var waited = 0
@@ -31,14 +31,87 @@ class PhoneActions(private val context: Context) {
         // The user opened 小维助手 to look at progress: pause instead of taking the screen back.
         // (open_app is exempt: it is how a task leaves 小维助手 in the first place.)
         val gen = generation.get()
-        while (m.getString("action") !in setOf("open_app", "label_at") && svc.ownAppInFront()) {
+        // (A session on a virtual display has a screen of its own: the user looking at the app is no reason to wait.)
+        while (target is Target.Main && m.getString("action") !in setOf("open_app", "label_at") && svc.ownAppInFront()) {
             if (generation.get() != gen) return "stopped by the user"
             if (paused()) return "paused by the user before this action; do it again when you continue"
             kotlinx.coroutines.delay(300)
         }
         val a = m.optJSONObject("args") ?: JSONObject()
         val action = m.getString("action")
-        return kotlinx.coroutines.withTimeoutOrNull(15_000) { act(svc, action, a) } ?: "$action timed out"
+        return kotlinx.coroutines.withTimeoutOrNull(15_000) {
+            when (target) {
+                Target.Main -> act(svc, action, a)
+                is Target.Virtual -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { actVirtual(svc, target, action, a) }
+            }
+        } ?: "$action timed out"
+    }
+
+    /** The same actions on a session's own virtual display: reading and node actions through accessibility, input through the shell helper. */
+    private suspend fun actVirtual(svc: AgentAccessibilityService, t: Target.Virtual, action: String, a: JSONObject): String {
+        val d = t.displayId
+        suspend fun String.settled(maxMs: Long = 3_000) = also { svc.awaitIdle(d, maxMs = maxMs) }
+        return when (action) {
+            "read_screen" -> svc.readScreen(d, t.width, t.height)
+            "tap" -> svc.tap(a.getInt("id"), d) { x, y -> t.io.tap(x, y, 60) }.settled()
+            "tap_at" -> (if (t.io.tap(a.getInt("x").toFloat(), a.getInt("y").toFloat(), 60)) "tapped at ${a.getInt("x")},${a.getInt("y")}" else "tap failed").settled()
+            "long_press" -> svc.centerOf(a.getInt("id"), d).let { (x, y) -> if (t.io.tap(x, y, 700)) "long-pressed [${a.getInt("id")}]" else "long press failed" }.settled()
+            "type_text" -> svc.typeText(a.getInt("id"), a.getString("text"), d).settled()
+            "scroll" -> svc.scroll(a.optInt("id", -1), a.getString("direction") == "forward", d).settled()
+            "swipe" -> swipeVirtual(t, a.getString("direction"), a.optDouble("fraction", 0.6).toFloat()).settled()
+            "press_key" -> when (a.getString("key")) {
+                "back" -> (if (t.io.key(android.view.KeyEvent.KEYCODE_BACK)) "pressed back" else "could not press back").settled()
+                else -> "This task runs on a screen of its own, without a home screen or recent apps: use open_app to switch apps."
+            }
+            "open_app" -> openOnDisplay(t, a.getString("app")).settled(maxMs = 5_000)
+            "screenshot" -> t.io.screenshot(720, 70).let { if (it.isEmpty()) "error: no picture of this screen yet; try again" else android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
+            "label_at" -> svc.labelAt(a.getInt("x"), a.getInt("y"), d)
+            else -> "unknown action"
+        }
+    }
+
+    /**
+     * Open an app on the session's own display. One app has one process, and single-task apps one window:
+     * launching one that is elsewhere moves it here. So: never take an app another running task is using,
+     * nor a single-task app the user has open in front of them; and check that it really came here.
+     */
+    private fun openOnDisplay(t: Target.Virtual, app: String): String {
+        val (label, component) = resolveApp(app).getOrElse { return it.message.orEmpty() }
+        val pkg = component.substringBefore('/')
+        val before = t.io.tasks()
+        if (before != null) {
+            t.guard(pkg, before)?.let { return it }
+            if (before.resumed[0] == pkg && singleTask(component)) {
+                return "$label is open on the user's own screen right now, and it can only have one window: opening it here would take it " +
+                    "away from them. Tell the user, and ask them to switch away from $label (or to let you wait)."
+            }
+        }
+        val out = t.io.startActivity(component)
+        if ("Error" in out) return "could not open $label: ${out.lineSequence().lastOrNull { it.isNotBlank() }.orEmpty()}"
+        Thread.sleep(400) // the task is placed on its display asynchronously
+        val after = t.io.tasks()
+        if (after != null && t.displayId !in after.displaysOf(pkg)) {
+            return "$label opened, but on another screen (it can have only one window, which is in use there). Use another app or wait."
+        }
+        return "opened $label ($pkg); call read_screen to see it"
+    }
+
+    private fun singleTask(component: String): Boolean = runCatching {
+        val info = context.packageManager.getActivityInfo(android.content.ComponentName.unflattenFromString(component)!!, 0)
+        info.launchMode == android.content.pm.ActivityInfo.LAUNCH_SINGLE_TASK || info.launchMode == android.content.pm.ActivityInfo.LAUNCH_SINGLE_INSTANCE ||
+            info.launchMode == 4 // LAUNCH_SINGLE_INSTANCE_PER_TASK (Android 12)
+    }.getOrDefault(false)
+
+    private fun swipeVirtual(t: Target.Virtual, direction: String, fraction: Float): String {
+        val w = t.width.toFloat(); val h = t.height.toFloat(); val f = fraction.coerceIn(0.2f, 0.8f)
+        val (x1, y1, x2, y2) = when (direction) {
+            "up" -> listOf(w / 2, h * (0.5f + f / 2), w / 2, h * (0.5f - f / 2))
+            "down" -> listOf(w / 2, h * (0.5f - f / 2), w / 2, h * (0.5f + f / 2))
+            "left" -> listOf(w * (0.5f + f / 2), h / 2, w * (0.5f - f / 2), h / 2)
+            "right" -> listOf(w * (0.5f - f / 2), h / 2, w * (0.5f + f / 2), h / 2)
+            else -> return "direction must be up, down, left or right"
+        }
+        return if (t.io.swipe(x1, y1, x2, y2, 350)) "swiped $direction" else "swipe failed"
     }
 
     private suspend fun act(svc: AgentAccessibilityService, action: String, a: JSONObject): String {
@@ -61,7 +134,8 @@ class PhoneActions(private val context: Context) {
     /** Every action returns only once the screen has settled, so the next read sees the result. */
     private suspend fun String.settled(svc: AgentAccessibilityService, maxMs: Long = 3_000) = also { svc.awaitIdle(maxMs = maxMs) }
 
-    private fun openApp(svc: AgentAccessibilityService, app: String): String {
+    /** An installed app by name or package: its label and launcher component ("package/.Activity"). */
+    private fun resolveApp(app: String): Result<Pair<String, String>> {
         val pm = context.packageManager
         val launchers = pm.queryIntentActivities(
             Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER), PackageManager.MATCH_ALL,
@@ -70,10 +144,18 @@ class PhoneActions(private val context: Context) {
         val hit = launchers.firstOrNull { it.activityInfo.packageName.lowercase() == q }
             ?: launchers.firstOrNull { it.loadLabel(pm).toString().lowercase() == q }
             ?: launchers.firstOrNull { it.loadLabel(pm).toString().lowercase().contains(q) }
-            ?: return "No installed app matches \"$app\"."
-        val intent = pm.getLaunchIntentForPackage(hit.activityInfo.packageName) ?: return "\"$app\" can't be launched."
+            ?: return Result.failure(IllegalArgumentException("No installed app matches \"$app\"."))
+        val component = pm.getLaunchIntentForPackage(hit.activityInfo.packageName)?.component
+            ?: return Result.failure(IllegalArgumentException("\"$app\" can't be launched."))
+        return Result.success(hit.loadLabel(pm).toString() to component.flattenToShortString())
+    }
+
+    private fun openApp(svc: AgentAccessibilityService, app: String): String {
+        val (label, component) = resolveApp(app).getOrElse { return it.message.orEmpty() }
+        val pkg = component.substringBefore('/')
+        val intent = context.packageManager.getLaunchIntentForPackage(pkg) ?: return "\"$app\" can't be launched."
         svc.openApp(intent)
-        return "opened ${hit.loadLabel(pm)} (${hit.activityInfo.packageName}); call read_screen to see it"
+        return "opened $label ($pkg); call read_screen to see it"
     }
 
     fun isEnabled() = AgentAccessibilityService.instance != null

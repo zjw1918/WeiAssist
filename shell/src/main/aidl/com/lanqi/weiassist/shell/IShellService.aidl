@@ -16,4 +16,23 @@ interface IShellService {
     Bundle exec(String command, long timeoutMs);
     /** End the helper. */
     oneway void exit();
+
+    // ---- virtual displays (one per phone session) ----------------------------------------------------
+
+    /** Create a virtual display that other apps can be launched on; returns its display id. */
+    int createDisplay(String name, int width, int height, int densityDpi);
+    /** Remove it; the apps on it are closed. */
+    void releaseDisplay(int displayId);
+    /** Launch [component] ("package/.Activity") on the display in a task of its own. Returns am's output. */
+    String startActivity(int displayId, String component);
+    /** A JPEG of the display's latest frame, at most [maxWidth] wide; empty if there is no frame yet. */
+    byte[] screenshot(int displayId, int maxWidth, int quality);
+    /** Touch at a point; [durationMs] >= 500 is a long press. Returns whether input was injected. */
+    boolean tap(int displayId, float x, float y, long durationMs);
+    /** A straight swipe like a finger, over [durationMs]. */
+    boolean swipe(int displayId, float x1, float y1, float x2, float y2, long durationMs);
+    /** A key (KeyEvent.KEYCODE_*) pressed and released on the display. */
+    boolean key(int displayId, int keyCode);
+    /** Which apps are on which display: the display and activity lines of `dumpsys activity activities`. */
+    String activities();
 }

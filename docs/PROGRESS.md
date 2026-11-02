@@ -66,6 +66,21 @@ _Last updated: 2026-11-01_
   connect port is found by a loopback scan (about 10 s, then cached); ColorOS refuses `pm grant` from shell.
 - **Tests:** JVM 5 (HKDF RFC 5869 vector, GCM counters, adb public-key layout, certificate, adb framing).
 
+### A virtual display per phone session (2026-11-01)
+- Phone sessions get their own virtual display from the shell helper (3 at most, kept 3 minutes after a task);
+  without the helper they still take turns on the phone's screen.
+- `open_app` guards: an app another running session uses is refused; so is a single-task app open in front of
+  the user; after launching, the app must be on the session's display.
+- **Verified on the realme:** two mock sessions in Settings and Douban at the same time on displays 8 and 9,
+  each reading its own screen, screenshots correct, the user's screen unchanged; two sessions wanting Settings:
+  the second was refused; the idle display was taken back when a fourth was needed. Real model, at the same time:
+  "打开设置，查看电池电量是多少" (→ 100%) and "在 Gmail 里搜索 invoice…" (typed into Gmail's search on its own
+  display; no keyboard on the user's screen) — both answered.
+- **Learned on the device:** `ActivityThread.systemMain()` must run on the helper's main thread; an exception
+  type Binder can't carry reached the app as a silent 0 (now converted to IllegalStateException); `Settings`
+  is single-task, so a second launch moves it between displays.
+- **Tests:** JVM 3 more (DisplayTasks).
+
 ### Verified on a real device (realme RMX2121, Android 12)
 - ChatGPT subscription sign-in, then "你好" through Pi (`gpt-6.1-sol`).
 - Gmail: sent an email to two different addresses, each after the confirmation card.
@@ -79,7 +94,7 @@ _Last updated: 2026-11-01_
 ## Next: multi-session, steps 2–5
 
 - [x] **2. Built-in shell backend:** pairing, adb over TLS, shell helper with Binder link. Not yet: tested across a reboot.
-- [ ] **3. A virtual display per phone session:** create/launch/input through the helper; read screens per display through accessibility.
+- [x] **3. A virtual display per phone session:** create/launch/input through the helper; read screens per display through accessibility.
 - [ ] **4. Live previews:** the display's Surface rendered in the session page and the list; adaptive size and frame rate; nothing rendered when hidden.
 - [ ] **5. Supervisor session:** a session whose tools manage the others (create, start, pause, resume, stop, delete, message); voice-ready.
 

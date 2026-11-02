@@ -25,8 +25,8 @@ import kotlinx.coroutines.delay
  */
 class AgentAccessibilityService : AccessibilityService() {
 
-    /** Elements from the latest read_screen, by the id the model sees. */
-    private val nodes = mutableMapOf<Int, AccessibilityNodeInfo>()
+    /** Elements from the latest read_screen of each display, by the id the model sees (one session per display). */
+    private val nodesByDisplay = java.util.concurrent.ConcurrentHashMap<Int, Map<Int, AccessibilityNodeInfo>>()
 
     override fun onServiceConnected() { instance = this; _running.value = true; android.util.Log.d("AgentA11y", "connected") }
     override fun onDestroy() {
@@ -34,35 +34,64 @@ class AgentAccessibilityService : AccessibilityService() {
         if (instance === this) { instance = null; _running.value = false }
         super.onDestroy()
     }
-    /** Time of the last UI change event, for [awaitIdle]. */
-    @Volatile private var lastUiEvent = 0L
+    /** Time of the last UI change event per display, for [awaitIdle]. */
+    private val lastUiEvent = java.util.concurrent.ConcurrentHashMap<Int, Long>()
+    /** Which display each window is on (events only name their window). */
+    private val windowDisplay = java.util.concurrent.ConcurrentHashMap<Int, Int>()
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event?.packageName != packageName) lastUiEvent = android.os.SystemClock.uptimeMillis()
+        if (event == null || event.packageName == packageName) return
+        val display = displayOfWindow(event.windowId)
+        lastUiEvent[display] = android.os.SystemClock.uptimeMillis()
     }
 
-    /** After an action: wait until the screen has stopped changing (quiet for [quietMs]), at most [maxMs]. */
-    suspend fun awaitIdle(quietMs: Long = 450, maxMs: Long = 3_000) {
+    private fun displayOfWindow(windowId: Int): Int {
+        if (windowId < 0) return 0
+        windowDisplay[windowId]?.let { return it }
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            val all = windowsOnAllDisplays
+            for (i in 0 until all.size()) all.valueAt(i).forEach { w -> windowDisplay[w.id] = all.keyAt(i) }
+            if (windowDisplay.size > 500) windowDisplay.clear() // window ids are not reused often; keep it small
+        }
+        return windowDisplay[windowId] ?: 0
+    }
+
+    /** After an action: wait until [display] has stopped changing (quiet for [quietMs]), at most [maxMs]. */
+    suspend fun awaitIdle(display: Int = 0, quietMs: Long = 450, maxMs: Long = 3_000) {
         val start = android.os.SystemClock.uptimeMillis()
         delay(150) // let the action's first events arrive
         while (true) {
             val now = android.os.SystemClock.uptimeMillis()
-            if (now - lastUiEvent >= quietMs || now - start >= maxMs) return
+            if (now - (lastUiEvent[display] ?: 0L) >= quietMs || now - start >= maxMs) return
             delay(100)
         }
+    }
+
+    /** The top app window's content on [display] (a virtual one: no active window there for the system). */
+    private fun rootOf(display: Int): AccessibilityNodeInfo? {
+        if (display == 0) return rootInActiveWindow
+        if (android.os.Build.VERSION.SDK_INT < 30) return null
+        val windows = windowsOnAllDisplays.get(display) ?: return null
+        // Top first; a dialog is its own application window above the activity.
+        return windows.firstOrNull { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION && it.root != null }?.root
     }
     override fun onInterrupt() {}
 
     fun ownAppInFront() = rootInActiveWindow?.packageName == packageName
 
+    private fun isMain(display: Int) = display == 0
+
     // ---- eyes -------------------------------------------------------------------------------------
-    fun readScreen(): String {
-        nodes.clear()
-        val root = rootInActiveWindow ?: return "(screen not readable right now; wait and try again)"
+    /** [width]/[height]: the display's size (the phone's own screen when null). */
+    fun readScreen(display: Int = 0, width: Int? = null, height: Int? = null): String {
+        val nodes = HashMap<Int, AccessibilityNodeInfo>()
+        nodesByDisplay[display] = nodes
+        val root = rootOf(display) ?: return if (isMain(display)) "(screen not readable right now; wait and try again)"
+            else "(nothing on this task's screen yet: use open_app)"
         // Never let the agent operate 小维助手 itself (its Stop / sign-out buttons, its own settings).
         if (root.packageName == packageName) return OWN_APP
         val size = resources.displayMetrics
-        val out = StringBuilder("app: ${root.packageName}  screen: ${size.widthPixels}x${size.heightPixels}\n")
+        val out = StringBuilder("app: ${root.packageName}  screen: ${width ?: size.widthPixels}x${height ?: size.heightPixels}\n")
         var next = 1
         var omitted = 0
         val bounds = Rect()
@@ -102,19 +131,24 @@ class AgentAccessibilityService : AccessibilityService() {
     }
 
     // ---- hands ------------------------------------------------------------------------------------
-    private fun node(id: Int): AccessibilityNodeInfo {
-        val n = nodes[id] ?: error("no element [$id]; call read_screen again")
-        check(n.packageName != packageName && rootInActiveWindow?.packageName != packageName) { OWN_APP }
+    private fun node(id: Int, display: Int = 0): AccessibilityNodeInfo {
+        val n = nodesByDisplay[display]?.get(id) ?: error("no element [$id]; call read_screen again")
+        check(n.packageName != packageName && (!isMain(display) || rootInActiveWindow?.packageName != packageName)) { OWN_APP }
         return n
     }
 
-    suspend fun tap(id: Int): String {
-        val n = node(id)
+    /** The centre of element [id] (from the latest read_screen of [display]). */
+    fun centerOf(id: Int, display: Int): Pair<Float, Float> = Rect().also(node(id, display)::getBoundsInScreen).let { it.exactCenterX() to it.exactCenterY() }
+
+    /** [gesture]: how to tap a point on [display] when the element can't be clicked through accessibility. */
+    suspend fun tap(id: Int, display: Int = 0, gesture: (suspend (Float, Float) -> Boolean)? = null): String {
+        val n = node(id, display)
         var target: AccessibilityNodeInfo? = n
         while (target != null && !target.isClickable) target = target.parent
         if (target != null && target.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return "tapped [$id]"
         // Not clickable through accessibility: tap its centre like a finger would.
         val r = Rect().also(n::getBoundsInScreen)
+        if (gesture != null) return if (gesture(r.exactCenterX(), r.exactCenterY())) "tapped [$id] at ${r.centerX()},${r.centerY()}" else "tap on [$id] failed"
         val path = Path().apply { moveTo(r.exactCenterX(), r.exactCenterY()) }
         val done = CompletableDeferred<Boolean>()
         val sent = dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, 60)).build(),
@@ -126,16 +160,17 @@ class AgentAccessibilityService : AccessibilityService() {
         return if (kotlinx.coroutines.withTimeoutOrNull(3_000) { done.await() } == true) "tapped [$id] at ${r.centerX()},${r.centerY()}" else "tap on [$id] failed"
     }
 
-    fun typeText(id: Int, value: String): String {
-        val n = node(id)
+    fun typeText(id: Int, value: String, display: Int = 0): String {
+        val n = node(id, display)
         if (!n.isEditable) return "[$id] is not editable"
-        n.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        // On a virtual display, focusing would bring up the keyboard on the user's screen: set the text only.
+        if (isMain(display)) n.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
         val args = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value) }
         return if (n.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) "typed into [$id]" else "could not type into [$id]"
     }
 
-    fun scroll(id: Int, forward: Boolean): String {
-        val n = if (id > 0) node(id) else nodes.values.firstOrNull { it.isScrollable } ?: return "nothing scrollable"
+    fun scroll(id: Int, forward: Boolean, display: Int = 0): String {
+        val n = if (id > 0) node(id, display) else nodesByDisplay[display]?.values?.firstOrNull { it.isScrollable } ?: return "nothing scrollable"
         val action = if (forward) AccessibilityNodeInfo.ACTION_SCROLL_FORWARD else AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
         return if (n.performAction(action)) "scrolled" else "could not scroll"
     }
@@ -187,9 +222,9 @@ class AgentAccessibilityService : AccessibilityService() {
         return if (ok) "swiped $direction" else "swipe failed"
     }
 
-    /** What a tap at (x, y) would hit: the text of the clickable element there (for the confirm hook). */
-    fun labelAt(x: Int, y: Int): String {
-        val root = rootInActiveWindow ?: return ""
+    /** What a tap at (x, y) on [display] would hit: the text of the clickable element there (for the confirm hook). */
+    fun labelAt(x: Int, y: Int, display: Int = 0): String {
+        val root = rootOf(display) ?: return ""
         val r = Rect()
         fun find(n: AccessibilityNodeInfo): AccessibilityNodeInfo? {
             n.getBoundsInScreen(r)
