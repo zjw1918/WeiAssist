@@ -65,12 +65,14 @@ fun SessionListScreen(vm: AppViewModel, s: AgentState) {
     val all by vm.sessions.collectAsStateWithLifecycle()
     val supervisor = all.firstOrNull { it.supervisor }
     val sessions = all.filterNot { it.supervisor }
-    val busy = sessions.filter { it.status.active }
+    // Running sessions in a fixed order (newest first by creation): every step updates updatedAt, so ordering them
+    // by it made the cards swap places constantly. Finished ones: most recent first.
+    val busy = sessions.filter { it.status.active }.sortedByDescending { it.createdAt }
     val rest = sessions.filterNot { it.status.active }
     LazyColumn(Modifier.fillMaxSize().imePadding(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { SupervisorCard(vm, supervisor) }
         item { NewTaskCard(vm) }
-        item { LiveStrip(vm, sessions) }
+        item { LiveStrip(vm, sessions.sortedByDescending { it.createdAt }) } // thumbnails never move
         if (busy.size > 1) item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(androidx.compose.ui.res.pluralStringResource(R.plurals.sessions_running, busy.size, busy.size), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
@@ -123,14 +125,24 @@ private fun SupervisorCard(vm: AppViewModel, s: SessionSummary?) {
     }
 }
 
-/** The sessions' screens side by side, live, while they have one. Tap one to open its session. */
+/**
+ * Whether a session has used its screen (opened an app there, or read one): until then its display is blank, and
+ * most sessions only talk, so there is nothing to preview.
+ */
+private val SessionSummary.usedScreen get() = app != null
+
+/** The sessions' screens side by side, live, while they have one (when shown). Tap one to open its session. */
 @Composable
 private fun LiveStrip(vm: AppViewModel, sessions: List<SessionSummary>) {
     val displays by vm.displays.collectAsStateWithLifecycle()
-    val shown = sessions.filter { it.id in displays }
+    val shown = sessions.filter { it.id in displays && it.usedScreen }
     if (shown.isEmpty()) return
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(stringResource(R.string.live_screens), style = MaterialTheme.typography.titleSmall)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.live_screens) + if (vm.showPreviews) "" else " (${shown.size})", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            TextButton(onClick = { vm.showPreviews(!vm.showPreviews) }) { Text(stringResource(if (vm.showPreviews) R.string.hide else R.string.show)) }
+        }
+        if (!vm.showPreviews) return@Column
         androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             items(shown, key = { it.id }) { s ->
                 Column(Modifier.width(104.dp).clickable { vm.open(s.id) }, horizontalAlignment = Alignment.CenterHorizontally) {
@@ -303,7 +315,11 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
             TextButton(onClick = { confirmDelete = true; menu = false }) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }
         }
         val displays by vm.displays.collectAsStateWithLifecycle()
-        displays[s.id]?.let { display ->
+        displays[s.id]?.takeIf { s.usedScreen }?.let { display ->
+            if (!vm.showPreviews) {
+                TextButton(onClick = { vm.showPreviews(true) }, modifier = Modifier.padding(horizontal = 4.dp)) { Text(stringResource(R.string.show_live_screen)) }
+                return@let
+            }
             var large by rememberSaveable { mutableStateOf(false) }
             Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), contentAlignment = Alignment.Center) {
                 LivePreview(
@@ -311,6 +327,7 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
                     Modifier.height(if (large) 520.dp else 240.dp).clickable { large = !large },
                     stringResource(R.string.live_screen_of, s.title),
                 )
+                TextButton(onClick = { vm.showPreviews(false) }, modifier = Modifier.align(Alignment.TopEnd)) { Text(stringResource(R.string.hide)) }
             }
         }
         val list = rememberLazyListState()

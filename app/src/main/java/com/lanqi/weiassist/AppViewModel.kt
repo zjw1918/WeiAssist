@@ -82,6 +82,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var reply by mutableStateOf("")
     /** New tasks may operate the phone (needs the accessibility service). */
     var phoneMode by mutableStateOf(prefs.getBoolean("phoneMode", false))
+    /** Show the live screens of sessions that have used theirs (see usedScreen); the user may hide them. */
+    var showPreviews by mutableStateOf(prefs.getBoolean("showLivePreviews", true))
+        private set
+    fun showPreviews(on: Boolean) { showPreviews = on; prefs.edit().putBoolean("showLivePreviews", on).apply() }
     var useMock by mutableStateOf(false)
         private set
 
