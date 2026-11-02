@@ -9,40 +9,28 @@ import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.net.toUri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.lanqi.weiassist.agent.AgentState
 import com.lanqi.weiassist.agent.Screen
 import com.lanqi.weiassist.ui.ApiKeySignIn
-import com.lanqi.weiassist.ui.ModelPicker
+import com.lanqi.weiassist.ui.AppTheme
+import com.lanqi.weiassist.ui.HomeScreen
 import com.lanqi.weiassist.ui.SubscriptionSignIn
-import com.lanqi.weiassist.ui.SessionListScreen
-import com.lanqi.weiassist.ui.SessionScreen
 import com.lanqi.weiassist.ui.WelcomeScreen
 
 class MainActivity : ComponentActivity() {
@@ -88,7 +76,7 @@ class MainActivity : ComponentActivity() {
         readDebug(intent)
         if (savedInstanceState == null) openSession.value = intent.getStringExtra(com.lanqi.weiassist.agent.AgentService.EXTRA_SESSION)
         enableEdgeToEdge()
-        setContent { MaterialTheme { App() } }
+        setContent { AppTheme { App() } }
     }
 }
 
@@ -130,26 +118,28 @@ fun MainActivity.App(vm: AppViewModel = viewModel()) {
         }.filter { androidx.core.content.ContextCompat.checkSelfPermission(context, it) != android.content.pm.PackageManager.PERMISSION_GRANTED }
         if (wanted.isNotEmpty()) ask.launch(wanted.toTypedArray())
     }
-    val openId by vm.openId.collectAsStateWithLifecycle()
+    if (s.screen == Screen.Connected) {
+        HomeScreen(vm, s)
+        return
+    }
     Scaffold { inner ->
-        if (s.screen == Screen.Connected) Column(Modifier.fillMaxSize().padding(inner)) {
-            // The session list and a session's page manage their own scrolling.
-            if (openId == null) SessionListScreen(vm, s)
-            else {
-                val session by vm.session.collectAsStateWithLifecycle()
-                SessionScreen(vm, session)
+        if (s.screen == Screen.Starting) {
+            Column(Modifier.fillMaxSize().padding(inner), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                CircularProgressIndicator()
+                Text(stringResource(R.string.starting_pi), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(top = 16.dp))
             }
-        } else Column(
-            Modifier.fillMaxSize().padding(inner).padding(20.dp).verticalScroll(rememberScrollState()),
+            return@Scaffold
+        }
+        Column(
+            Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 32.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             when (val screen = s.screen) {
-                Screen.Starting -> Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(); Text("  " + stringResource(R.string.starting_pi)) }
                 Screen.Welcome -> WelcomeScreen(s.provider, s.piVersion, s.signIn.error, vm::signIn)
                 is Screen.SigningIn ->
                     if (screen.method.type == "oauth") SubscriptionSignIn(s.signIn.authUrl, s.signIn.progress, s.signIn.prompt, vm::reopenBrowser, vm::submitPrompt, vm::cancelSignIn)
                     else ApiKeySignIn(s.signIn.prompt, s.signIn.progress, vm::submitPrompt, vm::cancelSignIn)
-                Screen.Connected -> Unit
+                Screen.Starting, Screen.Connected -> Unit
             }
         }
     }

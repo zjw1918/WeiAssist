@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -35,8 +35,7 @@ import kotlinx.coroutines.launch
  * permission) with the button that fixes it, and a check that commands really run.
  */
 @Composable
-fun TermuxSection(termux: Termux?) {
-    if (termux == null) return
+fun TermuxSection(termux: Termux) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
     // Re-read the state when the user comes back (from installing Termux, or from the permission screen).
@@ -52,24 +51,23 @@ fun TermuxSection(termux: Termux?) {
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted -> seen++; denied = !granted }
     fun open(intent: Intent) = runCatching { ctx.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
 
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(stringResource(R.string.termux_title), style = MaterialTheme.typography.titleSmall)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         val status = when {
             !installed -> stringResource(R.string.termux_missing)
             !runnable -> stringResource(R.string.termux_play_build)
             !permitted -> stringResource(R.string.termux_no_permission)
             else -> stringResource(R.string.termux_installed)
         }
-        Text(status, style = MaterialTheme.typography.bodyMedium)
-        Text(stringResource(R.string.termux_why), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+        Text(status, style = MaterialTheme.typography.bodyLarge)
+        Text(stringResource(R.string.termux_why), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             when {
-                !installed || !runnable -> OutlinedButton(onClick = { open(Intent(Intent.ACTION_VIEW, Uri.parse(DOWNLOAD))) }) { Text(stringResource(R.string.termux_download)) }
-                !permitted -> OutlinedButton(onClick = {
+                !installed || !runnable -> FilledTonalButton(onClick = { open(Intent(Intent.ACTION_VIEW, Uri.parse(DOWNLOAD))) }) { Text(stringResource(R.string.termux_download)) }
+                !permitted -> FilledTonalButton(onClick = {
                     if (denied) open(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", ctx.packageName, null)))
                     else ask.launch(Termux.PERMISSION)
                 }) { Text(stringResource(R.string.termux_allow)) }
-                else -> OutlinedButton(enabled = !checking, onClick = {
+                else -> FilledTonalButton(enabled = !checking, onClick = {
                     checking = true
                     scope.launch { check = termux.check(); checking = false }
                 }) { Text(stringResource(if (checking) R.string.termux_checking else R.string.termux_check)) }
@@ -78,7 +76,7 @@ fun TermuxSection(termux: Termux?) {
                 open(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", Termux.PACKAGE, null)))
             }) { Text(stringResource(R.string.termux_app_settings)) }
         }
-        if (installed && runnable) Text(stringResource(R.string.termux_background), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+        if (installed && runnable) Text(stringResource(R.string.termux_background), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         check?.let { (ok, text) ->
             Text(
                 stringResource(if (ok) R.string.termux_ready else R.string.termux_not_ready), style = MaterialTheme.typography.bodySmall,

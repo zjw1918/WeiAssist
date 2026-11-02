@@ -4,7 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -38,8 +38,7 @@ fun ShellSection() {
     val state by backend.state.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
     var test by remember { mutableStateOf<String?>(null) }
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(stringResource(R.string.shell_title), style = MaterialTheme.typography.titleSmall)
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         val (status, detail) = when (val s = state) {
             ShellState.Unsupported -> stringResource(R.string.shell_unsupported) to null
             ShellState.NotPaired -> stringResource(R.string.shell_not_paired) to stringResource(R.string.shell_why)
@@ -47,17 +46,17 @@ fun ShellSection() {
             ShellState.Starting -> stringResource(R.string.shell_starting) to null
             is ShellState.Running -> stringResource(R.string.shell_running, if (s.uid == 0) "root" else if (s.uid == 2000) "shell" else s.uid.toString()) to null
         }
-        Text(status, style = MaterialTheme.typography.bodyMedium)
-        detail?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline) }
+        Text(status, style = MaterialTheme.typography.bodyLarge)
+        detail?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             when (state) {
-                ShellState.NotPaired -> OutlinedButton(onClick = { PairingService.begin(ctx) }) { Text(stringResource(R.string.shell_set_up)) }
+                ShellState.NotPaired -> FilledTonalButton(onClick = { PairingService.begin(ctx) }) { Text(stringResource(R.string.shell_set_up)) }
                 is ShellState.Stopped -> {
-                    OutlinedButton(onClick = { scope.launch { backend.start() } }) { Text(stringResource(R.string.shell_start)) }
+                    FilledTonalButton(onClick = { scope.launch { backend.start() } }) { Text(stringResource(R.string.shell_start)) }
                     TextButton(onClick = { backend.unpair() }) { Text(stringResource(R.string.shell_unpair)) }
                 }
                 is ShellState.Running -> {
-                    OutlinedButton(onClick = {
+                    FilledTonalButton(onClick = {
                         scope.launch {
                             test = withContext(Dispatchers.IO) {
                                 runCatching { backend.service()?.exec("id; getprop ro.build.version.release", 5_000)?.getString("out")?.trim() }
@@ -70,6 +69,6 @@ fun ShellSection() {
                 else -> Unit
             }
         }
-        test?.let { Text(it, fontFamily = FontFamily.Monospace, fontSize = 11.sp) }
+        test?.let { Text(it, fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }

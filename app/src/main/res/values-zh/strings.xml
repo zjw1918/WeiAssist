@@ -5,7 +5,6 @@
     <string name="auth_subscription">ChatGPT 订阅</string>
     <string name="auth_api_key">API key</string>
     <string name="pi_runtime_info">Pi %1$s（pi-agent-core + pi-ai，运行在后台服务里）</string>
-    <string name="phone_mode">让小维助手操作手机</string>
     <string name="a11y_needed">需要先在“设置 → 无障碍”里打开小维助手，它才能看屏幕、点按钮。</string>
     <string name="open_a11y_settings">打开无障碍设置</string>
     <string name="task_label">要小维助手做什么</string>
@@ -66,8 +65,7 @@
         <item quantity="other">%1$d 个进行中</item>
     </plurals>
     <string name="stop_all">全部停止</string>
-    <string name="sessions_history">对话</string>
-    <string name="sessions_empty">还没有对话。在上面输入任务，点「开始」。</string>
+    <string name="sessions_empty">点「新会话」开始一个，或者告诉总管你要做什么。</string>
     <string name="kind_phone">手机任务</string>
     <string name="kind_chat">聊天</string>
     <string name="pause">暂停</string>
@@ -77,8 +75,6 @@
     <string name="status_queued">等待屏幕</string>
     <string name="status_paused">已暂停</string>
     <string name="status_interrupted">已中断</string>
-    <string name="settings">设置</string>
-    <string name="settings_summary">%1$s · %2$s</string>
     <string name="delete">删除</string>
     <string name="delete_title">删除这个对话？</string>
     <string name="delete_text">对话内容会从手机上删除。正在执行的任务会先停止。它在 Termux 里的文件（~/sessions/…）会保留。</string>
@@ -119,4 +115,43 @@
     <string name="termux_background">长时间任务（服务器、编译）：请在 Termux 的应用设置里允许自启动，并将省电策略设为无限制。</string>
     <string name="termux_ready">可以使用</string>
     <string name="termux_not_ready">尚未就绪</string>
+    <!-- 导航和通用操作 -->
+    <string name="tab_sessions">会话</string>
+    <string name="tab_providers">AI 服务</string>
+    <string name="tab_settings">设置</string>
+    <string name="back">返回</string>
+    <string name="more">更多选项</string>
+    <string name="clear">清空</string>
+    <string name="save">保存</string>
+    <string name="rename">重命名</string>
+    <string name="rename_title">重命名对话</string>
+    <string name="voice_input">语音输入</string>
+    <!-- 会话 -->
+    <string name="new_session">新会话</string>
+    <string name="kind_chat_hint">回答问题，也能运行命令。不会操作其他应用。</string>
+    <string name="kind_phone_hint">替你操作手机上的应用：打开、点按、输入和滑动。</string>
+    <string name="sessions_recent">最近</string>
+    <string name="sessions_empty_title">还没有对话</string>
+    <string name="hide_pi_events">隐藏 Pi 事件</string>
+    <!-- AI 服务 -->
+    <string name="section_provider">服务商</string>
+    <string name="provider_connected">已连接</string>
+    <string name="provider_via">已通过%1$s连接</string>
+    <string name="switch_method_hint">删除保存的登录信息。重新登录即可换账号或换登录方式。</string>
+    <string name="section_model">模型</string>
+    <string name="providers_footnote">新消息使用这里选的模型。正在进行的会话在下一条消息时才会换用。</string>
+    <!-- 设置 -->
+    <string name="section_phone">操作手机</string>
+    <string name="a11y_service">无障碍服务</string>
+    <string name="a11y_on">已开启：手机任务可以看屏幕、点按钮。</string>
+    <string name="a11y_off">未开启：手机任务需要它来看屏幕、点按钮。</string>
+    <string name="show_live_screens">显示实时画面</string>
+    <string name="show_live_screens_hint">看手机任务在各自的屏幕上工作。</string>
+    <string name="section_general">通用</string>
+    <string name="language">语言</string>
+    <string name="language_hint">在系统设置里选择本应用的语言。</string>
+    <string name="section_developer">开发者</string>
+    <string name="section_about">关于</string>
+    <string name="version">版本 %1$s</string>
+    <string name="runtime">运行环境</string>
 </resources>

@@ -188,6 +188,20 @@ Chat and phone sessions can now run Linux commands in Termux with a `bash` tool 
   from the Mac through `adb forward` after the task ended, with Termux's wake lock held; deleting the session
   stopped the server and released the wake lock (that build also removed the folder; since then files are kept). Old session previews now show without Markdown markers.
 
+### UI redesign: bottom tabs (2026-11-02)
+- **Three tabs** on a bottom navigation bar: *Sessions* (supervisor, live screens, running and recent
+  conversations; a badge counts running ones), *AI providers* (provider, sign-in, sign out, model and thinking
+  level), *Settings* (accessibility, live screens, shell backend, Termux, app language, developer, about).
+  An open session takes the whole screen; Back returns to the list, which keeps its scroll position.
+- **New session** is a button (FAB) that opens a sheet: Chat / Phone task as a segmented choice, with what each does.
+- **Session rows:** kind avatar, title, time, preview, status, pause/stop icons; long-press to rename or delete.
+- **Chat page:** top bar with back, status and a menu (rename, Pi events, delete); answers as page text, the
+  user's messages as bubbles; one message box style everywhere, with a **one-tap clear** button while it has text.
+- **Theme:** Material 3 with wallpaper colours on Android 12+, a calm blue otherwise; light and dark follow the system.
+  Icons are vector drawables in `res/drawable` (no icon library). Code: `ui/Home.kt`, `Sessions.kt`,
+  `Providers.kt`, `SettingsScreen.kt`, `Components.kt`, `Theme.kt`.
+- **Verified on the Xiaomi:** all three tabs, the chat page above the keyboard, clear, and the new-session sheet.
+
 ### Verified on a real device (realme RMX2121, Android 12)
 - ChatGPT subscription sign-in, then "你好" through Pi (`gpt-6.1-sol`).
 - Gmail: sent an email to two different addresses, each after the confirmation card.

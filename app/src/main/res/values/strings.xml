@@ -5,7 +5,6 @@
     <string name="auth_subscription">ChatGPT subscription</string>
     <string name="auth_api_key">API key</string>
     <string name="pi_runtime_info">Pi %1$s (pi-agent-core + pi-ai, running in a background service)</string>
-    <string name="phone_mode">Let WeiAssist operate the phone</string>
     <string name="a11y_needed">First turn on WeiAssist in Settings → Accessibility, so it can see the screen and tap buttons.</string>
     <string name="open_a11y_settings">Open accessibility settings</string>
     <string name="task_label">What should WeiAssist do?</string>
@@ -67,8 +66,7 @@
         <item quantity="other">%1$d running</item>
     </plurals>
     <string name="stop_all">Stop all</string>
-    <string name="sessions_history">Conversations</string>
-    <string name="sessions_empty">No conversations yet. Type a task above and tap Start.</string>
+    <string name="sessions_empty">Tap New session to start one, or tell the supervisor what to get done.</string>
     <string name="kind_phone">Phone task</string>
     <string name="kind_chat">Chat</string>
     <string name="pause">Pause</string>
@@ -78,8 +76,6 @@
     <string name="status_queued">Waiting for the screen</string>
     <string name="status_paused">Paused</string>
     <string name="status_interrupted">Interrupted</string>
-    <string name="settings">Settings</string>
-    <string name="settings_summary">%1$s · %2$s</string>
     <string name="delete">Delete</string>
     <string name="delete_title">Delete this conversation?</string>
     <string name="delete_text">Its messages are removed from this phone. A running task is stopped first. Its files in Termux (~/sessions/…) are kept.</string>
@@ -120,4 +116,43 @@
     <string name="termux_background">For long jobs (servers, builds), allow Termux to autostart and to run without battery restrictions in its app settings.</string>
     <string name="termux_ready">Ready</string>
     <string name="termux_not_ready">Not ready yet</string>
+    <!-- Navigation and shared actions -->
+    <string name="tab_sessions">Sessions</string>
+    <string name="tab_providers">AI providers</string>
+    <string name="tab_settings">Settings</string>
+    <string name="back">Back</string>
+    <string name="more">More options</string>
+    <string name="clear">Clear</string>
+    <string name="save">Save</string>
+    <string name="rename">Rename</string>
+    <string name="rename_title">Rename conversation</string>
+    <string name="voice_input">Speak</string>
+    <!-- Sessions -->
+    <string name="new_session">New session</string>
+    <string name="kind_chat_hint">Answers questions and can run commands. Doesn\'t touch other apps.</string>
+    <string name="kind_phone_hint">Operates apps on this phone for you: opens them, taps, types and scrolls.</string>
+    <string name="sessions_recent">Recent</string>
+    <string name="sessions_empty_title">No conversations yet</string>
+    <string name="hide_pi_events">Hide Pi events</string>
+    <!-- AI providers -->
+    <string name="section_provider">Provider</string>
+    <string name="provider_connected">Connected</string>
+    <string name="provider_via">Connected with %1$s</string>
+    <string name="switch_method_hint">Removes the saved sign-in. Sign in again to switch account or method.</string>
+    <string name="section_model">Model</string>
+    <string name="providers_footnote">New messages use this model. Sessions already running keep theirs until their next message.</string>
+    <!-- Settings -->
+    <string name="section_phone">Phone control</string>
+    <string name="a11y_service">Accessibility service</string>
+    <string name="a11y_on">On: phone tasks can see the screen and tap.</string>
+    <string name="a11y_off">Off: phone tasks need it to see the screen and tap.</string>
+    <string name="show_live_screens">Show live screens</string>
+    <string name="show_live_screens_hint">Watch phone tasks work on their own screens.</string>
+    <string name="section_general">General</string>
+    <string name="language">Language</string>
+    <string name="language_hint">Choose this app\'s language in system settings.</string>
+    <string name="section_developer">Developer</string>
+    <string name="section_about">About</string>
+    <string name="version">Version %1$s</string>
+    <string name="runtime">Runtime</string>
 </resources>
