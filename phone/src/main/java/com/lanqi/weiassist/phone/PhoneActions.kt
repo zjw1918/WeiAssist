@@ -27,7 +27,7 @@ class PhoneActions(private val context: Context) {
         // The user opened 小维助手 to look at progress: pause instead of taking the screen back.
         // (open_app is exempt: it is how a task leaves 小维助手 in the first place.)
         val gen = generation.get()
-        while (m.getString("action") != "open_app" && svc.ownAppInFront()) {
+        while (m.getString("action") !in setOf("open_app", "label_at") && svc.ownAppInFront()) {
             if (generation.get() != gen) return "stopped by the user"
             kotlinx.coroutines.delay(300)
         }
@@ -39,14 +39,22 @@ class PhoneActions(private val context: Context) {
     private suspend fun act(svc: AgentAccessibilityService, action: String, a: JSONObject): String {
         return when (action) {
             "read_screen" -> svc.readScreen()
-            "tap" -> svc.tap(a.getInt("id"))
-            "type_text" -> svc.typeText(a.getInt("id"), a.getString("text"))
-            "scroll" -> svc.scroll(a.optInt("id", -1), a.getString("direction") == "forward")
-            "press_key" -> svc.pressKey(a.getString("key"))
-            "open_app" -> openApp(svc, a.getString("app"))
+            "tap" -> svc.tap(a.getInt("id")).settled(svc)
+            "tap_at" -> svc.tapAt(a.getInt("x"), a.getInt("y")).settled(svc)
+            "long_press" -> svc.longPress(a.getInt("id")).settled(svc)
+            "type_text" -> svc.typeText(a.getInt("id"), a.getString("text")).settled(svc)
+            "scroll" -> svc.scroll(a.optInt("id", -1), a.getString("direction") == "forward").settled(svc)
+            "swipe" -> svc.swipe(a.getString("direction"), a.optDouble("fraction", 0.6).toFloat()).settled(svc)
+            "press_key" -> svc.pressKey(a.getString("key")).settled(svc)
+            "open_app" -> openApp(svc, a.getString("app")).settled(svc, maxMs = 5_000)
+            "screenshot" -> svc.screenshot()
+            "label_at" -> svc.labelAt(a.getInt("x"), a.getInt("y"))
             else -> "unknown action"
         }
     }
+
+    /** Every action returns only once the screen has settled, so the next read sees the result. */
+    private suspend fun String.settled(svc: AgentAccessibilityService, maxMs: Long = 3_000) = also { svc.awaitIdle(maxMs = maxMs) }
 
     private fun openApp(svc: AgentAccessibilityService, app: String): String {
         val pm = context.packageManager

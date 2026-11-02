@@ -17,6 +17,8 @@ export const MOCK_REPLY = "你好！我是假的 OpenAI（本地模拟服务器�
 export const SCRIPTS = {
 	tap: [{ tool: "tap", args: { id: 51 } }, { text: "tapped it" }],
 	send: [{ tool: "read_screen", args: {} }, { tool: "tap", args: { id: 2 } }, { text: "sent" }],
+	buy_at: [{ tool: "tap_at", args: { x: 900, y: 2200 } }, { text: "ordered" }],
+	screens: [1, 2, 3, 4].map(() => ({ tool: "read_screen", args: {} })).concat([{ text: "read four screens" }]),
 };
 
 function scriptedTurn(body) {

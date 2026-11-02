@@ -34,7 +34,23 @@ class AgentAccessibilityService : AccessibilityService() {
         if (instance === this) { instance = null; _running.value = false }
         super.onDestroy()
     }
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    /** Time of the last UI change event, for [awaitIdle]. */
+    @Volatile private var lastUiEvent = 0L
+
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event?.packageName != packageName) lastUiEvent = android.os.SystemClock.uptimeMillis()
+    }
+
+    /** After an action: wait until the screen has stopped changing (quiet for [quietMs]), at most [maxMs]. */
+    suspend fun awaitIdle(quietMs: Long = 450, maxMs: Long = 3_000) {
+        val start = android.os.SystemClock.uptimeMillis()
+        delay(150) // let the action's first events arrive
+        while (true) {
+            val now = android.os.SystemClock.uptimeMillis()
+            if (now - lastUiEvent >= quietMs || now - start >= maxMs) return
+            delay(100)
+        }
+    }
     override fun onInterrupt() {}
 
     fun ownAppInFront() = rootInActiveWindow?.packageName == packageName
@@ -45,8 +61,11 @@ class AgentAccessibilityService : AccessibilityService() {
         val root = rootInActiveWindow ?: return "(screen not readable right now; wait and try again)"
         // Never let the agent operate 小维助手 itself (its Stop / sign-out buttons, its own settings).
         if (root.packageName == packageName) return OWN_APP
-        val out = StringBuilder("app: ${root.packageName}\n")
+        val size = resources.displayMetrics
+        val out = StringBuilder("app: ${root.packageName}  screen: ${size.widthPixels}x${size.heightPixels}\n")
         var next = 1
+        var omitted = 0
+        val bounds = Rect()
         fun walk(n: AccessibilityNodeInfo, depth: Int) {
             if (!n.isVisibleToUser) return
             // Password fields never leave the phone: the model only learns that one is there.
@@ -55,7 +74,8 @@ class AgentAccessibilityService : AccessibilityService() {
             val desc = n.contentDescription?.toString()?.replace("\n", " ")?.take(80).orEmpty()
             val hint = n.hintText?.toString().orEmpty()
             val useful = n.isClickable || n.isEditable || n.isScrollable || n.isCheckable || text.isNotEmpty() || desc.isNotEmpty()
-            if (useful) {
+            if (useful && next > MAX_ELEMENTS) omitted++
+            if (useful && next <= MAX_ELEMENTS) {
                 val id = next++
                 nodes[id] = n
                 val flags = buildList {
@@ -71,11 +91,13 @@ class AgentAccessibilityService : AccessibilityService() {
                 if (text.isNotEmpty()) out.append(" \"").append(text).append('"')
                 if (desc.isNotEmpty() && desc != text) out.append(" (").append(desc).append(')')
                 if (hint.isNotEmpty() && hint != text) out.append(" hint=\"").append(hint).append('"')
-                out.append(' ').append(flags).append('\n')
+                n.getBoundsInScreen(bounds)
+                out.append(' ').append(flags).append(" @").append(bounds.centerX()).append(',').append(bounds.centerY()).append('\n')
             }
             for (i in 0 until n.childCount) n.getChild(i)?.let { walk(it, depth + 1) }
         }
         walk(root, 0)
+        if (omitted > 0) out.append("(… $omitted more elements not listed; scroll or use screenshot)\n")
         return out.toString()
     }
 
@@ -125,6 +147,89 @@ class AgentAccessibilityService : AccessibilityService() {
         else -> false
     }.let { if (it) "pressed $key" else "could not press $key" }
 
+    private suspend fun gesture(path: Path, durationMs: Long): Boolean {
+        val done = CompletableDeferred<Boolean>()
+        val sent = dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, durationMs)).build(),
+            object : GestureResultCallback() {
+                override fun onCompleted(g: GestureDescription?) { done.complete(true) }
+                override fun onCancelled(g: GestureDescription?) { done.complete(false) }
+            }, null)
+        return sent && kotlinx.coroutines.withTimeoutOrNull(durationMs + 3_000) { done.await() } == true
+    }
+
+    private fun checkNotOwnApp() = check(rootInActiveWindow?.packageName != packageName) { OWN_APP }
+
+    /** Tap a screen point, like a finger (for things read_screen can't name; see screenshot). */
+    suspend fun tapAt(x: Int, y: Int): String {
+        checkNotOwnApp()
+        return if (gesture(Path().apply { moveTo(x.toFloat(), y.toFloat()) }, 60)) "tapped at $x,$y" else "tap at $x,$y failed"
+    }
+
+    suspend fun longPress(id: Int): String {
+        val r = Rect().also(node(id)::getBoundsInScreen)
+        return if (gesture(Path().apply { moveTo(r.exactCenterX(), r.exactCenterY()) }, 700)) "long-pressed [$id]" else "long press failed"
+    }
+
+    /** Swipe the content: "up" shows what is below (like scrolling down a feed), "down" what is above. */
+    suspend fun swipe(direction: String, fraction: Float): String {
+        checkNotOwnApp()
+        val w = resources.displayMetrics.widthPixels.toFloat()
+        val h = resources.displayMetrics.heightPixels.toFloat()
+        val f = fraction.coerceIn(0.2f, 0.8f)
+        val (x1, y1, x2, y2) = when (direction) {
+            "up" -> listOf(w / 2, h * (0.5f + f / 2), w / 2, h * (0.5f - f / 2))
+            "down" -> listOf(w / 2, h * (0.5f - f / 2), w / 2, h * (0.5f + f / 2))
+            "left" -> listOf(w * (0.5f + f / 2), h / 2, w * (0.5f - f / 2), h / 2)
+            "right" -> listOf(w * (0.5f - f / 2), h / 2, w * (0.5f + f / 2), h / 2)
+            else -> return "direction must be up, down, left or right"
+        }
+        val ok = gesture(Path().apply { moveTo(x1, y1); lineTo(x2, y2) }, 350)
+        return if (ok) "swiped $direction" else "swipe failed"
+    }
+
+    /** What a tap at (x, y) would hit: the text of the clickable element there (for the confirm hook). */
+    fun labelAt(x: Int, y: Int): String {
+        val root = rootInActiveWindow ?: return ""
+        val r = Rect()
+        fun find(n: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+            n.getBoundsInScreen(r)
+            if (!r.contains(x, y) || !n.isVisibleToUser) return null
+            for (i in n.childCount - 1 downTo 0) n.getChild(i)?.let { c -> find(c)?.let { return it } }
+            return n
+        }
+        var hit = find(root)
+        // Collect the words on the tapped element and its clickable ancestor.
+        val words = mutableListOf<String>()
+        while (hit != null) {
+            listOfNotNull(hit.text?.toString(), hit.contentDescription?.toString()).filter { it.isNotBlank() }.forEach(words::add)
+            if (hit.isClickable) break
+            hit = hit.parent
+        }
+        return words.firstOrNull { it.length <= 20 } ?: words.firstOrNull().orEmpty()
+    }
+
+    /** A JPEG of the screen, scaled to [maxWidth], as base64; or an explanation when not allowed. */
+    suspend fun screenshot(maxWidth: Int = 720): String {
+        checkNotOwnApp()
+        if (android.os.Build.VERSION.SDK_INT < 30) return "error: screenshots need Android 11+"
+        val result = CompletableDeferred<android.graphics.Bitmap?>()
+        takeScreenshot(android.view.Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
+            override fun onSuccess(s: ScreenshotResult) {
+                val hw = android.graphics.Bitmap.wrapHardwareBuffer(s.hardwareBuffer, s.colorSpace)
+                result.complete(hw?.copy(android.graphics.Bitmap.Config.ARGB_8888, false))
+                s.hardwareBuffer.close()
+            }
+            // e.g. a secure window (payment, password manager): the system refuses, and that is right.
+            override fun onFailure(errorCode: Int) { result.complete(null) }
+        })
+        val full = kotlinx.coroutines.withTimeoutOrNull(5_000) { result.await() }
+            ?: return "error: the screen can't be captured (protected window, or too soon after the last screenshot)"
+        val scale = minOf(1f, maxWidth.toFloat() / full.width)
+        val small = android.graphics.Bitmap.createScaledBitmap(full, (full.width * scale).toInt(), (full.height * scale).toInt(), true)
+        val bytes = java.io.ByteArrayOutputStream().also { small.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, it) }.toByteArray()
+        return android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+    }
+
     fun openApp(intent: Intent) {
         startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED))
     }
@@ -162,6 +267,7 @@ class AgentAccessibilityService : AccessibilityService() {
     }
 
     companion object {
+        private const val MAX_ELEMENTS = 220
         private const val OWN_APP =
             "The assistant app itself is in front (the user is looking at it). Do not operate it. " +
                 "Use open_app to go back to the app you were working in, or stop and report to the user."

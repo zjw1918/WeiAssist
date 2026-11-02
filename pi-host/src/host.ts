@@ -23,7 +23,7 @@ import { OPENAI_CODEX_MODELS } from "@earendil-works/pi-ai/providers/openai-code
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { bridge, settle } from "./bridge.ts";
 import { fetchEvents, nativeFetch } from "./native-fetch.ts";
-import { confirmRiskyTap, phoneSystemPrompt, phoneTools, resetPhoneSession } from "./phone-tools.ts";
+import { confirmRiskyTap, phoneSystemPrompt, phoneTools, pruneOldScreens, resetPhoneSession } from "./phone-tools.ts";
 import { dispatch } from "./shims/http.ts";
 
 declare const __PI_VERSION__: string;
@@ -193,6 +193,8 @@ async function configure(cfg: { provider: string; modelId: string; thinkingLevel
 		},
 		// Pi's hook: risky taps wait for the user's OK.
 		beforeToolCall: cfg.phone ? confirmRiskyTap : undefined,
+		// Pi's hook to shape the context per model call: drop old screens (see pruneOldScreens).
+		transformContext: cfg.phone ? pruneOldScreens : undefined,
 		// Pi resolves auth per request from the credential store (api key, or ChatGPT token refreshed as needed).
 		streamFn: models.streamSimple.bind(models),
 	});
@@ -232,6 +234,7 @@ const arg = (json: string) => JSON.parse(json);
 	prompt: (json: string) =>
 		guard("prompt", async () => {
 			if (!agent) throw new Error("Pi is not configured");
+			resetPhoneSession(); // per task: step limit and the typed fields shown on the confirmation card
 			await agent.prompt(arg(json).text);
 			bridge({ type: "idle" });
 		}),

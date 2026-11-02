@@ -154,3 +154,36 @@ test("declining the confirmation blocks the tap and stops the task", async () =>
 	const end = host.messages.find((m) => m.type === "tool_end" && m.tool === "tap");
 	assert.equal(end.isError, true);
 });
+
+test("a coordinate tap on a buy button also needs confirmation", async () => {
+	const confirms = [];
+	const taps = [];
+	const host = await startHost({
+		credentials: apiKeyCredentials,
+		hostCalls: {
+			phone: (m) => (m.action === "label_at" ? "立即购买" : (taps.push(m.args), "tapped")),
+			confirm: (m) => { confirms.push(m.label); return false; },
+		},
+	});
+	await phoneRun(host, "buy_at");
+	assert.deepEqual(confirms, ["立即购买"]);
+	assert.deepEqual(taps, [], "declined: no tap");
+});
+
+test("old screens are pruned from the model's context, the latest two are kept", async () => {
+	let n = 0;
+	const host = await startHost({
+		credentials: apiKeyCredentials,
+		hostCalls: { phone: () => `app: x\n[1] TextView "screen ${++n}"` },
+	});
+	const before = mock.requests.length;
+	await phoneRun(host, "screens");
+	const last = JSON.parse(mock.requests.at(-1).body);
+	const outputs = last.input.filter((i) => i.type === "function_call_output").map((i) => JSON.stringify(i.output));
+	assert.equal(outputs.length, 4);
+	assert.match(outputs[0], /omitted/);
+	assert.match(outputs[1], /omitted/);
+	assert.match(outputs[2], /screen 3/);
+	assert.match(outputs[3], /screen 4/);
+	assert.ok(mock.requests.length - before >= 5);
+});
