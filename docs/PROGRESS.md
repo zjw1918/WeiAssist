@@ -135,6 +135,22 @@ session's display (trusted displays on Android 13+); Pi 1.5.0 with GPT-6.1 Terra
 - **Pi 1.5.0:** `gpt-6.1-terra` needs it. Pi 1.5 dropped TypeBox's `Type`; the tools use `pi-schema` builders,
   whose `obj()` is closed (unknown tool arguments are rejected).
 
+### Session list, previews and app clean-up (2026-11-02)
+- **Running sessions keep their place:** ordered by creation (newest first). They were ordered by
+  `updatedAt`, which every step changes, so three running sessions kept swapping. The live strip is ordered
+  by creation too; finished sessions stay most recent first.
+- **Previews only when used:** a session's live screen (page and strip) appears once it has opened or read an
+  app (`SessionSummary.app`); a phone session that only talks shows none and streams nothing. Hide/Show
+  switch, shown by default.
+- **Apps closed when a task ends** (`SessionApps`, helper `removeTask` / `killApp` / `isRunning`): the
+  session's windows are removed and its apps killed with `am kill`, except apps that were already running
+  when it opened them or still have a window elsewhere; skipped if a follow-up starts meanwhile; same before
+  a display is released. Previously processes stayed in the background (memory, and HyperOS froze them).
+- **Verified on the Xiaomi:** talk-only phone session: display 35, no preview, no `watch`; JD session: preview
+  from `open_app`; list strip showed only JD. JD (not running before): window removed, killed, no process
+  left. WeChat (running before): only the session's window removed, same PIDs.
+  Fixed on the way: removal is asynchronous, so clean-up waits until the windows are gone before killing.
+
 ### Verified on a real device (realme RMX2121, Android 12)
 - ChatGPT subscription sign-in, then "你好" through Pi (`gpt-6.1-sol`).
 - Gmail: sent an email to two different addresses, each after the confirmation card.
@@ -172,6 +188,16 @@ Open points from this work:
   `swipe`, and the open_app watch stops after ~1.2 s, so a long splash ad can leave a window on the phone's screen;
   root tasks shown with `I=` (no affinity) aren't parsed; tasks are matched by affinity, not package.
 - [ ] **Trusted displays:** not yet checked with the phone locked, nor whether a keyboard appears on the session's display.
+- [ ] **HyperOS freezer:** GreezeManager froze session apps (`frozen uid=… reason=tobg`, again every 5 s, `check binder`)
+  once WeiAssist left the foreground; an app that has drawn is skipped ("was show on screen"), one still on its splash
+  stays frozen (Taobao: 80 s, `open_app` hit its 15 s limit, a JD tap timed out). Shell can't use `cmd greezer`.
+  Background sessions will stall on HyperOS until this is solved (battery "no restrictions" per app? keep them "visible"?).
+- [ ] **WeChat's recents entry:** opening WeChat in a session makes WeChat finish its main window on the user's screen
+  (one `LauncherUI`); the process and its state stay, the recents entry goes.
+- [ ] **Displays only when used:** a phone session gets a display when it starts, even if it only talks (not
+  previewed). Could be created at the first phone action instead (changes how sessions queue for screens).
+- [ ] **Closing apps on switch:** apps are closed when the task ends, not when `open_app` switches to another app
+  mid-task (a multi-app task may go back).
 
 ## Next: real-world scenarios on the device
 

@@ -125,10 +125,14 @@ run side by side. A session runs until its task ends or the user stops it; leavi
   Text is set without focusing the field, so no keyboard appears on the user's screen. There is no home
   screen on these displays: `open_app` switches apps.
 - **Lifecycle:** at most 3 at once. A display stays with its session for 3 minutes after a task ends or is
-  stopped (a follow-up finds the app as it was), and is taken back first when another session needs room.
-  Deleting a session releases it at once; the helper releases all displays when the app's process dies.
-- **Asleep when idle:** an idle session's display is switched off (its output disconnected): Android puts
-  it to sleep and stops its apps (measured: `state OFF`, activity `STOPPED`). The next task turns it on.
+  stopped, and is taken back first when another session needs room. Deleting a session releases it at once;
+  the helper releases all displays when the app's process dies.
+- **Asleep when idle:** an idle session's display is switched off (its output disconnected; the preview keeps
+  the last picture). The next task turns it on.
+- **Apps closed when a task ends** (`SessionApps`): the windows on the session's display are removed
+  (`am stack remove`), then each app is killed (`am kill`, background processes only) unless it was already
+  running when the session opened it (e.g. a chat app kept alive for notifications) or still has a window on
+  another display. Same before a display is released. A follow-up reopens the app (cold).
 - **One app, one task:** an app has one process, and a single-task app one window; launching it on a display
   moves it there. So `open_app` refuses an app another *running* session has open, and a single-task app
   the user has in front of them, and checks afterwards that the app landed on the session's display
@@ -139,7 +143,8 @@ run side by side. A session runs until its task ends or the user stops it; leavi
 ## Live previews
 
 Each session's display can be watched live: on the session's page, and side by side in the list's
-"Live screens" strip.
+"Live screens" strip, once the session has used its screen (opened or read an app; most sessions only talk,
+and an unused display is blank). One Hide/Show switch for both, shown by default.
 
 - **No copies:** the helper sends the display's own GPU buffers (`HardwareBuffer`, over `IFrameListener`);
   the app wraps each as a hardware Bitmap and Compose draws it scaled on the GPU. The app keeps the two
