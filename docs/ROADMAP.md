@@ -42,6 +42,7 @@ Status legend: ✅ done · 🔨 next · ⬜ planned. Current status and todo: [P
 - ⬜ **Better screen understanding:**
   - compact the accessibility tree (drop decorative nodes, group list rows);
   - optional screenshot for vision models (AccessibilityService `takeScreenshot`, API 30+).
+- ✅ **Linux commands:** a `bash` tool running in Termux (live facts with `curl`, data work, coding; `tmux` for long jobs). Next: status in Settings, wake lock, job clean-up.
 - ⬜ **Direct actions before UI automation:** intents for share, open URL, dial (with confirm), alarm/timer and calendar insert; contacts lookup with permission. Faster and more reliable than tapping.
 - ⬜ **Robustness:** wait for UI idle instead of fixed waits, verify each action's effect, recover from dialogs/keyboards/permission prompts, retry with backoff.
 - ⬜ **Skills:** per-app hints ("in Gmail, the Send button is the paper-plane") as small Markdown files, in the spirit of Pi's skills.

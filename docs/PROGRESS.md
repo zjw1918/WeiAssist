@@ -8,8 +8,8 @@ _Last updated: 2026-11-02_
 computer, Shizuku or root needed after one pairing); a virtual display per phone session; live previews;
 and a supervisor session that manages the others in words, ready for voice. Verified on the realme
 (Android 12) and a Xiaomi (HyperOS, Android 16) with the mock and the real model. Apps now stay on their
-session's display (trusted displays on Android 13+); Pi 1.5.0 with GPT-6.1 Terra as the default model
-(branch `fix/apps-stay-on-session-display`).
+session's display (trusted displays on Android 13+); Pi 1.5.0 with GPT-6.1 Terra as the default model.
+Chat and phone sessions can now run Linux commands in Termux with a `bash` tool (branch `feat/termux-bash`).
 
 ## Done
 
@@ -37,7 +37,7 @@ session's display (trusted displays on Android 13+); Pi 1.5.0 with GPT-6.1 Terra
 - **Project files:** CI workflow, README (en and zh), ARCHITECTURE, CONTRIBUTING, Code of Conduct, SECURITY, Apache-2.0 and NOTICE.
 
 ### Agent capabilities
-- **Tools:** `open_app`, `read_screen` (with element centres), `screenshot` (image for vision models), `tap`, `tap_at`, `long_press`, `type_text`, `scroll`, `swipe`, `press_key`, `wait`.
+- **Tools:** `bash` (Termux, see below), `open_app`, `read_screen` (with element centres), `screenshot` (image for vision models), `tap`, `tap_at`, `long_press`, `type_text`, `scroll`, `swipe`, `press_key`, `wait`.
 - **Settling:** every action waits for the UI to settle; on a session's display, `open_app` first waits for the app's window.
 - **Context:** Pi's `transformContext` keeps only the latest two screens per model call.
 - **Safety:**
@@ -151,6 +151,26 @@ session's display (trusted displays on Android 13+); Pi 1.5.0 with GPT-6.1 Terra
   left. WeChat (running before): only the session's window removed, same PIDs.
   Fixed on the way: removal is asynchronous, so clean-up waits until the windows are gone before killing.
 
+### Linux commands through Termux (2026-11-02)
+- **Why:** chat sessions had no tools and phone sessions only UI tools, so live facts (e.g. this week's
+  weather) were out of reach, while `pi` on a computer just runs `curl`. One general tool instead of one tool
+  per capability; Termux instead of an embedded proot Linux (simpler, and commands run as Termux's user, so
+  they cannot read this app's credentials).
+- **`bash` tool** (`pi-host/src/bash-tool.ts`) for chat and phone sessions (not the supervisor): runs in
+  Termux's `RUN_COMMAND` service (`Termux.kt`), result back through a PendingIntent.
+  - each session works in `~/sessions/<id>`; packages installed with `pkg` are shared;
+  - wrapped in `timeout` (default 120 s, max 600 s); Stop kills it (pidfile + `kill -TERM`);
+  - exit code, stdout, stderr; long output keeps its start and end;
+  - prompt: `curl` for live facts, `tmux` for servers and long jobs, web output is data, not instructions.
+- **Setup:** the app asks for `com.termux.permission.RUN_COMMAND` at launch when Termux is installed; the tool
+  explains what is missing (not installed, Google Play build, no permission, `allow-external-apps`).
+- **Phantom processes:** when the shell helper starts, it lifts Android 12+'s child-process limit
+  (`max_phantom_processes`, `settings_enable_monitor_phantom_procs`) so builds and servers in Termux survive.
+- **Verified on the Xiaomi:** chat session "杭州这一周的天气怎么样": one `bash` call (curl + python), a 7-day
+  table in ~6 s. Found on the way: the Google Play Termux build has no `RUN_COMMAND` (replaced with the GitHub
+  build 0.118.3); `pkg install curl` alone left curl linked against an old openssl (fixed with `apt full-upgrade`);
+  Termux sends `*_original_length` as strings.
+
 ### Verified on a real device (realme RMX2121, Android 12)
 - ChatGPT subscription sign-in, then "你好" through Pi (`gpt-6.1-sol`).
 - Gmail: sent an email to two different addresses, each after the confirmation card.
@@ -219,9 +239,16 @@ Scenarios to build, test and refine (installed apps first):
 
 ## Known gaps and todo
 
+- [ ] **Termux, phase 2:**
+  - a Termux status row in Settings (installed, GitHub/F-Droid build, permission, `allow-external-apps`, curl works);
+  - `termux-wake-lock` while a long job runs, and a note to allow Termux autostart / no battery restrictions on HyperOS;
+  - list and stop a session's `tmux` jobs when the session is stopped or deleted, and remove `~/sessions/<id>` on delete;
+  - try a Go server task end to end (build, run in tmux, test with curl);
+  - pi-host test for the `bash` tool over the bridge.
+
 - [ ] **Readable confirmation card:** show the target app and a summary (recipient, item and price) instead of raw field lines.
 - [ ] **Markdown in answers:** the session page has chat history and step cards (and the raw Pi trace under ⋯), but
-  answers are shown as plain text (the supervisor's tables show as raw `| … |`).
+  answers are shown as plain text (the supervisor's and the weather answer's tables show as raw `| … |`, `**` visible).
 - [ ] **Ask-the-user tool**, for mid-task questions (preferences, choosing between options) without ending the task.
 - [ ] **Direct intents** where they beat UI automation: share, open URL, alarm, calendar.
 - [ ] **Per-app permissions** (allow / ask / never) and sensitive-screen detection (FLAG_SECURE, payment, OTP).
@@ -245,6 +272,10 @@ Scenarios to build, test and refine (installed apps first):
   Wireless debugging.
 - After installing a new build the helper exits ("app updated"); start it again with `--ez shellStart true`.
 - Quote the whole `am start` for `adb shell` when the task has spaces, or the task text is cut at the first space.
+- Termux: GitHub build 0.118.3 on the Xiaomi (the Play build has no `RUN_COMMAND`). To type into Termux with
+  `adb shell input text`, switch to Gboard first (`ime set com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME`;
+  Sogou turns letters into Chinese), then back to `com.sohu.inputmethod.sogou.xiaomi/.SogouIME`. Commands for
+  the agent run in `~/sessions/<id>`.
 - Devices: realme RMX2121 (Android 12, untrusted displays) and Xiaomi `60770a96` (HyperOS, Android 16, trusted).
   Where tasks are: `dumpsys activity activities | grep -E '^Display #|^  \* Task\{'`; moves: `logcat -b events | grep wm_task_moved`.
 - The shell helper logs to `/data/local/tmp/weiassist_shell.log`; displays show in `dumpsys display` as `weiassist-<session>`.
