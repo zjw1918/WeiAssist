@@ -25,6 +25,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -37,8 +39,17 @@ import com.lanqi.phoneagent.ui.SubscriptionSignIn
 import com.lanqi.phoneagent.ui.WelcomeScreen
 
 class MainActivity : ComponentActivity() {
+    /** Debug builds: a task passed with `--es task "…"`, on first launch or to an open screen. */
+    val debugTask = androidx.compose.runtime.mutableStateOf<String?>(null)
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        if (BuildConfig.DEBUG) intent.getStringExtra("task")?.let { debugTask.value = it }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (BuildConfig.DEBUG) debugTask.value = intent.getStringExtra("task")
         enableEdgeToEdge()
         setContent { MaterialTheme { App() } }
     }
@@ -46,6 +57,10 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainActivity.App(vm: AppViewModel = viewModel()) {
+    // Debug builds: `adb shell am start -n com.lanqi.phoneagent/.MainActivity --es task "…"` fills the task box.
+    LaunchedEffect(debugTask.value) {
+        debugTask.value?.let { vm.input = it; vm.phoneMode = true; debugTask.value = null }
+    }
     // Pi asks for the sign-in page to be opened; show it in Chrome as a Custom Tab.
     LaunchedEffect(Unit) {
         vm.openInBrowser.collect { url -> CustomTabsIntent.Builder().build().launchUrl(this@App, url.toUri()) }
@@ -77,8 +92,22 @@ fun ConnectedScreen(vm: AppViewModel) {
         models = vm.provider?.models.orEmpty(), selected = vm.model, thinkingLevel = vm.thinkingLevel,
         onModel = vm::selectModel, onThinking = vm::selectThinking, subscription = vm.provider?.credential == "oauth",
     )
-    OutlinedTextField(vm.input, { vm.input = it }, label = { Text("发给 Pi") }, modifier = Modifier.fillMaxWidth())
-    Button(onClick = vm::send, enabled = !vm.busy) { Text(if (vm.busy) "Pi 正在回答…" else "发送") }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Switch(checked = vm.phoneMode, onCheckedChange = { vm.phoneMode = it })
+        Text("  让小维助手操作手机")
+    }
+    if (vm.phoneMode && !vm.accessibilityOn) {
+        val ctx = androidx.compose.ui.platform.LocalContext.current
+        Text("需要先在“设置 → 无障碍”里打开小维助手，它才能看屏幕、点按钮。", color = MaterialTheme.colorScheme.error)
+        androidx.compose.material3.OutlinedButton(onClick = {
+            ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }) { Text("打开无障碍设置") }
+    }
+    OutlinedTextField(vm.input, { vm.input = it }, label = { Text(if (vm.phoneMode) "要小维助手做什么" else "发给 Pi") }, modifier = Modifier.fillMaxWidth())
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Button(onClick = vm::send, enabled = !vm.busy) { Text(if (vm.busy) "Pi 正在回答…" else "发送") }
+        TextButton(onClick = vm::newConversation, enabled = !vm.busy) { Text("新对话") }
+    }
     if (vm.answer.isNotEmpty() || vm.error != null) {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
@@ -96,5 +125,14 @@ fun ConnectedScreen(vm: AppViewModel) {
         Switch(checked = vm.useMock, onCheckedChange = { vm.useMock = it })
         Text("  开发用：发到本地模拟服务器", style = MaterialTheme.typography.bodySmall)
     }
-    TextButton(onClick = vm::signOut) { Text("退出登录") }
+    // Signing out deletes the saved credential, so ask first.
+    var confirmSignOut by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    TextButton(onClick = { confirmSignOut = true }) { Text("退出登录") }
+    if (confirmSignOut) androidx.compose.material3.AlertDialog(
+        onDismissRequest = { confirmSignOut = false },
+        title = { Text("退出登录？") },
+        text = { Text("退出后，这台手机上保存的登录信息会被删除，下次要重新登录。") },
+        confirmButton = { TextButton(onClick = { confirmSignOut = false; vm.signOut() }) { Text("退出") } },
+        dismissButton = { TextButton(onClick = { confirmSignOut = false }) { Text("取消") } },
+    )
 }

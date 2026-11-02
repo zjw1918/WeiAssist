@@ -11,7 +11,7 @@ export function bridgeCall(type: string, args: Record<string, unknown>): Promise
 	const id = `k${++next}`;
 	return new Promise((resolve, reject) => {
 		pending.set(id, { resolve, reject });
-		bridge({ type, id, ...args });
+		bridge({ ...args, type, id }); // our type/id always win over anything in args
 	});
 }
 

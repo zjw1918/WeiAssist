@@ -1,4 +1,4 @@
-// A minimal `node:http` createServer() for Pi's OAuth callback, backed by a real loopback socket in Kotlin
+// A minimal `node:http` createServer() for Pi's OAuth callback servers (only what Pi's flows use), backed by a real loopback socket in Kotlin
 // (LoopbackServer.kt). Kotlin accepts the browser's redirect on 127.0.0.1:<port>, hands the request URL to
 // dispatch(), Pi's own handler writes the response, and Kotlin sends it back to the browser.
 import { bridge, bridgeCall } from "../bridge.ts";
@@ -11,6 +11,7 @@ const servers = new Map<number, Server>();
 class Server {
 	private listeners = new Map<string, ((e: unknown) => void)[]>();
 	port = 0;
+	host = "127.0.0.1";
 	constructor(private handler: Handler) {}
 	on(event: string, fn: (e: unknown) => void) {
 		this.listeners.set(event, [...(this.listeners.get(event) ?? []), fn]);
@@ -23,6 +24,12 @@ class Server {
 		};
 		return this.on(event, wrapped);
 	}
+	off(event: string, fn: (e: unknown) => void) {
+		return this.removeListener(event, fn);
+	}
+	address() {
+		return { port: this.port, address: this.host, family: "IPv4" };
+	}
 	removeListener(event: string, fn: (e: unknown) => void) {
 		this.listeners.set(event, (this.listeners.get(event) ?? []).filter((f) => f !== fn));
 		return this;
@@ -32,6 +39,7 @@ class Server {
 	}
 	listen(port: number, host: string, cb?: () => void) {
 		this.port = port;
+		this.host = host;
 		bridgeCall("http_listen", { port, host }).then(
 			() => {
 				servers.set(port, this);

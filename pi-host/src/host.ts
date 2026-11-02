@@ -17,12 +17,13 @@ import {
 import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 // Pi's catalog of models OpenAI offers to ChatGPT accounts ("Codex with a ChatGPT account").
 import { OPENAI_CODEX_MODELS } from "@earendil-works/pi-ai/providers/openai-codex.models";
-// Pi's real "Sign in with ChatGPT" flow. Pi's standalone binary embeds its OAuth flows the same way
-// (registerBundledOAuthFlowLoaders); node:http and node:crypto are shimmed in build.mjs.
-import { registerBundledOAuthFlowLoaders } from "../node_modules/@earendil-works/pi-ai/dist/auth/oauth/load.js";
-import { openaiChatGPTOAuth } from "../node_modules/@earendil-works/pi-ai/dist/auth/oauth/openai-chatgpt.js";
+// Pi's public entry point for embedding its OAuth flows in a bundle (what Pi's own standalone binary
+// uses). It registers Pi's real login flows, e.g. "Sign in with ChatGPT"; node:http and node:crypto,
+// which those flows need, are shimmed in build.mjs.
+import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { bridge, settle } from "./bridge.ts";
 import { fetchEvents, nativeFetch } from "./native-fetch.ts";
+import { PHONE_SYSTEM_PROMPT, confirmRiskyTap, phoneTools, resetPhoneSession } from "./phone-tools.ts";
 import { dispatch } from "./shims/http.ts";
 
 declare const __PI_VERSION__: string;
@@ -30,7 +31,7 @@ declare const __PI_VERSION__: string;
 // Every HTTP request Pi makes (model calls, OAuth token exchange and refresh) goes through Kotlin.
 globalThis.fetch = nativeFetch as typeof fetch;
 
-registerBundledOAuthFlowLoaders({ openaiChatGPT: () => openaiChatGPTOAuth } as any);
+registerBunOAuthFlows();
 
 /** Pi's in-memory store, mirrored to Kotlin (encrypted with the Android Keystore) after every write. */
 class MirroredCredentialStore implements CredentialStore {
@@ -160,12 +161,21 @@ function forward(event: AgentEvent) {
 			} else bridge({ type: "message_end", role: m.role });
 			break;
 		}
+		case "tool_execution_start":
+			bridge({ type: "tool_start", tool: event.toolName, args: event.args });
+			break;
+		case "tool_execution_end": {
+			const r = (event as any).result;
+			const out = (r?.content ?? []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
+			bridge({ type: "tool_end", tool: event.toolName, isError: !!(event as any).isError, output: out.slice(0, 300) });
+			break;
+		}
 		default:
 			bridge({ type: event.type });
 	}
 }
 
-async function configure(cfg: { provider: string; modelId: string; thinkingLevel?: string; baseUrl?: string; systemPrompt?: string }) {
+async function configure(cfg: { provider: string; modelId: string; thinkingLevel?: string; baseUrl?: string; systemPrompt?: string; phone?: boolean }) {
 	agent?.abort();
 	const found = models.getModel(cfg.provider, cfg.modelId);
 	if (!found) throw new Error(`Pi has no model ${cfg.provider}/${cfg.modelId}`);
@@ -173,8 +183,16 @@ async function configure(cfg: { provider: string; modelId: string; thinkingLevel
 	const model: Model<any> = cfg.baseUrl ? { ...found, baseUrl: cfg.baseUrl } : found;
 	// Pi maps the level onto what this model supports (e.g. "max" → the highest it has).
 	const thinkingLevel = clampThinkingLevel(model, (cfg.thinkingLevel ?? "off") as any);
+	resetPhoneSession();
 	agent = new Agent({
-		initialState: { systemPrompt: cfg.systemPrompt ?? "You are a helpful assistant on an Android phone.", model, thinkingLevel: thinkingLevel as any },
+		initialState: {
+			systemPrompt: cfg.systemPrompt ?? (cfg.phone ? PHONE_SYSTEM_PROMPT : "You are a helpful assistant on an Android phone."),
+			model,
+			thinkingLevel: thinkingLevel as any,
+			tools: cfg.phone ? phoneTools : [],
+		},
+		// Pi's hook: risky taps wait for the user's OK.
+		beforeToolCall: cfg.phone ? confirmRiskyTap : undefined,
 		// Pi resolves auth per request from the credential store (api key, or ChatGPT token refreshed as needed).
 		streamFn: models.streamSimple.bind(models),
 	});

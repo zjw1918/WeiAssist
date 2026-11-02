@@ -40,14 +40,15 @@ class PiEngine(context: Context, private val agentName: String) {
     val messages: SharedFlow<JSONObject> = events
 
     private val store = SecureStore(appContext)
+    private val phone = com.lanqi.phoneagent.phone.PhoneActions(appContext)
     private val prefs = appContext.getSharedPreferences("pi", Context.MODE_PRIVATE)
     private val ready = CompletableDeferred<JSONObject>()
     private val httpReplies = ConcurrentHashMap<String, CompletableDeferred<LoopbackServer.HttpReply>>()
-    private val loopback = LoopbackServer(scope) { method, url ->
+    private val loopback = LoopbackServer(scope) { port, method, url ->
         val id = UUID.randomUUID().toString()
         val reply = CompletableDeferred<LoopbackServer.HttpReply>().also { httpReplies[id] = it }
         withContext(Dispatchers.Main) {
-            js("http", JSONObject().put("port", OAUTH_PORT).put("id", id).put("url", url).put("method", method))
+            js("http", JSONObject().put("port", port).put("id", id).put("url", url).put("method", method))
         }
         withTimeoutOrNull(10_000) { reply.await() }.also { httpReplies.remove(id) }
             ?: LoopbackServer.HttpReply(504, emptyMap(), "")
@@ -109,6 +110,23 @@ class PiEngine(context: Context, private val agentName: String) {
                     js("reply", result.put("ok", false).put("value", JSONObject().put("code", "EADDRINUSE").put("message", e.message)))
                 }
             }
+            // Pi's phone tools and its confirm hook (pi-host/src/phone-tools.ts).
+            "phone" -> scope.launch {
+                val reply = JSONObject().put("id", m.getString("id"))
+                Log.d(TAG, "phone ${m.optString("action")} start")
+                runCatching { kotlinx.coroutines.withTimeout(15_000) { phone.run(m) } }
+                    .also { r -> Log.d(TAG, "phone ${m.optString("action")} → ${r.getOrNull()?.lineSequence()?.firstOrNull()?.take(60) ?: r.exceptionOrNull()}") }
+                    .onSuccess { js("reply", reply.put("ok", true).put("value", it)) }
+                    .onFailure { js("reply", reply.put("ok", true).put("value", "error: ${it.message}")) }
+            }
+            "confirm" -> scope.launch {
+                val svc = com.lanqi.phoneagent.phone.AgentAccessibilityService.instance
+                Log.d(TAG, "confirm shown: ${m.getString("title")}")
+                val ok = runCatching { svc?.confirm(m.getString("title"), m.getString("detail")) ?: false }
+                    .onFailure { Log.e(TAG, "confirm failed", it) }.getOrDefault(false)
+                Log.d(TAG, "confirm answered: $ok")
+                js("reply", JSONObject().put("id", m.getString("id")).put("ok", true).put("value", ok))
+            }
             "fetch" -> http.start(m)
             "fetch_abort" -> http.abort(m.getString("id"))
             "http_close" -> loopback.close(m.getInt("port"))
@@ -117,6 +135,8 @@ class PiEngine(context: Context, private val agentName: String) {
                 httpReplies[m.getString("id")]?.complete(LoopbackServer.HttpReply(m.getInt("status"), headers, m.optString("body")))
             }
             else -> {
+                if (m.optString("type") == "tool_start") Log.d(TAG, "← pi tool ${m.optString("tool")} ${m.optJSONObject("args")?.let(::redactArgs)}")
+                if (m.optString("type") == "tool_end") Log.d(TAG, "← pi tool ${m.optString("tool")} done error=${m.optBoolean("isError")}")
                 if (m.optString("type") !in QUIET) Log.d(TAG, "← pi ${m.optString("type")}")
                 events.tryEmit(m)
             }
@@ -130,8 +150,8 @@ class PiEngine(context: Context, private val agentName: String) {
     suspend fun cancelPrompt(id: String) = call("answer", JSONObject().put("id", id).put("cancel", true))
     suspend fun cancelLogin() = call("cancelLogin", null)
     suspend fun logout(provider: String) = call("logout", JSONObject().put("provider", provider))
-    suspend fun configure(provider: String, modelId: String, thinkingLevel: String, baseUrl: String?) {
-        val cfg = JSONObject().put("provider", provider).put("modelId", modelId).put("thinkingLevel", thinkingLevel)
+    suspend fun configure(provider: String, modelId: String, thinkingLevel: String, baseUrl: String?, phoneTools: Boolean = false) {
+        val cfg = JSONObject().put("provider", provider).put("modelId", modelId).put("thinkingLevel", thinkingLevel).put("phone", phoneTools)
         if (!baseUrl.isNullOrBlank()) cfg.put("baseUrl", baseUrl)
         call("configure", cfg)
     }
@@ -148,15 +168,17 @@ class PiEngine(context: Context, private val agentName: String) {
         webView.evaluateJavascript("PiHost.$fn(${arg?.let { JSONObject.quote(it.toString()) } ?: ""})", null)
     }
 
+    /** Tool arguments for the log, without typed text (it may be private). */
+    private fun redactArgs(a: JSONObject) = JSONObject(a.toString()).apply { if (has("text")) put("text", "…${getString("text").length} chars") }
+
     fun destroy() {
-        loopback.close(OAUTH_PORT)
+        loopback.closeAll()
         if (::webView.isInitialized) webView.destroy()
     }
 
     companion object {
         const val ORIGIN = "https://appassets.androidplatform.net"
-        const val OAUTH_PORT = 1455
         private const val TAG = "PiEngine"
-        private val QUIET = setOf("text_delta", "auth_prompt", "auth_event")
+        private val QUIET = setOf("text_delta", "auth_prompt", "auth_event", "tool_start", "tool_end")
     }
 }

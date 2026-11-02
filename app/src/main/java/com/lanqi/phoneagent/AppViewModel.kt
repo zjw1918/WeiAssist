@@ -50,7 +50,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var thinkingLevel by mutableStateOf(prefs.getString("thinkingLevel", null) ?: "medium"); private set
     val model: ModelInfo? get() = provider?.models?.firstOrNull { it.id == modelId }
     var useMock by mutableStateOf(false)
-    var input by mutableStateOf("你好")
+    /** Give Pi the phone tools (needs the accessibility service). */
+    var phoneMode by mutableStateOf(prefs.getBoolean("phoneMode", false))
+    /** Enabled in system settings: true at once on launch, before the service has (re)connected. */
+    private val enabledInSettings = run {
+        val am = app.getSystemService(android.view.accessibility.AccessibilityManager::class.java)
+        am.getEnabledAccessibilityServiceList(android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+            .any { it.resolveInfo.serviceInfo.packageName == app.packageName }
+    }
+    val accessibilityOn: Boolean get() = com.lanqi.phoneagent.phone.AgentAccessibilityService.running.value || enabledInSettings
+    var input by mutableStateOf(prefs.getString("input", null) ?: "你好")
     var answer by mutableStateOf(""); private set
     var busy by mutableStateOf(false); private set
     var error by mutableStateOf<String?>(null); private set
@@ -102,6 +111,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 trace += "assistant_end · ${m.optString("provider")}/${m.optString("model")} · ${m.optString("api")} · " +
                     "stop=${m.optString("stopReason")} · tokens=${m.optJSONObject("usage")?.optInt("totalTokens")}"
             }
+            "tool_start" -> trace += "→ ${m.optString("tool")} ${m.optJSONObject("args")?.toString().orEmpty()}"
+            "tool_end" -> trace += "  ${if (m.optBoolean("isError")) "✗" else "✓"} ${m.optString("output").lineSequence().firstOrNull().orEmpty().take(80)}"
             "configured" -> trace += "configured · ${m.optString("model")} · thinking=${m.optString("thinkingLevel")} → ${m.optString("baseUrl")} · auth=${m.optString("auth")}"
             "error" -> { error = friendly(m.optString("message")); busy = false; trace += "error · ${m.optString("message")}" }
             "idle" -> { busy = false; trace += "idle" }
@@ -126,6 +137,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun reopenBrowser() { authUrl?.let { browser.trySend(it) } }
     fun cancelSignIn() { viewModelScope.launch { pi.cancelLogin() } }
     fun signOut() {
+        agentConfig = null
         answer = ""; error = null; trace.clear()
         viewModelScope.launch { pi.logout(PROVIDER) }
     }
@@ -150,11 +162,22 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // ---- talking to the model through Pi ----------------------------------------------------------
+    /** Settings of the current Pi Agent. Same settings → keep the Agent, so it remembers the conversation. */
+    private var agentConfig: String? = null
+
+    /** Start over: the next message gets a fresh Pi Agent with an empty transcript. */
+    fun newConversation() { agentConfig = null; answer = ""; error = null; trace.clear() }
+
     fun send() {
         if (busy || input.isBlank()) return
         busy = true; answer = ""; error = null; trace.clear()
         viewModelScope.launch {
-            pi.configure(PROVIDER, modelId, thinkingLevel, if (useMock) MOCK_BASE_URL else null)
+            prefs.edit().putBoolean("phoneMode", phoneMode).putString("input", input).apply()
+            val config = listOf(modelId, thinkingLevel, useMock, phoneMode).joinToString("|")
+            if (config != agentConfig) {
+                pi.configure(PROVIDER, modelId, thinkingLevel, if (useMock) MOCK_BASE_URL else null, phoneTools = phoneMode)
+                agentConfig = config
+            }
             pi.prompt(input)
         }
     }

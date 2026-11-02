@@ -11,14 +11,14 @@ import java.net.ServerSocket
 import java.net.Socket
 
 /**
- * The socket behind Pi's `node:http` shim. Pi's "Sign in with ChatGPT" flow asks for a server on
- * 127.0.0.1:1455; Chrome is redirected there after sign-in. Each request's URL goes to Pi (onRequest),
+ * The socket behind Pi's `node:http` shim. Pi's login flows ask for a callback server (e.g. "Sign in
+ * with ChatGPT" uses 127.0.0.1:1455); the browser is redirected there after sign-in. Each request's URL goes to Pi (onRequest),
  * Pi's own handler checks state and returns the page, which this class writes back to Chrome.
  * Bound to loopback only, so nothing outside the phone can reach it.
  */
 class LoopbackServer(
     private val scope: CoroutineScope,
-    private val onRequest: suspend (method: String, url: String) -> HttpReply,
+    private val onRequest: suspend (port: Int, method: String, url: String) -> HttpReply,
 ) {
     data class HttpReply(val status: Int, val headers: Map<String, String>, val body: String)
 
@@ -34,24 +34,26 @@ class LoopbackServer(
                 launch {
                     // A browser may give up before we answer (e.g. the user closed the tab while the app
                     // was frozen). The request was already read and handed to Pi; only the reply is lost.
-                    try { serve(client) } catch (e: java.io.IOException) { Log.d(TAG, "client went away: ${e.message}") }
+                    try { serve(port, client) } catch (e: java.io.IOException) { Log.d(TAG, "client went away: ${e.message}") }
                 }
             }
         }
         servers[port] = socket to job
     }
 
+    fun closeAll() = servers.keys.toList().forEach(::close)
+
     fun close(port: Int) {
         servers.remove(port)?.let { (socket, job) -> runCatching { socket.close() }; job.cancel() }
     }
 
-    private suspend fun serve(client: Socket): Unit = client.use {
+    private suspend fun serve(port: Int, client: Socket): Unit = client.use {
         val reader = client.getInputStream().bufferedReader()
         val requestLine = reader.readLine() ?: return
         while (!reader.readLine().isNullOrEmpty()) Unit // skip headers
         val (method, path) = requestLine.split(" ").let { it[0] to it.getOrElse(1) { "/" } }
         Log.d(TAG, "$method ${path.substringBefore('?')}") // never log the query: it holds the auth code
-        val reply = onRequest(method, path)
+        val reply = onRequest(port, method, path)
         var body = reply.body
         if (reply.status == 200 && path.startsWith("/auth/callback")) body = body.replace("</body>", BACK_LINK + "</body>")
         val bytes = body.toByteArray(Charsets.UTF_8)

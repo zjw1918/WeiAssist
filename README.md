@@ -2,6 +2,20 @@
 
 Milestone 0: send "你好" through **Pi** (github.com/earendil-works/pi, v1.4.0) to OpenAI and show the reply.
 
+## Rule: use Pi as published
+Import only Pi's public package exports, and use its own APIs. Never patch or deep-import Pi internals; that way upgrading Pi is just `npm run upgrade-pi`.
+`npm run build` type-checks `pi-host/src` against Pi's published types first, so a breaking upgrade fails at build time.
+
+What we use from Pi:
+- `Agent`, `AgentTool` and the `beforeToolCall` hook;
+- `createModels`, `models.login` / `logout` / `streamSimple`, and the `CredentialStore` interface;
+- `getSupportedThinkingLevels` / `clampThinkingLevel`, `openaiProvider`, and `OPENAI_CODEX_MODELS`;
+- `registerBunOAuthFlows` (from `@earendil-works/pi-ai/bun-oauth`).
+
+What we add is environment only, not Pi logic:
+- a `fetch`, a minimal `node:http` (the slice Pi's login flows use), and `node:crypto.randomBytes`;
+- the phone tools, which are ordinary `AgentTool`s.
+
 ## How Pi runs on Android
 Pi is TypeScript. The CLI (`pi-coding-agent`) needs Node ≥ 22.19, which Android doesn't have
 (nodejs-mobile stops at Node 18). But Pi's two core layers are browser-safe and checked so upstream (`check:browser-smoke`):
@@ -28,7 +42,7 @@ The welcome screen lists the auth methods Pi's `openai` provider declares, and `
   - Chrome opens as a Custom Tab, and the redirect goes to `http://127.0.0.1:1455/auth/callback`.
   - That port is a loopback socket in Kotlin (`LoopbackServer`) behind a `node:http` shim, and Pi's own handler checks state and answers.
   - Pi's "paste the redirect URL" fallback is shown as "Chrome 没跳回来？".
-  - The flow is embedded with `registerBundledOAuthFlowLoaders`, as Pi's standalone binary does.
+  - The flow is embedded with `registerBunOAuthFlows`, Pi's public export for bundled builds.
 - **API key**: Pi's `envApiKeyAuth` asks for a secret. API usage is billed separately from ChatGPT and needs
   billing set up at platform.openai.com.
 - Pi's credential store is mirrored to Kotlin after every write (login, token refresh, logout) and kept
