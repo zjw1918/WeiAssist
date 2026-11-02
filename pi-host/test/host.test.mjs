@@ -46,9 +46,9 @@ test("saved credentials are restored on start", async () => {
 test("a prompt goes through Pi's Agent and OpenAI adapter, via native fetch, and streams back", async () => {
 	const host = await startHost({ credentials: apiKeyCredentials });
 	const before = mock.requests.length;
-	host.call("configure", { provider: "openai", modelId: "gpt-5.4-mini", thinkingLevel: "low", baseUrl: mock.url });
+	host.call("configure", { session: "s1", provider: "openai", modelId: "gpt-5.4-mini", thinkingLevel: "low", baseUrl: mock.url });
 	await host.waitFor("configured");
-	host.call("prompt", { text: "你好" });
+	host.call("prompt", { session: "s1", text: "你好" });
 	await host.waitFor("idle");
 
 	const end = host.messages.find((m) => m.type === "assistant_end");
@@ -92,7 +92,7 @@ test("ChatGPT sign-in starts Pi's OAuth flow on the loopback port and can be can
 
 test("a model Pi doesn't know is reported as an error, not a crash", async () => {
 	const host = await startHost({ credentials: apiKeyCredentials });
-	host.call("configure", { provider: "openai", modelId: "no-such-model", baseUrl: mock.url });
+	host.call("configure", { session: "s1", provider: "openai", modelId: "no-such-model", baseUrl: mock.url });
 	const err = await host.waitFor("error");
 	assert.match(err.message, /no model openai\/no-such-model/);
 });
@@ -100,9 +100,9 @@ test("a model Pi doesn't know is reported as an error, not a crash", async () =>
 // ---- phone tools (Pi AgentTools served by Kotlin's "phone" host call) ------------------------------
 
 const phoneRun = async (host, script) => {
-	host.call("configure", { provider: "openai", modelId: "gpt-5.4-mini", baseUrl: mock.url, phone: true });
+	host.call("configure", { session: "s1", provider: "openai", modelId: "gpt-5.4-mini", baseUrl: mock.url, phone: true });
 	await host.waitFor("configured");
-	host.call("prompt", { text: `do it [[script:${script}]]` });
+	host.call("prompt", { session: "s1", text: `do it [[script:${script}]]` });
 	await host.waitFor("idle", () => true, 15_000);
 };
 
@@ -186,4 +186,102 @@ test("old screens are pruned from the model's context, the latest two are kept",
 	assert.match(outputs[2], /screen 3/);
 	assert.match(outputs[3], /screen 4/);
 	assert.ok(mock.requests.length - before >= 5);
+});
+
+// ---- sessions ---------------------------------------------------------------------------------------
+
+const configure = async (host, session, extra = {}) => {
+	host.call("configure", { session, provider: "openai", modelId: "gpt-5.4-mini", baseUrl: mock.url, ...extra });
+	return host.waitFor("configured", (m) => m.session === session);
+};
+
+test("two sessions run at the same time, each with its own transcript and tools", async () => {
+	const phoneCalls = [];
+	const host = await startHost({
+		credentials: apiKeyCredentials,
+		hostCalls: { phone: (m) => { phoneCalls.push(m.session); return `app: x\n[1] TextView "s"`; } },
+	});
+	await configure(host, "a", { phone: true });
+	await configure(host, "b");
+	host.call("prompt", { session: "a", text: "do it [[script:screens]]" });
+	host.call("prompt", { session: "b", text: "你好" });
+	await Promise.all([host.waitFor("idle", (m) => m.session === "a", 15_000), host.waitFor("idle", (m) => m.session === "b", 15_000)]);
+	assert.ok(phoneCalls.length >= 4);
+	assert.ok(phoneCalls.every((s) => s === "a"), "phone requests name their session");
+	assert.ok(!host.messages.some((m) => m.session === "b" && m.type === "tool_start"), "the chat session has no phone tools");
+	const ta = host.messages.filter((m) => m.type === "transcript" && m.session === "a").at(-1);
+	const tb = host.messages.filter((m) => m.type === "transcript" && m.session === "b").at(-1);
+	assert.ok(ta.messages.some((m) => m.role === "toolResult"));
+	assert.deepEqual(tb.messages.map((m) => m.role), ["user", "assistant"]);
+	assert.ok(!JSON.stringify(tb).includes("script:screens"), "transcripts don't leak across sessions");
+	assert.ok(host.messages.every((m) => !["text_delta", "tool_start", "idle", "transcript"].includes(m.type) || m.session), "session events are tagged");
+});
+
+test("a saved transcript is restored into a new runtime, and the model sees it", async () => {
+	const host = await startHost({ credentials: apiKeyCredentials });
+	await configure(host, "s");
+	host.call("prompt", { session: "s", text: "remember the number 4711" });
+	await host.waitFor("idle", (m) => m.session === "s");
+	const saved = host.messages.filter((m) => m.type === "transcript").at(-1).messages;
+	assert.ok(saved.every((m) => m.role !== "system"), "the system prompt is not saved; it is rebuilt");
+
+	const fresh = await startHost({ credentials: apiKeyCredentials });
+	const conf = await configure(fresh, "s", { messages: saved });
+	assert.equal(conf.messages, 2);
+	fresh.call("prompt", { session: "s", text: "which number?" });
+	await fresh.waitFor("idle", (m) => m.session === "s");
+	const body = JSON.stringify(JSON.parse(mock.requests.at(-1).body).input);
+	assert.match(body, /remember the number 4711/);
+	assert.match(body, /which number\?/);
+});
+
+test("the user's message is saved before the first turn ends", async () => {
+	const host = await startHost({ credentials: apiKeyCredentials, hostCalls: { phone: () => new Promise(() => {}) } });
+	await configure(host, "u", { phone: true });
+	host.call("prompt", { session: "u", text: "do it [[script:tap]]" });
+	await host.waitFor("tool_start", (m) => m.session === "u"); // stuck in a tool, as when the runtime dies
+	const t = host.messages.find((m) => m.type === "transcript" && m.session === "u");
+	assert.deepEqual(t.messages.map((m) => m.role), ["user"]);
+});
+
+test("changing the model keeps the conversation", async () => {
+	const host = await startHost({ credentials: apiKeyCredentials });
+	await configure(host, "s");
+	host.call("prompt", { session: "s", text: "first message" });
+	await host.waitFor("idle", (m) => m.session === "s");
+	host.clear();
+	const conf = await configure(host, "s", { thinkingLevel: "high" });
+	assert.equal(conf.messages, 2);
+});
+
+test("a paused session waits at the gate before its next action, and Stop at the gate ends it", async () => {
+	let open;
+	const taps = [];
+	const host = await startHost({
+		credentials: apiKeyCredentials,
+		hostCalls: { gate: () => new Promise((r) => { open = r; }), phone: (m) => { taps.push(m.action); return "tapped"; } },
+	});
+	await configure(host, "p", { phone: true });
+	host.call("prompt", { session: "p", text: "do it [[script:tap]]" });
+	await host.waitFor("tool_start", (m) => m.session === "p");
+	await new Promise((r) => setTimeout(r, 100));
+	assert.deepEqual(taps, [], "paused: nothing happens on the phone");
+	open(false); // the user stopped it while paused
+	await host.waitFor("idle", (m) => m.session === "p");
+	assert.deepEqual(taps, [], "stopped: the tap never happened");
+});
+
+test("transcripts drop screenshots and old screens", async () => {
+	const host = await startHost({
+		credentials: apiKeyCredentials,
+		hostCalls: { phone: () => `app: x\n[1] TextView "s"` },
+	});
+	await configure(host, "t", { phone: true });
+	host.call("prompt", { session: "t", text: "do it [[script:screens]]" });
+	await host.waitFor("idle", (m) => m.session === "t", 15_000);
+	const t = host.messages.filter((m) => m.type === "transcript" && m.session === "t").at(-1).messages;
+	const screens = t.filter((m) => m.role === "toolResult").map((m) => m.content[0].text);
+	assert.equal(screens.length, 4);
+	assert.match(screens[0], /omitted/);
+	assert.match(screens[3], /TextView/);
 });

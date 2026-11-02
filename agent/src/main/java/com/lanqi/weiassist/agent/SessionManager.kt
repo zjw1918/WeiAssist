@@ -1,0 +1,327 @@
+package com.lanqi.weiassist.agent
+
+import android.util.Log
+import com.lanqi.weiassist.pi.PiEngine
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.UUID
+
+/**
+ * Where phone sessions get a screen to operate. For now there is one, the phone's own screen, so
+ * phone sessions take turns (the others are [SessionStatus.Queued]); a session that only chats needs
+ * no screen and always runs at once. Virtual displays will give each session its own.
+ */
+interface ScreenPool {
+    /** Give [session] a screen, or false if none is free now. */
+    fun tryAcquire(session: String): Boolean
+    fun release(session: String)
+    fun holder(session: String): Boolean
+}
+
+class MainScreenPool : ScreenPool {
+    private var owner: String? = null
+    override fun tryAcquire(session: String) = (owner == null || owner == session).also { if (it) owner = session }
+    override fun release(session: String) { if (owner == session) owner = null }
+    override fun holder(session: String) = owner == session
+}
+
+/**
+ * All conversations. Each session is its own Pi Agent in the one Pi runtime, so sessions run side by
+ * side and keep running when their screen is closed; they end when their task is done or the user
+ * stops them. Main thread only (state changes), with disk work on one background lane.
+ *
+ * Memory: every session's [SessionSummary] is kept (small). A session's chat ([SessionState]) is in
+ * memory only while it is busy or open on screen ([attach]); otherwise it is on disk only. Pi's
+ * transcript lives inside Pi while the session's Agent exists, and on disk.
+ */
+class SessionManager(
+    private val pi: PiEngine,
+    private val store: SessionStore,
+    private val scope: CoroutineScope,
+    private val strings: Strings,
+    /** The model and thinking level a message uses, and the mock server URL in dev mode. */
+    private val settings: () -> Triple<String, String, String?>,
+) {
+    /** Localized texts the manager needs (supplied by the controller, which has a Context). */
+    interface Strings {
+        fun friendly(msg: String): String
+        fun runtimeRestarted(): String
+        fun continueTask(): String
+    }
+
+    private val io = Dispatchers.IO.limitedParallelism(1)
+    private val _summaries = MutableStateFlow<List<SessionSummary>>(emptyList())
+    /** Every session, most recently active first. */
+    val summaries: StateFlow<List<SessionSummary>> = _summaries.asStateFlow()
+
+    /** Sessions held in memory: busy ones and those on screen. */
+    private val live = HashMap<String, MutableStateFlow<SessionState>>()
+    /** How many screens show each session ([attach]/[detach]). */
+    private val watchers = HashMap<String, Int>()
+    /** Pi Agent settings per session in the current runtime; a session not in here has no Agent yet. */
+    private val configured = HashMap<String, String>()
+    private val paused = HashMap<String, MutableStateFlow<Boolean>>()
+    /** Bumped per session when the user stops it, so a gate waiting in a paused session gives up. */
+    private val stops = HashMap<String, Int>()
+    private val queue = ArrayDeque<String>()
+    private val screens: ScreenPool = MainScreenPool()
+    private val pendingWrites = HashMap<String, Job>()
+
+    /** Load the saved sessions. Sessions that were working when the process ended are marked Interrupted. */
+    suspend fun load() {
+        val saved = withContext(io) { store.loadSummaries() }
+        val now = System.currentTimeMillis()
+        val fixed = saved.map { if (it.status.active) it.copy(status = SessionStatus.Interrupted, updatedAt = now) else it }
+        _summaries.value = fixed
+        fixed.filter { it.status == SessionStatus.Interrupted && saved.first { s -> s.id == it.id }.status.active }
+            .forEach { s -> scope.launch(io) { store.saveSummary(s) } }
+    }
+
+    // ---- observing ------------------------------------------------------------------------------------
+
+    /** A screen shows this session: keep it in memory and return its live state (loading it if needed). */
+    suspend fun attach(id: String): StateFlow<SessionState>? {
+        watchers[id] = (watchers[id] ?: 0) + 1
+        return loadLive(id)
+    }
+
+    /** The screen closed: a session that isn't busy leaves memory (it is on disk). */
+    fun detach(id: String) {
+        val n = (watchers[id] ?: 1) - 1
+        if (n <= 0) watchers.remove(id) else watchers[id] = n
+        evictIfUnused(id)
+    }
+
+    private suspend fun loadLive(id: String): MutableStateFlow<SessionState>? {
+        live[id]?.let { return it }
+        val summary = _summaries.value.firstOrNull { it.id == id } ?: return null
+        val items = withContext(io) { store.loadItems(id) }
+        // A coroutine may have loaded it meanwhile; keep that one.
+        return live.getOrPut(id) { MutableStateFlow(SessionState(summary, items.takeLast(SessionReducer.MAX_ITEMS))) }
+    }
+
+    private fun evictIfUnused(id: String) {
+        val s = live[id]?.value ?: return
+        if (s.busy || (watchers[id] ?: 0) > 0) return
+        flush(s)
+        live.remove(id)
+    }
+
+    fun summary(id: String) = _summaries.value.firstOrNull { it.id == id }
+
+    // ---- commands -------------------------------------------------------------------------------------
+
+    /** A new, empty session. [phone] = it may operate the phone. */
+    fun create(phone: Boolean, title: String = ""): String {
+        val now = System.currentTimeMillis()
+        val id = UUID.randomUUID().toString().substring(0, 8)
+        val summary = SessionSummary(id, title, phone, SessionStatus.Idle, now, now)
+        live[id] = MutableStateFlow(SessionState(summary))
+        publish(summary)
+        scope.launch(io) { store.saveSummary(summary) }
+        return id
+    }
+
+    /** The user's message to a session: start (or queue) a task. False if the session is busy or unknown. */
+    suspend fun send(id: String, text: String): Boolean {
+        if (text.isBlank()) return false
+        val flow = loadLive(id) ?: return false
+        if (flow.value.busy) return false
+        val phone = flow.value.summary.phone
+        val now = System.currentTimeMillis()
+        val canRun = !phone || screens.tryAcquire(id)
+        update(id) { s ->
+            val titled = if (s.summary.title.isBlank()) s.copy(summary = s.summary.copy(title = text.trim().lineSequence().first().take(40))) else s
+            SessionReducer.userMessage(titled, text.trim(), queued = !canRun, now = now)
+        }
+        paused.getOrPut(id) { MutableStateFlow(false) }.value = false
+        if (canRun) start(id) else queue.addLast(id)
+        return true
+    }
+
+    /** An interrupted session (the app's process ended mid-task) picks up where it was. */
+    suspend fun continueTask(id: String) = send(id, strings.continueTask())
+
+    private fun start(id: String) {
+        val s = live[id]?.value ?: return
+        val task = s.pendingTask ?: return
+        if (s.status == SessionStatus.Queued) update(id) { SessionReducer.withStatus(it, SessionStatus.Running, System.currentTimeMillis()) }
+        scope.launch {
+            val (model, thinking, mock) = settings()
+            val phone = s.summary.phone
+            val config = listOf(model, thinking, mock, phone).joinToString("|")
+            if (configured[id] != config) {
+                // First use in this runtime: give Pi the saved conversation back.
+                val history = if (id !in configured) withContext(io) { store.loadTranscript(id) } else null
+                pi.configure(id, AgentController.PROVIDER, model, thinking, mock, tools = if (phone) "phone" else null, messages = history)
+                configured[id] = config
+            }
+            pi.prompt(id, task)
+        }
+    }
+
+    /** Stop the session's task (Pi's Agent.abort); a queued task is dropped. */
+    fun stop(id: String) {
+        val s = live[id]?.value ?: return
+        if (!s.busy) return
+        Log.d(TAG, "stop $id (${s.status})")
+        stops[id] = (stops[id] ?: 0) + 1
+        paused[id]?.value = false
+        queue.remove(id)
+        if (s.status != SessionStatus.Queued) scope.launch { pi.abort(id) }
+        update(id) { SessionReducer.stopped(it, System.currentTimeMillis()) }
+        releaseScreen(id)
+    }
+
+    fun stopAll() = live.values.map { it.value }.filter { it.busy }.forEach { stop(it.id) }
+
+    /** Hold the session before its next action (what it is doing now finishes). */
+    fun pause(id: String) {
+        val s = live[id]?.value ?: return
+        if (s.status != SessionStatus.Running && s.status != SessionStatus.Queued) return
+        paused.getOrPut(id) { MutableStateFlow(false) }.value = true
+        update(id) { SessionReducer.withStatus(it, SessionStatus.Paused, System.currentTimeMillis()) }
+    }
+
+    fun resume(id: String) {
+        val s = live[id]?.value ?: return
+        if (s.status != SessionStatus.Paused) return
+        paused[id]?.value = false
+        val st = if (id in queue) SessionStatus.Queued else SessionStatus.Running
+        update(id) { SessionReducer.withStatus(it, st, System.currentTimeMillis()) }
+    }
+
+    fun rename(id: String, title: String) {
+        if (live[id] != null) update(id) { it.copy(summary = it.summary.copy(title = title.trim())) }
+        else summary(id)?.let { s -> s.copy(title = title.trim()).also { publish(it); scope.launch(io) { store.saveSummary(it) } } }
+    }
+
+    /** Remove the session for good: stop it, drop its Agent, delete its files. */
+    fun delete(id: String) {
+        stop(id)
+        live.remove(id); watchers.remove(id); paused.remove(id); stops.remove(id); configured.remove(id)
+        pendingWrites.remove(id)?.cancel()
+        _summaries.update { l -> l.filterNot { it.id == id } }
+        scope.launch { pi.dispose(id) }
+        scope.launch(io) { store.delete(id) }
+    }
+
+    // ---- from Pi --------------------------------------------------------------------------------------
+
+    /** Pi's message about session [id]. */
+    fun onPi(id: String, m: JSONObject) {
+        if (m.optString("type") == "transcript") {
+            val messages = m.optJSONArray("messages") ?: JSONArray()
+            scope.launch(io) { runCatching { store.saveTranscript(id, messages) }.onFailure { Log.e(TAG, "transcript $id not saved", it) } }
+            return
+        }
+        if (live[id] == null) { Log.w(TAG, "message for a session not in memory: $id ${m.optString("type")}"); return }
+        val wasBusy = live[id]!!.value.busy
+        update(id) { SessionReducer.reduce(it, m, System.currentTimeMillis(), strings::friendly) }
+        if (wasBusy && !live[id]!!.value.busy) finished(id)
+    }
+
+    /** The runtime died: every Agent is gone. Running tasks end; the next message restores each conversation. */
+    fun onRuntimeRestarted() {
+        configured.clear()
+        val now = System.currentTimeMillis()
+        live.keys.toList().forEach { id ->
+            val wasBusy = live[id]!!.value.busy
+            update(id) { SessionReducer.runtimeLost(it, strings.runtimeRestarted(), now) }
+            if (wasBusy) finished(id)
+        }
+        queue.clear()
+    }
+
+    /**
+     * Pi's beforeToolCall gate: suspends while the session is paused. False = the user stopped it
+     * (or it no longer exists), so Pi ends the run.
+     */
+    suspend fun gate(id: String): Boolean {
+        val gen = stops[id] ?: 0
+        val p = paused[id] ?: return live[id]?.value?.busy == true
+        if (p.value) p.first { !it || (stops[id] ?: 0) != gen }
+        return (stops[id] ?: 0) == gen && live[id]?.value?.busy == true
+    }
+
+    fun isPaused(id: String) = paused[id]?.value == true
+
+    /** Whether [id] may operate the phone's screen now (it holds the screen). */
+    fun holdsScreen(id: String) = screens.holder(id)
+
+    // ---- internals ------------------------------------------------------------------------------------
+
+    private val _finished = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 16)
+    /** A session's task ended (done, failed or stopped); the service reports it if no one is watching. */
+    val finished: kotlinx.coroutines.flow.SharedFlow<String> = _finished
+
+    private fun finished(id: String) {
+        releaseScreen(id)
+        _finished.tryEmit(id)
+        evictIfUnused(id)
+    }
+
+    /** The screen is free again: the longest-waiting phone session gets it. */
+    private fun releaseScreen(id: String) {
+        if (!screens.holder(id)) return
+        screens.release(id)
+        while (queue.isNotEmpty()) {
+            val next = queue.first()
+            if (live[next]?.value?.status !in setOf(SessionStatus.Queued, SessionStatus.Paused)) { queue.removeFirst(); continue }
+            if (!screens.tryAcquire(next)) return
+            queue.removeFirst()
+            // A paused one keeps the screen; Pi's gate holds it before its first action until resumed.
+            start(next)
+            return
+        }
+    }
+
+    private fun update(id: String, f: (SessionState) -> SessionState) {
+        val flow = live[id] ?: return
+        val before = flow.value
+        val after = f(before)
+        if (after === before) return
+        flow.value = after
+        if (after.summary != before.summary) publish(after.summary)
+        if (after.summary != before.summary || after.items !== before.items) schedulePersist(id)
+    }
+
+    private fun publish(s: SessionSummary) = _summaries.update { l ->
+        (listOf(s) + l.filterNot { it.id == s.id }).sortedByDescending { it.updatedAt }
+    }
+
+    /** Write a session soon (coalesced: a burst of steps is one write). */
+    private fun schedulePersist(id: String) {
+        if (pendingWrites[id]?.isActive == true) return
+        pendingWrites[id] = scope.launch { delay(400); write(id) }
+    }
+
+    /** Write a session now (it is leaving memory): this exact state, as it won't be in [live] any more. */
+    private fun flush(s: SessionState) {
+        pendingWrites.remove(s.id)?.cancel()
+        scope.launch { write(s) }
+    }
+
+    private suspend fun write(id: String) { live[id]?.value?.let { write(it) } }
+
+    private suspend fun write(s: SessionState) {
+        val id = s.id
+        withContext(io) {
+            runCatching { store.saveSummary(s.summary); store.saveItems(id, s.items) }
+                .onFailure { Log.e(TAG, "session $id not saved", it) }
+        }
+    }
+
+    companion object { private const val TAG = "Sessions" }
+}

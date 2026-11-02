@@ -2,7 +2,7 @@
 //   Kotlin -> JS: window.PiHost.<fn>(json)   (evaluateJavascript)
 //   JS -> Kotlin: PiBridge.postMessage(json) (WebViewCompat.addWebMessageListener)
 // No LLM, agent or login logic lives here: this file adapts Pi's own APIs to that channel.
-import { Agent, type AgentEvent } from "@earendil-works/pi-agent-core";
+import { Agent, type AgentEvent, type AgentMessage, type BeforeToolCallContext } from "@earendil-works/pi-agent-core";
 import {
 	clampThinkingLevel,
 	getSupportedThinkingLevels,
@@ -21,9 +21,9 @@ import { OPENAI_CODEX_MODELS } from "@earendil-works/pi-ai/providers/openai-code
 // uses). It registers Pi's real login flows, e.g. "Sign in with ChatGPT"; node:http and node:crypto,
 // which those flows need, are shimmed in build.mjs.
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
-import { bridge, settle } from "./bridge.ts";
+import { bridge, bridgeCall, settle } from "./bridge.ts";
 import { fetchEvents, nativeFetch } from "./native-fetch.ts";
-import { confirmRiskyTap, phoneSystemPrompt, phoneTools, pruneOldScreens, resetPhoneSession } from "./phone-tools.ts";
+import { PhoneSession, phoneSystemPrompt, pruneOldScreens } from "./phone-tools.ts";
 import { dispatch } from "./shims/http.ts";
 
 declare const __PI_VERSION__: string;
@@ -66,7 +66,6 @@ models.setProvider(openaiProvider());
 
 let deviceId = "";
 let agentName = "Pi";
-let agent: Agent | undefined;
 let login: AbortController | undefined;
 let promptSeq = 0;
 const prompts = new Map<string, { resolve: (v: string) => void; reject: (e: unknown) => void }>();
@@ -140,73 +139,163 @@ async function startLogin(provider: string, type: "oauth" | "api_key") {
 	}
 }
 
-// ---- agent ------------------------------------------------------------------------------------------
+// ---- sessions ---------------------------------------------------------------------------------------
+// Every session is its own Pi Agent with its own transcript and phone tools, so sessions run side by
+// side in this one runtime (one WebView for all of them keeps memory flat). Every message to Kotlin
+// about a session carries its id.
+
+type Config = { session: string; provider: string; modelId: string; thinkingLevel?: string; baseUrl?: string; systemPrompt?: string; phone?: boolean; messages?: AgentMessage[] };
+
+interface Session {
+	id: string;
+	agent: Agent;
+	phone?: PhoneSession;
+	running: boolean;
+}
+
+const sessions = new Map<string, Session>();
+
+const need = (id: string) => {
+	const s = sessions.get(id);
+	if (!s) throw new Error(`no session ${id}; configure it first`);
+	return s;
+};
 
 // Pi events carry whole message objects; forward a compact form that Kotlin can render and log.
-function forward(event: AgentEvent) {
+function forward(session: string, event: AgentEvent) {
+	const send = (m: Record<string, unknown>) => bridge({ ...m, session });
 	switch (event.type) {
 		case "message_update": {
 			const e = event.assistantMessageEvent;
-			if (e.type === "text_delta") bridge({ type: "text_delta", delta: e.delta });
+			if (e.type === "text_delta") send({ type: "text_delta", delta: e.delta });
 			break;
 		}
 		case "message_end": {
 			const m = event.message as any;
 			if (m.role === "assistant") {
 				const text = (m.content ?? []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
-				bridge({
+				send({
 					type: "assistant_end", text, model: m.model, provider: m.provider, api: m.api,
 					stopReason: m.stopReason, errorMessage: m.errorMessage, usage: m.usage,
 				});
-			} else bridge({ type: "message_end", role: m.role });
+			} else {
+				send({ type: "message_end", role: m.role });
+				// The user's message is in the transcript now: save, so a crash before the turn ends keeps it.
+				if (m.role === "user") saveTranscript(session);
+			}
 			break;
 		}
 		case "tool_execution_start":
-			bridge({ type: "tool_start", tool: event.toolName, args: event.args });
+			send({ type: "tool_start", tool: event.toolName, args: event.args });
 			break;
 		case "tool_execution_end": {
 			const r = (event as any).result;
 			const out = (r?.content ?? []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
-			bridge({ type: "tool_end", tool: event.toolName, isError: !!(event as any).isError, output: out.slice(0, 300) });
+			send({ type: "tool_end", tool: event.toolName, isError: !!(event as any).isError, output: out.slice(0, 300) });
 			break;
 		}
+		case "turn_end":
+			send({ type: "turn_end" });
+			saveTranscript(session);
+			break;
 		default:
-			bridge({ type: event.type });
+			send({ type: event.type });
 	}
 }
 
-async function configure(cfg: { provider: string; modelId: string; thinkingLevel?: string; baseUrl?: string; systemPrompt?: string; phone?: boolean }) {
-	agent?.abort();
+/**
+ * The session's transcript for Kotlin to save, small enough to write after every turn: screenshots
+ * become a note, and screen reads older than the latest two become a note (as the model already sees
+ * them, see pruneOldScreens). Restoring it gives Pi the same conversation the model was having.
+ */
+export function savableTranscript(messages: AgentMessage[]) {
+	const screens = messages
+		.map((m: any, i) => (m.role === "toolResult" && (m.toolName === "read_screen" || m.toolName === "screenshot") ? i : -1))
+		.filter((i) => i >= 0);
+	const old = new Set(screens.slice(0, Math.max(0, screens.length - 2)));
+	return messages.flatMap((m: any, i) => {
+		if (m.role === "system") return [];
+		if (old.has(i)) return { ...m, content: [{ type: "text", text: `[earlier ${m.toolName} omitted; the screen has changed since]` }] };
+		if (!Array.isArray(m.content) || !m.content.some((c: any) => c.type === "image")) return m;
+		return { ...m, content: m.content.map((c: any) => (c.type === "image" ? { type: "text", text: "[screenshot not kept]" } : c)) };
+	});
+}
+
+function saveTranscript(id: string) {
+	const s = sessions.get(id);
+	if (s) bridge({ type: "transcript", session: id, messages: savableTranscript(s.agent.state.messages) });
+}
+
+/**
+ * Before every tool call: wait while the session is paused (Kotlin answers "gate" when it may go on),
+ * then the phone session's own checks (confirmation of risky taps, step limit).
+ */
+const beforeToolCall = (s: Session) => async (ctx: BeforeToolCallContext) => {
+	const go = await bridgeCall("gate", { session: s.id });
+	if (go === false) return { block: true, terminate: true, reason: "Stopped by the user." };
+	return s.phone?.confirmRiskyTap(ctx);
+};
+
+async function configure(cfg: Config) {
 	const found = models.getModel(cfg.provider, cfg.modelId);
 	if (!found) throw new Error(`Pi has no model ${cfg.provider}/${cfg.modelId}`);
+	const prev = sessions.get(cfg.session);
+	prev?.agent.abort();
 	// baseUrl override exists only so a local mock server can show exactly what Pi sends.
 	const model: Model<any> = cfg.baseUrl ? { ...found, baseUrl: cfg.baseUrl } : found;
 	// Pi maps the level onto what this model supports (e.g. "max" → the highest it has).
 	const thinkingLevel = clampThinkingLevel(model, (cfg.thinkingLevel ?? "off") as any);
-	resetPhoneSession();
-	agent = new Agent({
+	const phone = cfg.phone ? new PhoneSession(cfg.session) : undefined;
+	// The conversation goes on across a change of model or tools; a saved one is restored as given.
+	// System messages are left out: Pi puts the current system prompt and tools in front (initialState).
+	const history = (cfg.messages ?? prev?.agent.state.messages ?? []).filter((m: any) => m.role !== "system");
+	const session: Session = { id: cfg.session, agent: undefined as unknown as Agent, phone, running: false };
+	session.agent = new Agent({
 		initialState: {
+			messages: history,
 			systemPrompt: cfg.systemPrompt ?? (cfg.phone ? phoneSystemPrompt(agentName) : `You are ${agentName}, a helpful assistant on the user's Android phone. Reply in the user's language.`),
 			model,
 			thinkingLevel: thinkingLevel as any,
-			tools: cfg.phone ? phoneTools : [],
+			tools: phone?.tools ?? [],
 		},
-		// Pi's hook: risky taps wait for the user's OK.
-		beforeToolCall: cfg.phone ? confirmRiskyTap : undefined,
+		// Pi's hook: the pause gate, then risky taps wait for the user's OK.
+		beforeToolCall: beforeToolCall(session),
 		// Pi's hook to shape the context per model call: drop old screens (see pruneOldScreens).
 		transformContext: cfg.phone ? pruneOldScreens : undefined,
 		// Pi resolves auth per request from the credential store (api key, or ChatGPT token refreshed as needed).
 		streamFn: models.streamSimple.bind(models),
 	});
-	agent.subscribe(forward);
+	session.agent.subscribe((e) => forward(cfg.session, e));
+	sessions.set(cfg.session, session);
 	const auth = await credentials.read(cfg.provider);
-	bridge({ type: "configured", provider: model.provider, model: model.id, api: model.api, baseUrl: model.baseUrl, auth: auth?.type ?? null, thinkingLevel });
+	bridge({ type: "configured", session: cfg.session, provider: model.provider, model: model.id, api: model.api, baseUrl: model.baseUrl, auth: auth?.type ?? null, thinkingLevel, messages: history.length });
+}
+
+async function prompt(id: string, text: string) {
+	const s = need(id);
+	if (s.running) throw new Error("this session is already working");
+	s.running = true;
+	s.phone?.reset();
+	try {
+		await s.agent.prompt(text);
+	} finally {
+		s.running = false;
+		saveTranscript(id);
+		bridge({ type: "idle", session: id });
+	}
+}
+
+function dispose(id: string) {
+	const s = sessions.get(id);
+	if (!s) return;
+	s.agent.abort();
+	sessions.delete(id);
 }
 
 // ---- entry points for Kotlin ----------------------------------------------------------------------
 
-function guard(id: string, fn: () => Promise<void>) {
-	fn().catch((e) => bridge({ type: "error", id, message: String(e?.message ?? e) }));
+function guard(id: string, fn: () => Promise<void>, session?: string) {
+	fn().catch((e) => bridge({ type: "error", id, session, message: String(e?.message ?? e) }));
 }
 const arg = (json: string) => JSON.parse(json);
 
@@ -230,15 +319,12 @@ const arg = (json: string) => JSON.parse(json);
 		a.cancel ? p.reject(new Error("cancelled")) : p.resolve(a.value);
 	},
 	logout: (json: string) => guard("logout", async () => { await models.logout(arg(json).provider); await status(); }),
-	configure: (json: string) => guard("configure", () => configure(arg(json))),
-	prompt: (json: string) =>
-		guard("prompt", async () => {
-			if (!agent) throw new Error("Pi is not configured");
-			resetPhoneSession(); // per task: step limit and the typed fields shown on the confirmation card
-			await agent.prompt(arg(json).text);
-			bridge({ type: "idle" });
-		}),
-	abort: () => agent?.abort(),
+	configure: (json: string) => { const a = arg(json); guard("configure", () => configure(a), a.session); },
+	prompt: (json: string) => { const a = arg(json); guard("prompt", () => prompt(a.session, a.text), a.session); },
+	abort: (json: string) => sessions.get(arg(json).session)?.agent.abort(),
+	dispose: (json: string) => dispose(arg(json).session),
+	/** Sessions alive in this runtime (after a renderer restart this is empty: Kotlin reconfigures). */
+	sessions: () => bridge({ type: "sessions", ids: [...sessions.keys()], running: [...sessions.values()].filter((s) => s.running).map((s) => s.id) }),
 	reply: (json: string) => { const a = arg(json); settle(a.id, a.ok, a.value); },
 	fetchHead: (json: string) => { const a = arg(json); fetchEvents.head(a.id, a.status, a.statusText, a.headers); },
 	fetchChunk: (id: string, b64: string) => fetchEvents.chunk(id, b64),

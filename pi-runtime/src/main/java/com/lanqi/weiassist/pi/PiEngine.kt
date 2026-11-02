@@ -155,7 +155,7 @@ class PiEngine(context: Context, private val agentName: String) {
             else -> {
                 if (m.optString("type") == "tool_start") Log.d(TAG, "← pi tool ${m.optString("tool")} ${m.optJSONObject("args")?.let(::redactArgs)}")
                 if (m.optString("type") == "tool_end") Log.d(TAG, "← pi tool ${m.optString("tool")} done error=${m.optBoolean("isError")}")
-                if (m.optString("type") !in QUIET) Log.d(TAG, "← pi ${m.optString("type")}")
+                if (m.optString("type") !in QUIET) Log.d(TAG, "← pi ${m.optString("type")} ${m.optString("session")}")
                 events.tryEmit(m)
             }
         }
@@ -168,15 +168,26 @@ class PiEngine(context: Context, private val agentName: String) {
     suspend fun cancelPrompt(id: String) = call("answer", JSONObject().put("id", id).put("cancel", true))
     suspend fun cancelLogin() = call("cancelLogin", null)
     suspend fun logout(provider: String) = call("logout", JSONObject().put("provider", provider))
-    /** [tools] names a tool set pi-host knows (e.g. "phone"); null = plain chat. */
-    suspend fun configure(provider: String, modelId: String, thinkingLevel: String, baseUrl: String?, tools: String? = null, systemPrompt: String? = null) {
-        val cfg = JSONObject().put("provider", provider).put("modelId", modelId).put("thinkingLevel", thinkingLevel).put("phone", tools == "phone")
+    /**
+     * Create or replace session [session]'s Pi Agent. [tools] names a tool set pi-host knows ("phone");
+     * null = plain chat. [messages] restores a saved transcript (pi-host's `transcript` message); without
+     * it, an existing session keeps its conversation.
+     */
+    suspend fun configure(
+        session: String, provider: String, modelId: String, thinkingLevel: String, baseUrl: String?,
+        tools: String? = null, systemPrompt: String? = null, messages: org.json.JSONArray? = null,
+    ) {
+        val cfg = JSONObject().put("session", session).put("provider", provider).put("modelId", modelId)
+            .put("thinkingLevel", thinkingLevel).put("phone", tools == "phone")
         if (systemPrompt != null) cfg.put("systemPrompt", systemPrompt)
         if (!baseUrl.isNullOrBlank()) cfg.put("baseUrl", baseUrl)
+        if (messages != null) cfg.put("messages", messages)
         call("configure", cfg)
     }
-    suspend fun prompt(text: String) = call("prompt", JSONObject().put("text", text))
-    suspend fun abort() = call("abort", null)
+    suspend fun prompt(session: String, text: String) = call("prompt", JSONObject().put("session", session).put("text", text))
+    suspend fun abort(session: String) = call("abort", JSONObject().put("session", session))
+    /** Drop a session's Agent from the runtime (its saved transcript is the app's business). */
+    suspend fun dispose(session: String) = call("dispose", JSONObject().put("session", session))
 
     /**
      * Answer requests that pi-host makes with `bridgeCall(type, …)`. The handler's return value
@@ -210,6 +221,6 @@ class PiEngine(context: Context, private val agentName: String) {
         const val ORIGIN = "https://appassets.androidplatform.net"
         private const val TAG = "PiEngine"
         private val BUILT_IN = setOf("ready", "credentials_changed", "http_listen", "fetch", "fetch_abort", "http_close", "http_response")
-        private val QUIET = setOf("text_delta", "auth_prompt", "auth_event", "tool_start", "tool_end")
+        private val QUIET = setOf("text_delta", "auth_prompt", "auth_event", "tool_start", "tool_end", "transcript")
     }
 }

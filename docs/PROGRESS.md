@@ -39,11 +39,36 @@ _Last updated: 2026-11-01_
   - screen content is treated as data, not instructions.
 - **System prompt for multi-step work:** ask when a preference matters, dismiss pop-ups, recover from wrong turns, stop at logins and captchas, never invent facts.
 
+### Multi-session (2026-11-01)
+- **Sessions:** each conversation is its own Pi Agent in the one runtime; sessions run at the same time and
+  keep running when their page is closed. Session list (running first) and session page (chat, tool steps,
+  Pi events, follow-up messages).
+- **Controls:** start, pause, resume, stop, stop all, continue, rename, delete.
+- **History:** sessions saved per file (summary, chat, Pi transcript), restored after restarts, process death
+  (*Interrupted* → Continue) and Pi renderer crashes.
+- **One screen for now:** phone sessions queue for the phone's screen; chat sessions never wait.
+- **Notifications:** one "working" notification (count, Stop all); a result notification per session that opens it.
+- **Tests:** pi-host 17 (sessions in parallel, restore, pause gate, transcript pruning); JVM 23 (SessionReducer, storage format).
+- **Spike, virtual displays (shell uid, this realme):** an untrusted public virtual display works; third-party apps
+  launch on it (`am start --display`); accessibility sees its windows; `input -d` taps and types. Trusted
+  displays are refused on Android 12. ColorOS denies shell `WRITE_SECURE_SETTINGS` unless "Disable permission monitoring" is on.
+
 ### Verified on a real device (realme RMX2121, Android 12)
 - ChatGPT subscription sign-in, then "你好" through Pi (`gpt-6.1-sol`).
 - Gmail: sent an email to two different addresses, each after the confirmation card.
 - Settings: read the Android version with the app closed; the result arrived as a notification.
 - Stop, pause and resume, and renderer-crash recovery.
+- Sessions (mock model): a phone task and a chat at once; a second phone task queued and started 59 ms after the
+  first ended; pause held every action until resume; a killed process → Interrupted → Continue resumed the
+  scripted task at its third step; after a renderer crash the next message carried the whole conversation.
+- Sessions (real model): "打开设置，告诉我安卓版本号" and a chat question at the same time; both answered.
+
+## Next: multi-session, steps 2–5
+
+- [ ] **2. Built-in shell backend:** pair with Wireless debugging on the phone, start an `app_process` helper as shell, Binder link to the app.
+- [ ] **3. A virtual display per phone session:** create/launch/input through the helper; read screens per display through accessibility.
+- [ ] **4. Live previews:** the display's Surface rendered in the session page and the list; adaptive size and frame rate; nothing rendered when hidden.
+- [ ] **5. Supervisor session:** a session whose tools manage the others (create, start, pause, resume, stop, delete, message); voice-ready.
 
 ## Next: real-world scenarios on the device
 
@@ -67,7 +92,6 @@ Scenarios to build, test and refine (installed apps first):
 
 - [ ] **Readable confirmation card:** show the target app and a summary (recipient, item and price) instead of raw field lines.
 - [ ] **Chat-style home screen:** message history, markdown rendering, friendly step cards. The raw Pi trace goes in an "advanced" view.
-- [ ] **Conversation history** persisted across restarts (Pi transcript in Room).
 - [ ] **Ask-the-user tool**, for mid-task questions (preferences, choosing between options) without ending the task.
 - [ ] **Direct intents** where they beat UI automation: share, open URL, alarm, calendar.
 - [ ] **Per-app permissions** (allow / ask / never) and sensitive-screen detection (FLAG_SECURE, payment, OTP).
@@ -80,6 +104,8 @@ Scenarios to build, test and refine (installed apps first):
 ## Working notes
 
 - Set a task on the device (debug build): `adb shell "am start -n com.lanqi.weiassist/.MainActivity --es task '…'"`.
+  Add `--ez run true` to start it in a new session, `--ez phone false` for a chat, `--ez mock true` for the mock model.
+- Debug: `--ez crashPi true` crashes Pi's renderer; `--ez killProcess true` ends the process (session recovery).
 - Never `am force-stop` the app on realme: that disables its accessibility service.
 - UI dumps of our own Compose screen can be stale; use screenshots to locate buttons.
 - Mock provider: `node tools/mock-openai.mjs` with `adb reverse tcp:8787 tcp:8787`, then the dev switch in the app.

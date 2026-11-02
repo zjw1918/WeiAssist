@@ -6,8 +6,8 @@
     <string name="notif_signin">正在等待 ChatGPT 登录…点这里回到小维助手完成登录</string>
     <string name="notif_failed">没有完成：%1$s</string>
     <string name="notif_ended">任务结束了。</string>
-    <string name="notif_done_title">小维助手：完成了</string>
-    <string name="notif_error_title">小维助手：出了点问题</string>
+    <string name="notif_done_title">已完成：%1$s</string>
+    <string name="notif_error_title">未完成：%1$s</string>
     <string name="channel_working">小维助手工作中</string>
     <string name="channel_working_desc">小维助手执行任务或等待登录时显示，可以随时停止。</string>
     <string name="channel_results">任务结果</string>
@@ -19,4 +19,9 @@
     <string name="confirm_title">小维助手要点「%1$s」</string>
     <string name="confirm_nothing_typed">（这次没有输入内容）</string>
     <string name="err_runtime_restarted">小维助手的引擎刚刚重启，这个任务中断了，请再试一次。</string>
+    <string name="notif_stop_all">全部停止</string>
+    <plurals name="notif_running_many">
+        <item quantity="other">%1$d 个任务进行中</item>
+    </plurals>
+    <string name="continue_task">刚才执行这个任务时应用重启了。请重新查看屏幕，从中断的地方继续。</string>
 </resources>

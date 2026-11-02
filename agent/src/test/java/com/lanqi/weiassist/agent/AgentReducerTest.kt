@@ -87,38 +87,7 @@ class AgentReducerTest {
         assertEquals("boom", reduce(base, msg("login_failed", "message" to "boom")).state.signIn.error)
     }
 
-    @Test fun `text deltas stream into the answer`() {
-        var s = base.copy(run = RunState(busy = true))
-        listOf("你", "好", "！").forEach { s = reduce(s, msg("text_delta", "delta" to it)).state }
-        assertEquals("你好！", s.run.answer)
-    }
-
-    @Test fun `errors end the run and are made friendly`() {
-        val s = AgentReducer.reduce(base.copy(run = RunState(busy = true)), msg("error", "message" to "401"), friendly = { "friendly:$it" }).state
-        assertFalse(s.run.busy)
-        assertEquals("friendly:401", s.run.error)
-    }
-
-    @Test fun `an assistant error is reported, a normal stop is not`() {
-        val ok = reduce(base, msg("assistant_end", "stopReason" to "stop")).state
-        assertNull(ok.run.error)
-        val bad = reduce(base, msg("assistant_end", "stopReason" to "error", "errorMessage" to "model_not_found")).state
-        assertEquals("model_not_found", bad.run.error)
-    }
-
-    @Test fun `idle ends the run`() {
-        assertFalse(reduce(base.copy(run = RunState(busy = true)), msg("idle")).state.run.busy)
-    }
-
-    @Test fun `a runtime restart ends a running task and says so`() {
-        val r = reduce(base.copy(run = RunState(busy = true)), msg("runtime_restarted"))
-        assertFalse(r.state.run.busy)
-        assertEquals(Effect.RuntimeRestarted(wasBusy = true), r.effect)
-    }
-
-    @Test fun `the trace keeps only the latest lines`() {
-        var s = base
-        repeat(AgentReducer.MAX_TRACE + 50) { s = reduce(s, msg("turn_start")).state }
-        assertEquals(AgentReducer.MAX_TRACE, s.run.trace.size)
+    @Test fun `a runtime restart is passed on to the sessions`() {
+        assertEquals(Effect.RuntimeRestarted, reduce(base, msg("runtime_restarted")).effect)
     }
 }

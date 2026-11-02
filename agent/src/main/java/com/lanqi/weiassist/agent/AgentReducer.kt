@@ -8,12 +8,13 @@ sealed interface Effect {
     data class OpenBrowser(val url: String) : Effect
     /** Sign-in finished: say hello, to prove the connection works. */
     data object SignedIn : Effect
-    /** Pi's runtime was restarted (its WebView renderer died); [wasBusy] = a task was cut off. */
-    data class RuntimeRestarted(val wasBusy: Boolean) : Effect
+    /** Pi's runtime was restarted (its WebView renderer died): its sessions are gone. */
+    data object RuntimeRestarted : Effect
 }
 
 /**
- * Pure state transitions for Pi's messages: (state, message) → (state, effect).
+ * Pure state transitions for Pi's app-wide messages (status, sign-in): (state, message) → (state, effect).
+ * A session's own messages go to [SessionReducer].
  * No Android, no Pi, no I/O, so every transition is unit-tested (AgentReducerTest).
  */
 object AgentReducer {
@@ -22,12 +23,10 @@ object AgentReducer {
     const val PI_DEFAULT_MODEL = "gpt-6.1-sol"
     /** Pi's ThinkingLevel values, lowest to highest. */
     val LEVEL_ORDER = listOf("off", "minimal", "low", "medium", "high", "xhigh", "max")
-    const val MAX_TRACE = 300
 
     data class Result(val state: AgentState, val effect: Effect? = null)
 
-    /** [friendly] turns a provider error into advice for the user (localized by the caller). */
-    fun reduce(s: AgentState, m: JSONObject, friendly: (String) -> String = { it }): Result = when (m.optString("type")) {
+    fun reduce(s: AgentState, m: JSONObject): Result = when (m.optString("type")) {
         "status" -> Result(onStatus(s, m))
         "auth_event" -> {
             val e = m.getJSONObject("event")
@@ -49,19 +48,9 @@ object AgentReducer {
             val msg = m.optString("message")
             Result(s.copy(screen = Screen.Welcome, signIn = SignInState(error = msg.takeIf { it != "cancelled" })))
         }
-        // agent events
-        "text_delta" -> Result(s.withRun { copy(answer = answer + m.optString("delta")) })
-        "assistant_end" -> Result(s.withRun {
-            copy(error = if (m.optString("stopReason") == "error") friendly(m.optString("errorMessage")) else error)
-                .trace("assistant_end · ${m.optString("provider")}/${m.optString("model")} · stop=${m.optString("stopReason")} · tokens=${m.optJSONObject("usage")?.optInt("totalTokens")}")
-        })
-        "tool_start" -> Result(s.withRun { trace("→ ${m.optString("tool")} ${m.optJSONObject("args")?.toString().orEmpty()}") })
-        "tool_end" -> Result(s.withRun { trace("  ${if (m.optBoolean("isError")) "✗" else "✓"} ${m.optString("output").lineSequence().firstOrNull().orEmpty().take(80)}") })
-        "configured" -> Result(s.withRun { trace("configured · ${m.optString("model")} · thinking=${m.optString("thinkingLevel")} → ${m.optString("baseUrl")} · auth=${m.optString("auth")}") })
-        "error" -> Result(s.withRun { copy(busy = false, error = friendly(m.optString("message"))).trace("error · ${m.optString("message")}") })
-        "idle" -> Result(s.withRun { copy(busy = false).trace("idle") })
-        "runtime_restarted" -> Result(s.withRun { copy(busy = false).trace("runtime restarted") }, Effect.RuntimeRestarted(s.run.busy))
-        else -> Result(s.withRun { trace(m.optString("type")) })
+        // Pi's runtime restarted: the controller re-creates the sessions' Agents (see SessionManager).
+        "runtime_restarted" -> Result(s, Effect.RuntimeRestarted)
+        else -> Result(s)
     }
 
     private fun onStatus(s: AgentState, m: JSONObject): AgentState {
@@ -109,6 +98,4 @@ object AgentReducer {
     }
 
     private inline fun AgentState.withSignIn(f: SignInState.() -> SignInState) = copy(signIn = signIn.f())
-    private inline fun AgentState.withRun(f: RunState.() -> RunState) = copy(run = run.f())
-    private fun RunState.trace(line: String) = copy(trace = (trace + line).takeLast(MAX_TRACE))
 }

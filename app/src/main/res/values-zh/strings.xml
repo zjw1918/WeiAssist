@@ -2,7 +2,6 @@
 <resources>
     <string name="app_name">小维助手</string>
     <string name="starting_pi">正在启动 Pi…</string>
-    <string name="connected_title">已连接 OpenAI · %1$s</string>
     <string name="auth_subscription">ChatGPT 订阅</string>
     <string name="auth_api_key">API key</string>
     <string name="pi_runtime_info">Pi %1$s（pi-agent-core + pi-ai，运行在后台服务里）</string>
@@ -12,11 +11,7 @@
     <string name="task_label">要小维助手做什么</string>
     <string name="chat_label">发给 Pi</string>
     <string name="stop">停止</string>
-    <string name="working">小维助手正在工作…</string>
     <string name="send">发送</string>
-    <string name="new_chat">新对话</string>
-    <string name="answer">回答</string>
-    <string name="error_prefix">出错：%1$s</string>
     <string name="pi_events">Pi 事件</string>
     <string name="dev_mock">开发用：发到本地模拟服务器</string>
     <string name="sign_out">退出登录</string>
@@ -65,4 +60,27 @@
     <string name="models_count">模型（%1$d 个）</string>
     <string name="thinking">思考程度</string>
     <string name="thinking_hint">想得越多，回答越慢、用量越多。</string>
+    <string name="start">开始</string>
+    <string name="untitled">新对话</string>
+    <plurals name="sessions_running">
+        <item quantity="other">%1$d 个进行中</item>
+    </plurals>
+    <string name="stop_all">全部停止</string>
+    <string name="sessions_history">对话</string>
+    <string name="sessions_empty">还没有对话。在上面输入任务，点「开始」。</string>
+    <string name="kind_phone">手机任务</string>
+    <string name="kind_chat">聊天</string>
+    <string name="pause">暂停</string>
+    <string name="resume">继续</string>
+    <string name="continue_label">接着做</string>
+    <string name="status_running">进行中</string>
+    <string name="status_queued">等待屏幕</string>
+    <string name="status_paused">已暂停</string>
+    <string name="status_interrupted">已中断</string>
+    <string name="settings">设置</string>
+    <string name="settings_summary">%1$s · %2$s</string>
+    <string name="delete">删除</string>
+    <string name="delete_title">删除这个对话？</string>
+    <string name="delete_text">对话内容会从手机上删除。正在执行的任务会先停止。</string>
+    <string name="reply_hint">消息</string>
 </resources>

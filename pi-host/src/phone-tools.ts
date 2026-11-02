@@ -5,21 +5,8 @@ import type { AgentMessage, AgentTool, BeforeToolCallContext, BeforeToolCallResu
 import { Type } from "@earendil-works/pi-ai";
 import { bridgeCall } from "./bridge.ts";
 
-// Tool arguments are nested under `args`: spreading them would let a tool's own `id` (an element id)
-// overwrite the bridge's request id, and the reply would never find its way back.
-const phone = (action: string, args: Record<string, unknown> = {}, signal?: AbortSignal) => {
-	signal?.throwIfAborted(); // the user pressed Stop: don't start another action
-	return bridgeCall("phone", { action, args }) as Promise<string>;
-};
-
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }], details: {} });
 
-/** Labels of the elements in the last screen read, by id, so the confirm hook knows what a tap hits. */
-let lastScreen = new Map<number, string>();
-/** What the agent typed during this task, shown in the confirmation. */
-let typed: string[] = [];
-/** Phone actions in this task; a runaway loop is stopped at MAX_STEPS. */
-let steps = 0;
 const MAX_STEPS = 120;
 
 /** A readable name for an input field from its read_screen line: hint, text, description or view id. */
@@ -28,30 +15,80 @@ function fieldName(line?: string) {
 	return line.match(/hint="([^"]*)"/)?.[1] || line.match(/"([^"]*)"/)?.[1] || line.match(/\(([^)]*)\)/)?.[1] || line.match(/id=(\S+)/)?.[1] || "field";
 }
 
-export function resetPhoneSession() {
-	lastScreen = new Map();
-	typed = [];
-	steps = 0;
-}
+/**
+ * The phone tools of one session. Each session has its own screen memory, typed fields and step count,
+ * and every request carries the session id, so Kotlin routes it to that session's display and gates.
+ */
+export class PhoneSession {
+	/** Labels of the elements in the last screen read, by id, so the confirm hook knows what a tap hits. */
+	private lastScreen = new Map<number, string>();
+	/** What the agent typed during this task, shown in the confirmation. */
+	private typed: string[] = [];
+	/** Phone actions in this task; a runaway loop is stopped at MAX_STEPS. */
+	private steps = 0;
+	readonly tools: AgentTool<any>[];
 
-async function readScreen(signal?: AbortSignal) {
-	const screen = await phone("read_screen", {}, signal);
-	lastScreen = new Map();
-	for (const line of screen.split("\n")) {
-		const m = line.match(/^\[(\d+)\]\s+(.*)$/);
-		if (m) lastScreen.set(Number(m[1]), m[2]);
+	constructor(readonly session: string) {
+		this.tools = makeTools(this);
 	}
-	return screen;
+
+	/** Per task: step limit and the typed fields shown on the confirmation card. */
+	reset() {
+		this.lastScreen = new Map();
+		this.typed = [];
+		this.steps = 0;
+	}
+
+	// Tool arguments are nested under `args`: spreading them would let a tool's own `id` (an element id)
+	// overwrite the bridge's request id, and the reply would never find its way back.
+	phone(action: string, args: Record<string, unknown> = {}, signal?: AbortSignal) {
+		signal?.throwIfAborted(); // the user pressed Stop: don't start another action
+		return bridgeCall("phone", { session: this.session, action, args }) as Promise<string>;
+	}
+
+	async readScreen(signal?: AbortSignal) {
+		const screen = await this.phone("read_screen", {}, signal);
+		this.lastScreen = new Map();
+		for (const line of screen.split("\n")) {
+			const m = line.match(/^\[(\d+)\]\s+(.*)$/);
+			if (m) this.lastScreen.set(Number(m[1]), m[2]);
+		}
+		return screen;
+	}
+
+	noteTyped(id: number, value: string) {
+		this.typed.push(`${fieldName(this.lastScreen.get(id))}: ${value}`);
+	}
+
+	/**
+	 * Pi's beforeToolCall hook:
+	 * - a tap (by id or by coordinates) on something irreversible needs the user's OK;
+	 * - a runaway task is stopped after MAX_STEPS phone actions.
+	 * Long texts are content (an email subject in a list), not a command, so only short labels count.
+	 */
+	confirmRiskyTap = async ({ toolCall, args }: BeforeToolCallContext): Promise<BeforeToolCallResult | undefined> => {
+		if (++this.steps > MAX_STEPS) {
+			return { block: true, terminate: true, reason: `Step limit (${MAX_STEPS}) reached. Stop and report what you have done and found so far.` };
+		}
+		let label = "";
+		if (toolCall.name === "tap") label = labelOf(this.lastScreen.get((args as any).id) ?? "");
+		else if (toolCall.name === "tap_at") label = await this.phone("label_at", { x: (args as any).x, y: (args as any).y });
+		else return undefined;
+		if (!riskyLabel(label)) return undefined;
+		// Kotlin words the card in the user's language; we pass the button label and what was typed.
+		const ok = await bridgeCall("confirm", { session: this.session, label, typed: this.typed });
+		return ok ? undefined : { block: true, reason: "The user declined this action. Stop and tell the user.", terminate: true };
+	};
 }
 
-export const phoneTools: AgentTool<any>[] = [
+const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 	{
 		name: "open_app",
 		label: "Open app",
 		description: "Open an installed app by its name or package name, e.g. \"Gmail\" or \"com.google.android.gm\".",
 		parameters: Type.Object({ app: Type.String({ description: "App name or package name" }) }),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => text(await phone("open_app", { app: p.app }, signal)),
+		execute: async (_id, p: any, signal) => text(await s.phone("open_app", { app: p.app }, signal)),
 	},
 	{
 		name: "read_screen",
@@ -61,7 +98,7 @@ export const phoneTools: AgentTool<any>[] = [
 			"(@x,y is the element's centre). Ids are only valid until the next read_screen. Read again after every action.",
 		parameters: Type.Object({}),
 		executionMode: "sequential",
-		execute: async (_id, _p, signal) => text(await readScreen(signal)),
+		execute: async (_id, _p, signal) => text(await s.readScreen(signal)),
 	},
 	{
 		name: "tap",
@@ -69,7 +106,7 @@ export const phoneTools: AgentTool<any>[] = [
 		description: "Tap the element with this id from the latest read_screen.",
 		parameters: Type.Object({ id: Type.Integer() }),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => text(await phone("tap", { id: p.id }, signal)),
+		execute: async (_id, p: any, signal) => text(await s.phone("tap", { id: p.id }, signal)),
 	},
 	{
 		name: "tap_at",
@@ -77,7 +114,7 @@ export const phoneTools: AgentTool<any>[] = [
 		description: "Tap a screen point (pixels, as in read_screen's @x,y or a screenshot scaled to the screen size). Use when read_screen has no element for what you need.",
 		parameters: Type.Object({ x: Type.Integer(), y: Type.Integer() }),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => text(await phone("tap_at", { x: p.x, y: p.y }, signal)),
+		execute: async (_id, p: any, signal) => text(await s.phone("tap_at", { x: p.x, y: p.y }, signal)),
 	},
 	{
 		name: "long_press",
@@ -85,7 +122,7 @@ export const phoneTools: AgentTool<any>[] = [
 		description: "Long-press the element with this id (e.g. to open a context menu).",
 		parameters: Type.Object({ id: Type.Integer() }),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => text(await phone("long_press", { id: p.id }, signal)),
+		execute: async (_id, p: any, signal) => text(await s.phone("long_press", { id: p.id }, signal)),
 	},
 	{
 		name: "swipe",
@@ -99,7 +136,7 @@ export const phoneTools: AgentTool<any>[] = [
 			fraction: Type.Optional(Type.Number()),
 		}),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => text(await phone("swipe", { direction: p.direction, fraction: p.fraction ?? 0.6 }, signal)),
+		execute: async (_id, p: any, signal) => text(await s.phone("swipe", { direction: p.direction, fraction: p.fraction ?? 0.6 }, signal)),
 	},
 	{
 		name: "screenshot",
@@ -110,7 +147,7 @@ export const phoneTools: AgentTool<any>[] = [
 		parameters: Type.Object({}),
 		executionMode: "sequential",
 		execute: async (_id, _p, signal) => {
-			const data = await phone("screenshot", {}, signal);
+			const data = await s.phone("screenshot", {}, signal);
 			if (data.startsWith("error:")) return text(data);
 			return {
 				content: [
@@ -128,8 +165,8 @@ export const phoneTools: AgentTool<any>[] = [
 		parameters: Type.Object({ id: Type.Integer(), text: Type.String() }),
 		executionMode: "sequential",
 		execute: async (_id, p: any, signal) => {
-			typed.push(`${fieldName(lastScreen.get(p.id))}: ${p.text}`);
-			return text(await phone("type_text", { id: p.id, text: p.text }, signal));
+			s.noteTyped(p.id, p.text);
+			return text(await s.phone("type_text", { id: p.id, text: p.text }, signal));
 		},
 	},
 	{
@@ -141,7 +178,7 @@ export const phoneTools: AgentTool<any>[] = [
 			direction: Type.Union([Type.Literal("forward"), Type.Literal("backward")]),
 		}),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => text(await phone("scroll", { id: p.id ?? -1, direction: p.direction }, signal)),
+		execute: async (_id, p: any, signal) => text(await s.phone("scroll", { id: p.id ?? -1, direction: p.direction }, signal)),
 	},
 	{
 		name: "press_key",
@@ -149,7 +186,7 @@ export const phoneTools: AgentTool<any>[] = [
 		description: "Press a system key: back, home or recents.",
 		parameters: Type.Object({ key: Type.Union([Type.Literal("back"), Type.Literal("home"), Type.Literal("recents")]) }),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => text(await phone("press_key", { key: p.key }, signal)),
+		execute: async (_id, p: any, signal) => text(await s.phone("press_key", { key: p.key }, signal)),
 	},
 	{
 		name: "wait",
@@ -177,26 +214,6 @@ const riskyLabel = (label: string) => !!label && label.length <= 20 && RISKY.tes
 
 /** The button's own words from a read_screen line: its text, else its description. */
 const labelOf = (line: string) => (line.match(/"([^"]*)"/)?.[1] || line.match(/\(([^)]*)\)/)?.[1] || "").trim();
-
-/**
- * Pi's beforeToolCall hook:
- * - a tap (by id or by coordinates) on something irreversible needs the user's OK;
- * - a runaway task is stopped after MAX_STEPS phone actions.
- * Long texts are content (an email subject in a list), not a command, so only short labels count.
- */
-export async function confirmRiskyTap({ toolCall, args }: BeforeToolCallContext): Promise<BeforeToolCallResult | undefined> {
-	if (++steps > MAX_STEPS) {
-		return { block: true, terminate: true, reason: `Step limit (${MAX_STEPS}) reached. Stop and report what you have done and found so far.` };
-	}
-	let label = "";
-	if (toolCall.name === "tap") label = labelOf(lastScreen.get((args as any).id) ?? "");
-	else if (toolCall.name === "tap_at") label = await phone("label_at", { x: (args as any).x, y: (args as any).y });
-	else return undefined;
-	if (!riskyLabel(label)) return undefined;
-	// Kotlin words the card in the user's language; we pass the button label and what was typed.
-	const ok = await bridgeCall("confirm", { label, typed });
-	return ok ? undefined : { block: true, reason: "The user declined this action. Stop and tell the user.", terminate: true };
-}
 
 /**
  * Pi's transformContext hook: screens are big and only the latest ones matter. Older read_screen and

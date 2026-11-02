@@ -26,16 +26,10 @@ data class SignInState(
     val error: String? = null,
 )
 
-/** The current (or last) task: Pi's streamed answer and its event trace. */
-data class RunState(
-    val task: String? = null,
-    val busy: Boolean = false,
-    val answer: String = "",
-    val error: String? = null,
-    val trace: List<String> = emptyList(),
-)
-
-/** Everything the UI shows about the agent. Immutable; AgentController publishes a new copy per change. */
+/**
+ * The app-wide part of the agent: the runtime, the account and the model new messages use.
+ * Each conversation's own state is a [SessionState] (see [SessionManager]).
+ */
 data class AgentState(
     val screen: Screen = Screen.Starting,
     val piVersion: String? = null,
@@ -43,8 +37,64 @@ data class AgentState(
     val signIn: SignInState = SignInState(),
     val modelId: String = "",
     val thinkingLevel: String = "medium",
-    val run: RunState = RunState(),
 ) {
     val model: ModelInfo? get() = provider?.models?.firstOrNull { it.id == modelId }
     val signingInWithBrowser: Boolean get() = (screen as? Screen.SigningIn)?.method?.type == "oauth"
+}
+
+// ---- sessions -------------------------------------------------------------------------------------
+
+enum class SessionStatus {
+    /** Nothing to do: waiting for the user's next message. */
+    Idle,
+    /** Has a task, but waits for the phone's screen (another session is operating it). */
+    Queued,
+    Running,
+    /** The user paused it: it holds before its next action. */
+    Paused,
+    /** It was working when the app's process ended; its conversation is saved and it can continue. */
+    Interrupted;
+
+    /** Holds work the service must keep alive for. */
+    val active get() = this == Queued || this == Running || this == Paused
+}
+
+/** One entry in a conversation, as the user sees it. */
+sealed interface ChatItem {
+    data class User(val text: String) : ChatItem
+    data class Assistant(val text: String) : ChatItem
+    /** A tool the agent used: [ok] is null while it runs. */
+    data class Step(val tool: String, val detail: String, val ok: Boolean? = null, val result: String = "") : ChatItem
+    data class Error(val text: String) : ChatItem
+}
+
+/** What the session list shows for a session: small, kept for every session. */
+data class SessionSummary(
+    val id: String,
+    val title: String,
+    val phone: Boolean,
+    val status: SessionStatus,
+    val createdAt: Long,
+    val updatedAt: Long,
+    /** The last thing said, for the list. */
+    val preview: String = "",
+    val error: Boolean = false,
+    /** The app this session is operating, when known (from read_screen / open_app). */
+    val app: String? = null,
+)
+
+/** A whole session: kept in memory while it runs or is on screen, else only on disk. */
+data class SessionState(
+    val summary: SessionSummary,
+    val items: List<ChatItem> = emptyList(),
+    /** The answer Pi is streaming now (moves into [items] when the message ends). */
+    val streaming: String = "",
+    val error: String? = null,
+    val trace: List<String> = emptyList(),
+    /** The task that is queued or running (the latest user message). */
+    val pendingTask: String? = null,
+) {
+    val id get() = summary.id
+    val status get() = summary.status
+    val busy get() = summary.status.active
 }

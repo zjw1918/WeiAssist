@@ -18,6 +18,8 @@ export function buildBundle() {
 }
 
 export async function startHost({ credentials = null, hostCalls = {} } = {}) {
+	// Kotlin's pause gate: by default every session may go on.
+	hostCalls = { gate: () => true, ...hostCalls };
 	const messages = [];
 	const waiters = [];
 	const fetches = [];

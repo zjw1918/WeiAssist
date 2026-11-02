@@ -22,15 +22,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
- * Home of the agent. Owns the one [AgentController] (and so the Pi runtime) for the whole app.
+ * Home of the agent. Owns the one [AgentController] (and so the Pi runtime and every session) for the whole app.
  *
  * - Screens (and later the floating assistant) bind to it and observe [AgentController.state].
- * - While Pi is working (a task, or a sign-in in the browser) it is a *started foreground* service
- *   with a notification and a Stop button, so the work survives the user leaving or closing the app.
+ * - While any session is working (or a sign-in waits in the browser) it is a *started foreground*
+ *   service with a notification and a Stop button, so the work survives the user leaving or closing the app.
  * - When Pi is idle it drops back to bound-only: no notification, and it ends with the last client.
  */
 class AgentService : Service() {
@@ -50,21 +49,30 @@ class AgentService : Service() {
         controller = AgentController(this)
         createChannel()
         scope.launch {
-            controller.state
-                .map { s -> Work(s.run.busy, s.signingInWithBrowser, s.run.task) }
+            kotlinx.coroutines.flow.combine(controller.state, controller.sessions.summaries) { s, list -> work(s, list) }
                 .distinctUntilChanged()
                 .collect(::onWork)
         }
+        scope.launch {
+            controller.sessions.finished.collect { id ->
+                val appVisible = androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState
+                    .isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+                if (clients == 0 || !appVisible) notifyFinished(id)
+            }
+        }
     }
 
-    private data class Work(val running: Boolean, val signingIn: Boolean, val task: String?) {
-        val active get() = running || signingIn
+    private fun work(s: AgentState, list: List<SessionSummary>): Work {
+        val active = list.filter { it.status.active }
+        return Work(active.size, s.signingInWithBrowser, active.singleOrNull()?.title)
+    }
+
+    /** [running] = sessions with work (running, queued or paused); [task] names it when there is one. */
+    private data class Work(val running: Int, val signingIn: Boolean, val task: String?) {
+        val active get() = running > 0 || signingIn
     }
 
     private fun onWork(w: Work) {
-        val appVisible = androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState
-            .isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
-        if (lastWork?.running == true && !w.running && (clients == 0 || !appVisible)) notifyFinished()
         lastWork = w
         if (w.active) {
             // Become a started service first, so the work outlives unbinding; then go foreground.
@@ -79,16 +87,15 @@ class AgentService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> controller.stop()
+            ACTION_STOP -> controller.stopAll()
             else -> {
-                val s = controller.state.value
-                val w = Work(s.run.busy, s.signingInWithBrowser, s.run.task)
+                val w = work(controller.state.value, controller.sessions.summaries.value)
                 // startForegroundService() promises startForeground(); keep it even if the work just ended.
                 goForeground(w)
                 if (!w.active) onWork(w)
             }
         }
-        return START_NOT_STICKY // a task can't resume after the process dies; don't restart empty
+        return START_NOT_STICKY // a task can't resume by itself after the process dies (it shows as Interrupted)
     }
 
     private fun goForeground(w: Work) {
@@ -102,9 +109,10 @@ class AgentService : Service() {
         }
     }
 
-    /** The app's launcher screen (this module doesn't know the UI's activity class). */
-    private fun openApp(): Intent = (packageManager.getLaunchIntentForPackage(packageName) ?: Intent())
+    /** The app's launcher screen (this module doesn't know the UI's activity class), optionally at a session. */
+    private fun openApp(session: String? = null): Intent = (packageManager.getLaunchIntentForPackage(packageName) ?: Intent())
         .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        .apply { if (session != null) putExtra(EXTRA_SESSION, session) }
 
     private fun notification(w: Work): Notification {
         val open = PendingIntent.getActivity(
@@ -118,29 +126,31 @@ class AgentService : Service() {
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_IMMEDIATE)
-        if (w.running) {
+        if (w.running > 0) {
             val stop = PendingIntent.getService(
                 this, 1, Intent(this, AgentService::class.java).setAction(ACTION_STOP), PendingIntent.FLAG_IMMUTABLE,
             )
-            b.setContentText(getString(R.string.notif_running, w.task.orEmpty().take(60)))
-                .addAction(android.R.drawable.ic_menu_close_clear_cancel, getString(R.string.notif_stop), stop)
+            val text = if (w.running == 1) getString(R.string.notif_running, w.task.orEmpty().take(60))
+            else resources.getQuantityString(R.plurals.notif_running_many, w.running, w.running)
+            b.setContentText(text)
+                .addAction(android.R.drawable.ic_menu_close_clear_cancel, getString(if (w.running == 1) R.string.notif_stop else R.string.notif_stop_all), stop)
         } else {
             b.setContentText(getString(R.string.notif_signin))
         }
         return b.build()
     }
 
-    /** The task ended while no screen was open: tell the user what came of it. */
-    private fun notifyFinished() {
-        val run = controller.state.value.run
+    /** A session's task ended while no screen was open: tell the user what came of it (one notification per session). */
+    private fun notifyFinished(id: String) {
+        val s = controller.sessions.summary(id) ?: return
         val open = PendingIntent.getActivity(
-            this, 2, openApp(),
-            PendingIntent.FLAG_IMMUTABLE,
+            this, id.hashCode(), openApp(id),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
-        val text = run.error?.let { getString(R.string.notif_failed, it) } ?: plain(run.answer).ifBlank { getString(R.string.notif_ended) }
+        val text = if (s.error) getString(R.string.notif_failed, s.preview) else plain(s.preview).ifBlank { getString(R.string.notif_ended) }
         val n = NotificationCompat.Builder(this, CHANNEL_DONE)
             .setSmallIcon(android.R.drawable.ic_menu_info_details)
-            .setContentTitle(getString(if (run.error == null) R.string.notif_done_title else R.string.notif_error_title))
+            .setContentTitle(getString(if (!s.error) R.string.notif_done_title else R.string.notif_error_title, s.title))
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(open)
@@ -149,7 +159,7 @@ class AgentService : Service() {
         val nm = androidx.core.app.NotificationManagerCompat.from(this)
         val allowed = Build.VERSION.SDK_INT < 33 ||
             ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        if (allowed && nm.areNotificationsEnabled()) nm.notify(NOTIFICATION_DONE, n)
+        if (allowed && nm.areNotificationsEnabled()) nm.notify(id, NOTIFICATION_DONE, n)
         else Log.i(TAG, "result not shown: notifications are off for this app")
     }
 
@@ -186,6 +196,8 @@ class AgentService : Service() {
         private const val CHANNEL_DONE = "agent-results"
         private const val NOTIFICATION_DONE = 2
         private const val ACTION_STOP = "com.lanqi.weiassist.STOP"
+        /** Intent extra: the session to open (from a result notification). */
+        const val EXTRA_SESSION = "com.lanqi.weiassist.SESSION"
 
         /** Bind to the agent; [onController] gets it once connected (and null if the service dies). */
         fun bind(context: Context, onController: (AgentController?) -> Unit): ServiceConnection {

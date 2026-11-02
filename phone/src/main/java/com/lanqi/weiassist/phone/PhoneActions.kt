@@ -12,13 +12,17 @@ class PhoneActions(private val context: Context) {
 
     fun cancelWaits() { generation.incrementAndGet() }
 
-    suspend fun run(m: JSONObject): String {
+    /**
+     * [paused]: the session was paused while this action waited (the user looking at the app); the
+     * action then gives way, and Pi's gate holds the session before its next one.
+     */
+    suspend fun run(m: JSONObject, paused: () -> Boolean = { false }): String {
         val action = m.getString("action")
         android.util.Log.d(TAG, "$action start")
-        return runAction(m).also { android.util.Log.d(TAG, "$action → ${it.lineSequence().firstOrNull()?.take(60)}") }
+        return runAction(m, paused).also { android.util.Log.d(TAG, "$action → ${it.lineSequence().firstOrNull()?.take(60)}") }
     }
 
-    private suspend fun runAction(m: JSONObject): String {
+    private suspend fun runAction(m: JSONObject, paused: () -> Boolean): String {
         // Right after an update or reboot the system reconnects the service a moment later: wait briefly.
         var svc = AgentAccessibilityService.instance
         var waited = 0
@@ -29,6 +33,7 @@ class PhoneActions(private val context: Context) {
         val gen = generation.get()
         while (m.getString("action") !in setOf("open_app", "label_at") && svc.ownAppInFront()) {
             if (generation.get() != gen) return "stopped by the user"
+            if (paused()) return "paused by the user before this action; do it again when you continue"
             kotlinx.coroutines.delay(300)
         }
         val a = m.optJSONObject("args") ?: JSONObject()

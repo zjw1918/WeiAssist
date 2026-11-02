@@ -18,9 +18,9 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 /**
- * The agent, independent of any screen: owns the Pi runtime (PiEngine), turns Pi's messages into
- * one immutable [AgentState], and offers the actions the UI can take. Owned by [AgentService], so a
- * task keeps running when the user leaves the app.
+ * The agent, independent of any screen: owns the Pi runtime (PiEngine), the account and model choice
+ * ([state]), and all conversations ([sessions]). Owned by [AgentService], so tasks keep running when
+ * the user leaves the app.
  */
 class AgentController(context: Context) {
     private val appContext = context.applicationContext
@@ -37,42 +37,70 @@ class AgentController(context: Context) {
     )
     val state: StateFlow<AgentState> = _state.asStateFlow()
 
+    /** Dev builds: send model calls to the local mock server (tools/mock-openai.mjs). */
+    @Volatile var mockBaseUrl: String? = null
+
+    val sessions = SessionManager(
+        pi, SessionStore(appContext.filesDir), scope,
+        object : SessionManager.Strings {
+            override fun friendly(msg: String) = this@AgentController.friendly(msg)
+            override fun runtimeRestarted() = appContext.getString(R.string.err_runtime_restarted)
+            override fun continueTask() = appContext.getString(R.string.continue_task)
+        },
+    ) { Triple(_state.value.modelId, _state.value.thinkingLevel, mockBaseUrl) }
+
     /** One-shot: Pi wants this URL opened in a browser (sign-in). */
     private val _openInBrowser = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val openInBrowser: SharedFlow<String> = _openInBrowser
 
-    /** Settings of the current Pi Agent. Same settings → keep the Agent, so it remembers the conversation. */
-    private var agentConfig: String? = null
+    /** Done once the saved sessions are loaded. */
+    val loaded = kotlinx.coroutines.CompletableDeferred<Unit>()
 
     init {
-        // Pi's phone tools and its confirm hook (pi-host/src/phone-tools.ts) are served by the :phone module.
-        pi.registerHostCall("phone") { phone.run(it) }
+        // Pi's phone tools, its confirm hook and the pause gate (pi-host) are answered per session.
+        pi.registerHostCall("gate") { m -> sessions.gate(m.getString("session")) }
+        pi.registerHostCall("phone") { m ->
+            val id = m.optString("session")
+            when {
+                // Only the session holding the screen may act on it (see ScreenPool).
+                !sessions.holdsScreen(id) -> "Another task is using the screen; this one has been stopped."
+                // Paused (or stopped) since Pi's gate let this call through: hold it here too.
+                !sessions.gate(id) -> "stopped by the user"
+                else -> phone.run(m) { sessions.isPaused(id) }
+            }
+        }
         pi.registerHostCall("confirm") { m ->
             val fields = m.optJSONArray("typed")
             val detail = if (fields == null || fields.length() == 0) appContext.getString(R.string.confirm_nothing_typed)
             else (0 until fields.length()).joinToString("\n") { fields.getString(it) }
-            AgentAccessibilityService.instance?.confirm(appContext.getString(R.string.confirm_title, m.getString("label")), detail) ?: false
+            val title = sessions.summary(m.optString("session"))?.title.orEmpty()
+            val head = appContext.getString(R.string.confirm_title, m.getString("label"))
+            AgentAccessibilityService.instance?.confirm(if (title.isBlank()) head else "$head\n· $title", detail) ?: false
         }
         scope.launch { pi.messages.collect(::onPi) }
         scope.launch {
+            sessions.load()
+            loaded.complete(Unit)
             val ready = pi.start()
             _state.update { it.copy(piVersion = ready.optString("pi")) }
         }
     }
 
-    // ---- Pi → state (pure transitions in AgentReducer) ------------------------------------------
+    // ---- Pi → state -------------------------------------------------------------------------------
     private fun onPi(m: JSONObject) {
+        val session = m.optString("session")
+        if (session.isNotEmpty()) { sessions.onPi(session, m); return }
         val before = _state.value
-        val (next, effect) = AgentReducer.reduce(before, m, ::friendly)
+        val (next, effect) = AgentReducer.reduce(before, m)
         _state.value = next
         if (next.modelId != before.modelId || next.thinkingLevel != before.thinkingLevel) persistModel()
         when (effect) {
             is Effect.OpenBrowser -> _openInBrowser.tryEmit(effect.url)
-            Effect.SignedIn -> send(appContext.getString(R.string.first_hello), phoneTools = false)
-            is Effect.RuntimeRestarted -> {
-                agentConfig = null // the new runtime has no Agent yet; the next message configures one
-                if (effect.wasBusy) _state.update { it.copy(run = it.run.copy(error = appContext.getString(R.string.err_runtime_restarted))) }
+            Effect.SignedIn -> scope.launch {
+                loaded.await()
+                sessions.send(sessions.create(phone = false), appContext.getString(R.string.first_hello))
             }
+            Effect.RuntimeRestarted -> sessions.onRuntimeRestarted()
             null -> Unit
         }
     }
@@ -94,8 +122,7 @@ class AgentController(context: Context) {
     fun cancelSignIn() { scope.launch { pi.cancelLogin() } }
 
     fun signOut() {
-        agentConfig = null
-        _state.update { it.copy(run = RunState()) }
+        sessions.stopAll()
         scope.launch { pi.logout(PROVIDER) }
     }
 
@@ -114,34 +141,23 @@ class AgentController(context: Context) {
         prefs.edit().putString("modelId", modelId).putString("thinkingLevel", thinkingLevel).apply()
     }
 
-    // ---- tasks ------------------------------------------------------------------------------------
-    /** Start over: the next message gets a fresh Pi Agent with an empty transcript. */
-    fun newConversation() {
-        agentConfig = null
-        _state.update { it.copy(run = RunState()) }
+    // ---- sessions ---------------------------------------------------------------------------------
+    /** Start a task in a new session; returns its id. */
+    suspend fun startTask(text: String, phoneTools: Boolean): String {
+        loaded.await()
+        val id = sessions.create(phone = phoneTools)
+        sessions.send(id, text)
+        return id
     }
 
-    fun send(task: String, phoneTools: Boolean, mockBaseUrl: String? = null) {
-        if (_state.value.run.busy || task.isBlank()) return
-        _state.update { it.copy(run = RunState(task = task, busy = true)) }
-        scope.launch {
-            val s = _state.value
-            val config = listOf(s.modelId, s.thinkingLevel, mockBaseUrl, phoneTools).joinToString("|")
-            if (config != agentConfig) {
-                pi.configure(PROVIDER, s.modelId, s.thinkingLevel, mockBaseUrl, tools = if (phoneTools) "phone" else null)
-                agentConfig = config
-            }
-            pi.prompt(task)
-        }
-    }
-
-    /** Stop the running task (Pi's Agent.abort). */
-    fun stop() {
-        android.util.Log.d("AgentController", "stop requested (busy=${_state.value.run.busy})")
-        if (!_state.value.run.busy) return
+    fun stop(id: String) {
         phone.cancelWaits() // release a phone action paused while the user looks at the app
-        scope.launch { pi.abort() }
-        _state.update { it.copy(run = it.run.copy(busy = false, trace = (it.run.trace + "stopped by user").takeLast(AgentReducer.MAX_TRACE))) }
+        sessions.stop(id)
+    }
+
+    fun stopAll() {
+        phone.cancelWaits()
+        sessions.stopAll()
     }
 
     /** Debug builds only: simulate Pi's WebView renderer dying, to test recovery on a device. */

@@ -7,13 +7,15 @@ Everything else adapts Android to what Pi expects.
 
 ```
 ┌────────────────────────── :app (Compose UI) ───────────────────────────┐
-│ MainActivity · Onboarding · ModelPicker · AppViewModel (binds the service)│
+│ MainActivity · Sessions (list, page) · Onboarding · ModelPicker · AppViewModel │
 └──────────────────────────────────┬──────────────────────────────────────┘
                                    │ StateFlow<AgentState>, actions
 ┌────────────────────────── :agent ─┴─────────────────────────────────────┐
-│ AgentService   foreground while working · Stop · result notification    │
-│ AgentController  owns PiEngine · applies AgentReducer · effects          │
-│ AgentReducer   pure (state, Pi message) → (state, effect)   ← unit tests │
+│ AgentService   foreground while any session works · Stop all · results   │
+│ AgentController  owns PiEngine · account and model (AgentReducer)        │
+│ SessionManager   every conversation: run · queue · pause · stop · delete │
+│ SessionReducer   pure (session, Pi message) → session      ← unit tests │
+│ SessionStore     one meta / chat / transcript file per session           │
 └──────────────┬───────────────────────────────────────┬──────────────────┘
                │ registerHostCall("phone" / "confirm") │
 ┌───────── :pi-runtime ──────────────┐   ┌──────────── :phone ────────────┐
@@ -25,8 +27,8 @@ Everything else adapts Android to what Pi expects.
 └──────────────┬──────────────────────┘
                │ PiBridge.postMessage ⇄ PiHost.*(json)
 ┌───────── pi-host/ (TypeScript, bundled by esbuild) ──────────────────────┐
-│ host.ts       Pi's Agent + Models (createModels, login, streamSimple)    │
-│ phone-tools.ts  AgentTools + beforeToolCall confirm hook                 │
+│ host.ts       one Pi Agent per session + Models (login, streamSimple)    │
+│ phone-tools.ts  PhoneSession: AgentTools + confirm hook, per session     │
 │ native-fetch.ts · shims/ (node:http, node:crypto) · bridge.ts            │
 │ node_modules/@earendil-works/pi-ai, pi-agent-core (pinned, unmodified)   │
 └──────────────────────────────────────────────────────────────────────────┘
@@ -47,14 +49,36 @@ All messages are JSON.
 
 | Direction | Message | Purpose |
 |---|---|---|
-| JS→K | `ready`, `status`, `configured`, agent events (`text_delta`, `tool_start`, …), `idle`, `error` | State for the UI ([AgentReducer](../agent/src/main/java/com/lanqi/weiassist/agent/AgentReducer.kt)) |
+| JS→K | `ready`, `status`, sign-in events | App-wide state ([AgentReducer](../agent/src/main/java/com/lanqi/weiassist/agent/AgentReducer.kt)) |
+| JS→K | `configured`, agent events (`text_delta`, `tool_start`, …), `idle`, `error`, all with `session` | A session's state ([SessionReducer](../agent/src/main/java/com/lanqi/weiassist/agent/SessionReducer.kt)) |
+| JS→K | `transcript` (`session`, `messages`) | After the user's message and every turn: Pi's transcript to save, without screenshots and old screens |
 | JS→K | `credentials_changed` | Pi's credential store was written. Kotlin persists it encrypted. |
 | JS→K | `fetch` / `fetch_abort` | Native HTTP for Pi (no CORS). The reply streams back as `fetchHead`, `fetchChunk`, `fetchEnd` or `fetchError`. |
 | JS→K | `http_listen` / `http_close` / `http_response` | The `node:http` shim. Pi's OAuth callback server runs on a real loopback socket. |
-| JS→K | any registered host call (`phone`, `confirm`) | `bridgeCall(type, …)`, answered with `PiHost.reply(id, ok, value)`. Arguments are nested under `args`. |
-| K→JS | `init`, `status`, `login`, `answer`, `cancelLogin`, `logout`, `configure`, `prompt`, `abort` | Commands |
+| JS→K | any registered host call (`gate`, `phone`, `confirm`), with `session` | `bridgeCall(type, …)`, answered with `PiHost.reply(id, ok, value)`. Tool arguments are nested under `args`. `gate` runs before every tool call and holds a paused session. |
+| K→JS | `init`, `status`, `login`, `answer`, `cancelLogin`, `logout` | App-wide commands |
+| K→JS | `configure` (optionally with saved `messages`), `prompt`, `abort`, `dispose`, all with `session` | Session commands |
 
 Tests: [pi-host/test](../pi-host/test) runs the shipped bundle against a fake Kotlin side that speaks this exact protocol.
+
+## Sessions
+
+Every conversation is a session: its own Pi `Agent` (transcript, tools, phone state) inside the one Pi
+runtime. One WebView for all sessions keeps memory flat; Pi's agent loop is asynchronous, so sessions
+run side by side. A session runs until its task ends or the user stops it; leaving its page changes nothing.
+
+- **Memory:** every session's summary (title, status, last line) is kept. Its chat is in memory only while
+  it is busy or open on screen (`SessionManager.attach`/`detach`); its transcript lives inside Pi while its
+  Agent exists. Chat and trace are capped per session.
+- **Disk:** `files/sessions/<id>.{meta,chat,pi}.json`, written atomically and coalesced (a burst of steps
+  is one write). The list reads only the `meta` files.
+- **Restoring:** a session gets an Agent on its first message in a runtime, with its saved transcript.
+  So a session continues after the app restarts or Pi's renderer dies. Sessions that were working when
+  the process died show as *Interrupted*; Continue sends a "continue where you left off" message.
+- **The screen:** phone sessions need a screen (`ScreenPool`). Today there is one, the phone's own, so
+  phone sessions take turns (*Waiting for the screen*) while chat sessions always run. Only the holder may act.
+- **Pause:** Pi's `beforeToolCall` asks Kotlin's `gate` before every tool call; a paused session waits
+  there, and a phone action already waiting gives way. Stop aborts the session's Agent.
 
 ## Why each piece exists
 
@@ -79,7 +103,8 @@ background apps within about 30 s. They ignore foreground services and the batte
 1. **Irreversible actions:** a tap on Send/Pay/Delete-like labels goes through Pi's `beforeToolCall` hook, which shows an overlay card. Declining blocks the tap and ends the run.
 2. **Our own screen:** the agent never operates WeiAssist itself. While the user looks at it, phone actions pause (`open_app` excepted).
 3. **Password fields:** never sent to the model.
-4. **Kill switch:** Stop in the notification aborts Pi's run and releases paused actions.
+4. **Kill switch:** Stop on a session (or Stop all in the notification) aborts Pi's run and releases paused actions.
+5. **Confirmation names the session:** the card says which conversation wants to tap.
 
 The threat model (prompt injection from screen content, sensitive apps) is tracked in [ROADMAP.md](ROADMAP.md).
 
