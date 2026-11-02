@@ -3,7 +3,7 @@
 Goal: an open-source Android assistant that really operates the phone for you. It should be safe enough to trust with your apps, pleasant enough to use every day, and well engineered enough for others to build on.
 Pi is the agent harness. We use its public API, never patch it, and follow upstream releases.
 
-Status legend: ✅ done · 🔨 next · ⬜ planned
+Status legend: ✅ done · 🔨 next · ⬜ planned. Current status and todo: [PROGRESS.md](PROGRESS.md).
 
 ## 0. Where we are (Nov 2026)
 
