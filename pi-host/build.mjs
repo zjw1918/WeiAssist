@@ -1,8 +1,10 @@
 // Bundles Pi (pi-agent-core + pi-ai) and the host adapter into one browser script for the app's WebView.
 import { build } from "esbuild";
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
 
-const out = "../pi-runtime/src/main/assets/pi";
+// `node build.mjs --out <dir>` (Gradle passes its generated-assets dir); default for manual runs.
+const outArg = process.argv.indexOf("--out");
+const out = outArg > 0 ? `${process.argv[outArg + 1]}/pi` : "../pi-runtime/build/generated/pi-assets/manual/pi";
 const pi = JSON.parse(readFileSync("node_modules/@earendil-works/pi-agent-core/package.json", "utf8")).version;
 mkdirSync(out, { recursive: true });
 const result = await build({
@@ -36,5 +38,5 @@ const licenses = pkgs.map((name) => {
 	return `==== ${name} ${meta.version} (${meta.license}) ====\n\n${text}\n`;
 });
 writeFileSync(`${out}/THIRD_PARTY_LICENSES.txt`, licenses.join("\n"));
-console.log(`pi ${pi} → ${out}/host.js (${(result.metafile.outputs[`${out}/host.js`].bytes / 1024).toFixed(0)} KiB)`);
+console.log(`pi ${pi} → ${out}/host.js (${(statSync(`${out}/host.js`).size / 1024).toFixed(0)} KiB)`);
 console.log("packages:", pkgs.join(", "));
