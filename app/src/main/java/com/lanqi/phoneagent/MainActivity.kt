@@ -33,6 +33,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.lanqi.phoneagent.agent.AgentState
+import com.lanqi.phoneagent.agent.Screen
 import com.lanqi.phoneagent.ui.ApiKeySignIn
 import com.lanqi.phoneagent.ui.ModelPicker
 import com.lanqi.phoneagent.ui.SubscriptionSignIn
@@ -65,18 +68,26 @@ fun MainActivity.App(vm: AppViewModel = viewModel()) {
     LaunchedEffect(Unit) {
         vm.openInBrowser.collect { url -> CustomTabsIntent.Builder().build().launchUrl(this@App, url.toUri()) }
     }
+    // Android 13+: the "working" notification (with its Stop button) needs permission to show.
+    if (android.os.Build.VERSION.SDK_INT >= 33) {
+        val ask = androidx.activity.compose.rememberLauncherForActivityResult(
+            androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+        ) {}
+        LaunchedEffect(Unit) { ask.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
+    }
+    val s by vm.state.collectAsStateWithLifecycle()
     Scaffold { inner ->
         Column(
             Modifier.fillMaxSize().padding(inner).padding(20.dp).verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            when (val s = vm.screen) {
+            when (val screen = s.screen) {
                 Screen.Starting -> Row(verticalAlignment = Alignment.CenterVertically) { CircularProgressIndicator(); Text("  正在启动 Pi…") }
-                Screen.Welcome -> WelcomeScreen(vm.provider, vm.piVersion, vm.signInError, vm::signIn)
+                Screen.Welcome -> WelcomeScreen(s.provider, s.piVersion, s.signIn.error, vm::signIn)
                 is Screen.SigningIn ->
-                    if (s.method.type == "oauth") SubscriptionSignIn(vm.authUrl, vm.progress, vm.prompt, vm::reopenBrowser, vm::submitPrompt, vm::cancelSignIn)
-                    else ApiKeySignIn(vm.prompt, vm.progress, vm::submitPrompt, vm::cancelSignIn)
-                Screen.Connected -> ConnectedScreen(vm)
+                    if (screen.method.type == "oauth") SubscriptionSignIn(s.signIn.authUrl, s.signIn.progress, s.signIn.prompt, vm::reopenBrowser, vm::submitPrompt, vm::cancelSignIn)
+                    else ApiKeySignIn(s.signIn.prompt, s.signIn.progress, vm::submitPrompt, vm::cancelSignIn)
+                Screen.Connected -> ConnectedScreen(vm, s)
             }
         }
     }
@@ -84,13 +95,14 @@ fun MainActivity.App(vm: AppViewModel = viewModel()) {
 
 /** Step 3: connected. The first 你好 is sent automatically right after sign-in. */
 @Composable
-fun ConnectedScreen(vm: AppViewModel) {
-    val how = when (vm.provider?.credential) { "oauth" -> "ChatGPT 订阅"; "api_key" -> "API key"; else -> "?" }
+fun ConnectedScreen(vm: AppViewModel, s: AgentState) {
+    val run = s.run
+    val how = when (s.provider?.credential) { "oauth" -> "ChatGPT 订阅"; "api_key" -> "API key"; else -> "?" }
     Text("已连接 OpenAI · $how", style = MaterialTheme.typography.titleLarge)
-    Text("Pi ${vm.piVersion}（pi-agent-core + pi-ai，运行在 WebView 里）", style = MaterialTheme.typography.bodySmall)
+    Text("Pi ${s.piVersion}（pi-agent-core + pi-ai，运行在后台服务里）", style = MaterialTheme.typography.bodySmall)
     ModelPicker(
-        models = vm.provider?.models.orEmpty(), selected = vm.model, thinkingLevel = vm.thinkingLevel,
-        onModel = vm::selectModel, onThinking = vm::selectThinking, subscription = vm.provider?.credential == "oauth",
+        models = s.provider?.models.orEmpty(), selected = s.model, thinkingLevel = s.thinkingLevel,
+        onModel = vm::selectModel, onThinking = vm::selectThinking, subscription = s.provider?.credential == "oauth",
     )
     Row(verticalAlignment = Alignment.CenterVertically) {
         Switch(checked = vm.phoneMode, onCheckedChange = { vm.phoneMode = it })
@@ -105,21 +117,26 @@ fun ConnectedScreen(vm: AppViewModel) {
     }
     OutlinedTextField(vm.input, { vm.input = it }, label = { Text(if (vm.phoneMode) "要小维助手做什么" else "发给 Pi") }, modifier = Modifier.fillMaxWidth())
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-        Button(onClick = vm::send, enabled = !vm.busy) { Text(if (vm.busy) "Pi 正在回答…" else "发送") }
-        TextButton(onClick = vm::newConversation, enabled = !vm.busy) { Text("新对话") }
+        if (run.busy) {
+            Button(onClick = vm::stop) { Text("停止") }
+            Text("小维助手正在工作…", style = MaterialTheme.typography.bodyMedium)
+        } else {
+            Button(onClick = vm::send) { Text("发送") }
+            TextButton(onClick = vm::newConversation) { Text("新对话") }
+        }
     }
-    if (vm.answer.isNotEmpty() || vm.error != null) {
+    if (run.answer.isNotEmpty() || run.error != null) {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
                 Text("回答", style = MaterialTheme.typography.labelMedium)
-                if (vm.answer.isNotEmpty()) Text(vm.answer, style = MaterialTheme.typography.bodyLarge)
-                vm.error?.let { Text("出错：$it", color = MaterialTheme.colorScheme.error) }
+                if (run.answer.isNotEmpty()) Text(run.answer, style = MaterialTheme.typography.bodyLarge)
+                run.error?.let { Text("出错：$it", color = MaterialTheme.colorScheme.error) }
             }
         }
     }
-    if (vm.trace.isNotEmpty()) {
+    if (run.trace.isNotEmpty()) {
         Text("Pi 事件", style = MaterialTheme.typography.labelMedium)
-        Text(vm.trace.joinToString("\n"), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
+        Text(run.trace.joinToString("\n"), fontFamily = FontFamily.Monospace, fontSize = 12.sp)
     }
     if (BuildConfig.DEBUG) Row(verticalAlignment = Alignment.CenterVertically) {
         Switch(checked = vm.useMock, onCheckedChange = { vm.useMock = it })

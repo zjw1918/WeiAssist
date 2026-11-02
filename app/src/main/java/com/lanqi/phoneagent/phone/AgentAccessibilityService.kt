@@ -37,10 +37,14 @@ class AgentAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() {}
 
+    fun ownAppInFront() = rootInActiveWindow?.packageName == packageName
+
     // ---- eyes -------------------------------------------------------------------------------------
     fun readScreen(): String {
         nodes.clear()
         val root = rootInActiveWindow ?: return "(screen not readable right now; wait and try again)"
+        // Never let the agent operate 小维助手 itself (its Stop / sign-out buttons, its own settings).
+        if (root.packageName == packageName) return OWN_APP
         val out = StringBuilder("app: ${root.packageName}\n")
         var next = 1
         fun walk(n: AccessibilityNodeInfo, depth: Int) {
@@ -73,7 +77,11 @@ class AgentAccessibilityService : AccessibilityService() {
     }
 
     // ---- hands ------------------------------------------------------------------------------------
-    private fun node(id: Int) = nodes[id] ?: error("no element [$id]; call read_screen again")
+    private fun node(id: Int): AccessibilityNodeInfo {
+        val n = nodes[id] ?: error("no element [$id]; call read_screen again")
+        check(n.packageName != packageName && rootInActiveWindow?.packageName != packageName) { OWN_APP }
+        return n
+    }
 
     suspend fun tap(id: Int): String {
         val n = node(id)
@@ -151,6 +159,10 @@ class AgentAccessibilityService : AccessibilityService() {
     }
 
     companion object {
+        private const val OWN_APP =
+            "小维助手 itself is in front (the user is looking at it). Do not operate it. " +
+                "Use open_app to go back to the app you were working in, or stop and report to the user."
+
         /** The running service, or null when the user hasn't turned it on. */
         @Volatile var instance: AgentAccessibilityService? = null
             private set

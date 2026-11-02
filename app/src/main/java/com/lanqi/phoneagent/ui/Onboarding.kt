@@ -28,9 +28,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import com.lanqi.phoneagent.AuthMethod
-import com.lanqi.phoneagent.PendingPrompt
-import com.lanqi.phoneagent.ProviderInfo
+import com.lanqi.phoneagent.agent.AuthMethod
+import com.lanqi.phoneagent.agent.PendingPrompt
+import com.lanqi.phoneagent.agent.ProviderInfo
 
 /** Step 1: pick how to connect. The two cards are Pi's own auth methods for the provider. */
 @Composable

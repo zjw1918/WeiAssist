@@ -114,7 +114,7 @@ class PiEngine(context: Context, private val agentName: String) {
             "phone" -> scope.launch {
                 val reply = JSONObject().put("id", m.getString("id"))
                 Log.d(TAG, "phone ${m.optString("action")} start")
-                runCatching { kotlinx.coroutines.withTimeout(15_000) { phone.run(m) } }
+                runCatching { phone.run(m) }
                     .also { r -> Log.d(TAG, "phone ${m.optString("action")} → ${r.getOrNull()?.lineSequence()?.firstOrNull()?.take(60) ?: r.exceptionOrNull()}") }
                     .onSuccess { js("reply", reply.put("ok", true).put("value", it)) }
                     .onFailure { js("reply", reply.put("ok", true).put("value", "error: ${it.message}")) }
@@ -156,7 +156,10 @@ class PiEngine(context: Context, private val agentName: String) {
         call("configure", cfg)
     }
     suspend fun prompt(text: String) = call("prompt", JSONObject().put("text", text))
-    suspend fun abort() = call("abort", null)
+    suspend fun abort() {
+        phone.cancelWaits() // release a phone action paused while the user looks at 小维助手
+        call("abort", null)
+    }
 
     private suspend fun call(fn: String, arg: JSONObject?) {
         start()

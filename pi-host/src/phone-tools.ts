@@ -7,8 +7,10 @@ import { bridgeCall } from "./bridge.ts";
 
 // Tool arguments are nested under `args`: spreading them would let a tool's own `id` (an element id)
 // overwrite the bridge's request id, and the reply would never find its way back.
-const phone = (action: string, args: Record<string, unknown> = {}) =>
-	bridgeCall("phone", { action, args }) as Promise<string>;
+const phone = (action: string, args: Record<string, unknown> = {}, signal?: AbortSignal) => {
+	signal?.throwIfAborted(); // the user pressed Stop: don't start another action
+	return bridgeCall("phone", { action, args }) as Promise<string>;
+};
 
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }], details: {} });
 
@@ -22,8 +24,8 @@ export function resetPhoneSession() {
 	typed = [];
 }
 
-async function readScreen() {
-	const screen = await phone("read_screen");
+async function readScreen(signal?: AbortSignal) {
+	const screen = await phone("read_screen", {}, signal);
 	lastScreen = new Map();
 	for (const line of screen.split("\n")) {
 		const m = line.match(/^\[(\d+)\]\s+(.*)$/);
@@ -39,7 +41,7 @@ export const phoneTools: AgentTool<any>[] = [
 		description: "Open an installed app by its name or package name, e.g. \"Gmail\" or \"com.google.android.gm\".",
 		parameters: Type.Object({ app: Type.String({ description: "App name or package name" }) }),
 		executionMode: "sequential",
-		execute: async (_id, p: any) => text(await phone("open_app", { app: p.app })),
+		execute: async (_id, p: any, signal) => text(await phone("open_app", { app: p.app }, signal)),
 	},
 	{
 		name: "read_screen",
@@ -49,7 +51,7 @@ export const phoneTools: AgentTool<any>[] = [
 			"Ids are only valid until the next read_screen. Read again after every action.",
 		parameters: Type.Object({}),
 		executionMode: "sequential",
-		execute: async () => text(await readScreen()),
+		execute: async (_id, _p, signal) => text(await readScreen(signal)),
 	},
 	{
 		name: "tap",
@@ -57,7 +59,7 @@ export const phoneTools: AgentTool<any>[] = [
 		description: "Tap the element with this id from the latest read_screen.",
 		parameters: Type.Object({ id: Type.Integer() }),
 		executionMode: "sequential",
-		execute: async (_id, p: any) => text(await phone("tap", { id: p.id })),
+		execute: async (_id, p: any, signal) => text(await phone("tap", { id: p.id }, signal)),
 	},
 	{
 		name: "type_text",
@@ -65,9 +67,9 @@ export const phoneTools: AgentTool<any>[] = [
 		description: "Replace the text of an editable element (from the latest read_screen) with the given text.",
 		parameters: Type.Object({ id: Type.Integer(), text: Type.String() }),
 		executionMode: "sequential",
-		execute: async (_id, p: any) => {
+		execute: async (_id, p: any, signal) => {
 			typed.push(`${lastScreen.get(p.id) ?? `#${p.id}`} ← ${p.text}`);
-			return text(await phone("type_text", { id: p.id, text: p.text }));
+			return text(await phone("type_text", { id: p.id, text: p.text }, signal));
 		},
 	},
 	{
@@ -79,7 +81,7 @@ export const phoneTools: AgentTool<any>[] = [
 			direction: Type.Union([Type.Literal("forward"), Type.Literal("backward")]),
 		}),
 		executionMode: "sequential",
-		execute: async (_id, p: any) => text(await phone("scroll", { id: p.id ?? -1, direction: p.direction })),
+		execute: async (_id, p: any, signal) => text(await phone("scroll", { id: p.id ?? -1, direction: p.direction }, signal)),
 	},
 	{
 		name: "press_key",
@@ -87,7 +89,7 @@ export const phoneTools: AgentTool<any>[] = [
 		description: "Press a system key: back, home or recents.",
 		parameters: Type.Object({ key: Type.Union([Type.Literal("back"), Type.Literal("home"), Type.Literal("recents")]) }),
 		executionMode: "sequential",
-		execute: async (_id, p: any) => text(await phone("press_key", { key: p.key })),
+		execute: async (_id, p: any, signal) => text(await phone("press_key", { key: p.key }, signal)),
 	},
 	{
 		name: "wait",
@@ -95,8 +97,10 @@ export const phoneTools: AgentTool<any>[] = [
 		description: "Wait for the screen to settle, in milliseconds (max 5000).",
 		parameters: Type.Object({ ms: Type.Integer() }),
 		executionMode: "sequential",
-		execute: async (_id, p: any) => {
+		execute: async (_id, p: any, signal) => {
+			signal?.throwIfAborted();
 			await new Promise((r) => setTimeout(r, Math.min(Math.max(p.ms, 0), 5000)));
+			signal?.throwIfAborted();
 			return text("waited");
 		},
 	},

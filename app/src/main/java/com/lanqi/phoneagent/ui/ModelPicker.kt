@@ -21,7 +21,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.lanqi.phoneagent.ModelInfo
+import com.lanqi.phoneagent.agent.ModelInfo
 
 /** Pi's ThinkingLevel values in plain words. */
 private val LEVEL_LABEL = mapOf(
