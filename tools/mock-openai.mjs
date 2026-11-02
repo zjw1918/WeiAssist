@@ -29,6 +29,15 @@ export const SCRIPTS = {
 		{ tool: "press_key", args: { key: "back" } },
 		{ text: "worked in Settings" },
 	],
+	// Slow browsing, to watch live previews on a device.
+	browse_settings: [{ tool: "open_app", args: { app: "com.android.settings" } }].concat(
+		[1, 2, 3, 4, 5, 6].flatMap(() => [{ tool: "swipe", args: { direction: "up" } }, { tool: "wait", args: { ms: 2500 } }]),
+		[{ text: "browsed Settings" }],
+	),
+	browse_gmail: [{ tool: "open_app", args: { app: "com.google.android.gm" } }].concat(
+		[1, 2, 3, 4, 5, 6].flatMap((i) => [{ tool: "swipe", args: { direction: i % 3 ? "up" : "down" } }, { tool: "wait", args: { ms: 2500 } }]),
+		[{ text: "browsed Gmail" }],
+	),
 	douban: [
 		{ tool: "open_app", args: { app: "com.douban.frodo" } },
 		{ tool: "read_screen", args: {} },

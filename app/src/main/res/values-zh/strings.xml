@@ -95,4 +95,6 @@
     <string name="shell_stop">停止</string>
     <string name="shell_unpair">取消配对</string>
     <string name="shell_test">测试</string>
+    <string name="live_screens">实时画面</string>
+    <string name="live_screen_of">%1$s 的画面</string>
 </resources>

@@ -8,8 +8,13 @@ import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.Image
 import android.media.ImageReader
+import android.hardware.HardwareBuffer
+import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
+import android.os.IBinder
+import android.os.Looper
+import android.os.RemoteException
 import android.os.SystemClock
 import android.view.InputDevice
 import android.view.InputEvent
@@ -21,8 +26,9 @@ import java.io.ByteArrayOutputStream
  * Virtual displays and input, inside the shell helper (shell may create displays that other apps launch
  * on, and inject input to any display). One display per phone session; the app asks for them over Binder.
  *
- * Each display renders into an ImageReader owned here; only the newest frame is kept (the older one is
- * released at once), so a display holds at most three buffers. Screenshots are taken from that frame.
+ * Each display renders into an ImageReader owned here. Only the newest frame is kept, plus frames sent to
+ * watchers that the app still shows (at most [MAX_IN_FLIGHT] each); a frame's buffer is reused once
+ * nobody holds it. Screenshots come from the newest frame; previews get the GPU buffers themselves.
  */
 // Runs as the shell user, where hidden APIs and display flags are available (as scrcpy uses them).
 @android.annotation.SuppressLint("PrivateApi", "DiscouragedPrivateApi", "WrongConstant", "BlockedPrivateApi", "SoonBlockedPrivateApi")
@@ -32,16 +38,37 @@ internal class DisplayHost(
 ) {
     private val thread = HandlerThread("displays").apply { start() }
     private val handler = Handler(thread.looper)
-    private val displays = HashMap<Int, Entry>()
+    /** Displays by id. All frame state below is touched on [handler]'s thread only. */
+    private val displays = java.util.concurrent.ConcurrentHashMap<Int, Entry>()
 
-    private class Entry(val display: VirtualDisplay, val reader: ImageReader) {
-        @Volatile var latest: Image? = null
-        val lock = Any()
+    /** One frame from a display, held by "latest" and by every watcher it was sent to; closed when nobody holds it. */
+    private class Frame(val image: Image, val seq: Int) {
+        var refs = 1
+        fun unref() { if (--refs == 0) image.close() }
     }
 
+    /** Someone watching a display: frames at most every [intervalMs], at most [MAX_IN_FLIGHT] not yet done. */
+    private inner class Watch(val display: Int, val listener: IFrameListener, var intervalMs: Long) : IBinder.DeathRecipient {
+        val sent = ArrayDeque<Frame>()
+        var lastSeq = -1
+        var nextAt = 0L
+        var scheduled = false
+        override fun binderDied() { handler.post { stopWatch(this) } }
+    }
 
-    @Synchronized fun create(name: String, width: Int, height: Int, dpi: Int): Int {
-        val reader = ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, 3)
+    private inner class Entry(val display: VirtualDisplay, val reader: ImageReader) {
+        var latest: Frame? = null
+        var seq = 0
+        var active = true
+        val watches = HashMap<IBinder, Watch>()
+        val lock = Any() // guards latest for screenshots taken on binder threads
+    }
+
+    fun create(name: String, width: Int, height: Int, dpi: Int): Int {
+        // CPU-readable for screenshots, GPU-sampled for previews (the app draws the buffer as is).
+        val reader = if (Build.VERSION.SDK_INT >= 29) ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, MAX_IMAGES,
+            HardwareBuffer.USAGE_CPU_READ_OFTEN or HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE)
+        else ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, MAX_IMAGES) // no live previews before Android 10
         val dm = DisplayManager::class.java.getDeclaredConstructor(Context::class.java).newInstance(context)
         // Untrusted (shell can't make trusted ones on Android 12), public so other apps may be launched on it,
         // its own content only (no mirroring), touchable, and its apps closed when it goes.
@@ -50,30 +77,38 @@ internal class DisplayHost(
         val vd = dm.createVirtualDisplay("weiassist-$name", width, height, dpi, reader.surface, flags)
             ?: error("createVirtualDisplay returned null")
         val e = Entry(vd, reader)
-        reader.setOnImageAvailableListener({ r ->
-            val img = runCatching { r.acquireLatestImage() }.getOrNull() ?: return@setOnImageAvailableListener
-            synchronized(e.lock) { e.latest?.close(); e.latest = img }
-        }, handler)
         val id = vd.display.displayId
+        reader.setOnImageAvailableListener({ r -> onImage(id, e, r) }, handler)
         displays[id] = e
         return id
     }
 
-    @Synchronized fun release(id: Int) {
-        val e = displays.remove(id) ?: return
-        e.display.release()
-        synchronized(e.lock) { e.latest?.close(); e.latest = null }
-        e.reader.close()
+    private fun onImage(id: Int, e: Entry, r: ImageReader) {
+        // All buffers held (by watchers that are slow to finish): skip; the newest frame comes next time.
+        val img = runCatching { r.acquireLatestImage() }.getOrNull() ?: return
+        val f = Frame(img, ++e.seq)
+        synchronized(e.lock) { e.latest?.unref(); e.latest = f }
+        e.watches.values.toList().forEach(::schedule)
     }
 
-    @Synchronized fun releaseAll() = displays.keys.toList().forEach(::release)
+    fun release(id: Int) {
+        val e = displays.remove(id) ?: return
+        runOnHandler {
+            e.watches.values.toList().forEach(::stopWatch)
+            e.display.release()
+            synchronized(e.lock) { e.latest?.unref(); e.latest = null }
+            e.reader.close()
+        }
+    }
 
-    fun has(id: Int) = synchronized(this) { id in displays }
+    fun releaseAll() = displays.keys.toList().forEach(::release)
+
+    fun has(id: Int) = displays.containsKey(id)
 
     fun screenshot(id: Int, maxWidth: Int, quality: Int): ByteArray {
-        val e = synchronized(this) { displays[id] } ?: return ByteArray(0)
+        val e = displays[id] ?: return ByteArray(0)
         val full = synchronized(e.lock) {
-            val img = e.latest ?: return ByteArray(0)
+            val img = e.latest?.image ?: return ByteArray(0)
             val plane = img.planes[0]
             val rowPixels = plane.rowStride / plane.pixelStride
             val bmp = Bitmap.createBitmap(rowPixels, img.height, Bitmap.Config.ARGB_8888)
@@ -84,6 +119,77 @@ internal class DisplayHost(
         val out = if (scale < 1f) Bitmap.createScaledBitmap(full, (full.width * scale).toInt(), (full.height * scale).toInt(), true).also { full.recycle() } else full
         return ByteArrayOutputStream().use { b -> out.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(30, 95), b); out.recycle(); b.toByteArray() }
     }
+
+    // ---- rendering on/off -----------------------------------------------------------------------------
+
+    /** Off disconnects the display's output: its apps stop drawing (and costing power); the last frame stays. */
+    fun setActive(id: Int, active: Boolean) = runOnHandler {
+        val e = displays[id] ?: return@runOnHandler
+        if (e.active == active) return@runOnHandler
+        e.active = active
+        e.display.surface = if (active) e.reader.surface else null
+    }
+
+    // ---- live previews --------------------------------------------------------------------------------
+
+    fun watch(id: Int, listener: IFrameListener, maxFps: Int) = runOnHandler {
+        if (Build.VERSION.SDK_INT < 29) return@runOnHandler // buffers aren't GPU-sampleable there
+        val e = displays[id] ?: return@runOnHandler
+        val key = listener.asBinder()
+        val interval = 1000L / maxFps.coerceIn(1, 30)
+        val w = e.watches[key] ?: Watch(id, listener, interval).also { w ->
+            runCatching { key.linkToDeath(w, 0) }
+            e.watches[key] = w
+        }
+        w.intervalMs = interval
+        schedule(w) // the latest frame at once
+    }
+
+    fun unwatch(id: Int, listener: IFrameListener) = runOnHandler {
+        displays[id]?.watches?.get(listener.asBinder())?.let(::stopWatch)
+    }
+
+    fun frameDone(id: Int, listener: IFrameListener, seq: Int) = runOnHandler {
+        val w = displays[id]?.watches?.get(listener.asBinder()) ?: return@runOnHandler
+        while (w.sent.isNotEmpty() && w.sent.first().seq <= seq) w.sent.removeFirst().unref()
+        schedule(w) // there may be room for a waiting frame now
+    }
+
+    private fun stopWatch(w: Watch) {
+        val e = displays[w.display]
+        e?.watches?.remove(w.listener.asBinder())
+        runCatching { w.listener.asBinder().unlinkToDeath(w, 0) }
+        while (w.sent.isNotEmpty()) w.sent.removeFirst().unref()
+    }
+
+    /** Send [w] the latest frame when it is new, its interval has passed and it has room; else try again later. */
+    @android.annotation.TargetApi(29) // only watches exist, and they need Android 10 (see watch)
+    private fun schedule(w: Watch) {
+        val e = displays[w.display] ?: return
+        if (w.scheduled || e.watches[w.listener.asBinder()] !== w) return
+        val f = e.latest ?: return
+        if (f.seq == w.lastSeq || w.sent.size >= MAX_IN_FLIGHT) return // nothing new, or the app is behind (frameDone reschedules)
+        val wait = w.nextAt - SystemClock.uptimeMillis()
+        if (wait > 0) {
+            w.scheduled = true
+            handler.postDelayed({ w.scheduled = false; schedule(w) }, wait)
+            return
+        }
+        val buffer = f.image.hardwareBuffer ?: return
+        f.refs++
+        w.sent.addLast(f)
+        w.lastSeq = f.seq
+        w.nextAt = SystemClock.uptimeMillis() + w.intervalMs
+        try {
+            w.listener.onFrame(w.display, buffer, f.seq)
+        } catch (e: RemoteException) {
+            stopWatch(w)
+        } finally {
+            buffer.close() // our handle only; the app has its own
+        }
+    }
+
+    private fun runOnHandler(f: () -> Unit) { if (Looper.myLooper() == thread.looper) f() else handler.post(f) }
 
     // ---- input ----------------------------------------------------------------------------------------
 
@@ -145,6 +251,9 @@ internal class DisplayHost(
         }
 
         // Hidden DisplayManager flags (stable since Android 10): touch input, and close the apps on removal.
+        /** Frames a watcher may hold (shown, previous, in flight); the reader's buffers: those, the latest, and the producer's. */
+        private const val MAX_IN_FLIGHT = 3
+        private const val MAX_IMAGES = 6
         private const val FLAG_SUPPORTS_TOUCH = 1 shl 6
         private const val FLAG_DESTROY_CONTENT_ON_REMOVAL = 1 shl 8
         /** InputManager.INJECT_INPUT_EVENT_MODE_WAIT_FOR_FINISH */

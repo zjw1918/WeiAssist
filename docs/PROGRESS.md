@@ -81,6 +81,16 @@ _Last updated: 2026-11-01_
   is single-task, so a second launch moves it between displays.
 - **Tests:** JVM 3 more (DisplayTasks).
 
+### Live previews (2026-11-01)
+- Session page: the session's display, live (tap to enlarge). Session list: "Live screens", every session's
+  display side by side. GPU buffers from the helper, no copies; 12 / 3 fps, lower in battery saver or heat;
+  nothing sent while unseen; idle displays are switched off (apps stopped), the last frame stays.
+- **Verified on the realme:** Gmail and Settings sessions at once, both watched in the strip (3 fps each) and
+  on their pages (12 fps); idle display → `state OFF`, Gmail `STOPPED`; CPU and memory as in ARCHITECTURE.
+- **Fixed on the way:** release builds crashed at start (R8 split Kotlin's `CollectionsKt` facade across
+  packages: `app/proguard-rules.pro`); the status spinner's endless animation cost ~75% CPU (now a dot).
+  The app is `profileable` from the shell, for simpleperf on release builds.
+
 ### Verified on a real device (realme RMX2121, Android 12)
 - ChatGPT subscription sign-in, then "你好" through Pi (`gpt-6.1-sol`).
 - Gmail: sent an email to two different addresses, each after the confirmation card.
@@ -95,7 +105,7 @@ _Last updated: 2026-11-01_
 
 - [x] **2. Built-in shell backend:** pairing, adb over TLS, shell helper with Binder link. Not yet: tested across a reboot.
 - [x] **3. A virtual display per phone session:** create/launch/input through the helper; read screens per display through accessibility.
-- [ ] **4. Live previews:** the display's Surface rendered in the session page and the list; adaptive size and frame rate; nothing rendered when hidden.
+- [x] **4. Live previews:** in the session page and the list; adaptive frame rate; nothing sent when hidden; idle displays asleep.
 - [ ] **5. Supervisor session:** a session whose tools manage the others (create, start, pause, resume, stop, delete, message); voice-ready.
 
 ## Next: real-world scenarios on the device

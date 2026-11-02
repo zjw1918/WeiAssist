@@ -81,6 +81,11 @@ class ShellServer private constructor(
     override fun activities(): String =
         exec("dumpsys activity activities | grep -E '^Display #|mResumedActivity:|\\* Hist #'", 5_000).getString("out").orEmpty()
 
+    override fun watch(displayId: Int, listener: IFrameListener, maxFps: Int) { log("watch display $displayId at $maxFps fps"); displays.watch(displayId, listener, maxFps) }
+    override fun unwatch(displayId: Int, listener: IFrameListener) { log("unwatch display $displayId"); displays.unwatch(displayId, listener) }
+    override fun frameDone(displayId: Int, listener: IFrameListener, seq: Int) = displays.frameDone(displayId, listener, seq)
+    override fun setDisplayActive(displayId: Int, active: Boolean) { log("display $displayId ${if (active) "on" else "off"}"); displays.setActive(displayId, active) }
+
     override fun exit() {
         displays.releaseAll()
         log("exit requested")

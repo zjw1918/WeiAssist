@@ -57,6 +57,11 @@ class AgentController(context: Context) {
 
     init { screens.isActive = { id -> sessions.summary(id)?.status?.active == true } }
 
+    /** Live pictures of the sessions' displays. */
+    val previews = PreviewHub(appContext, shell)
+    /** Each phone session's virtual display (while it has one). */
+    val displays get() = screens.displays
+
     /** One-shot: Pi wants this URL opened in a browser (sign-in). */
     private val _openInBrowser = MutableSharedFlow<String>(extraBufferCapacity = 4)
     val openInBrowser: SharedFlow<String> = _openInBrowser
@@ -90,7 +95,7 @@ class AgentController(context: Context) {
         // The shell helper came: queued phone sessions get displays. It went: so did its displays.
         scope.launch {
             shell.state.collect { st ->
-                if (st is com.lanqi.weiassist.shell.ShellState.Running) sessions.startQueued() else screens.helperGone()
+                if (st is com.lanqi.weiassist.shell.ShellState.Running) sessions.startQueued() else { screens.helperGone(); previews.reset() }
             }
         }
         scope.launch {

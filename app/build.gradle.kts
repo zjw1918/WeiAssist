@@ -20,6 +20,7 @@ android {
 
     buildTypes {
         release {
+            proguardFiles("proguard-rules.pro")
             optimization {
                 enable = true
                 packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")

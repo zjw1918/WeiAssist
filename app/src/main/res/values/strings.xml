@@ -96,4 +96,6 @@
     <string name="shell_stop">Stop</string>
     <string name="shell_unpair">Forget pairing</string>
     <string name="shell_test">Test</string>
+    <string name="live_screens">Live screens</string>
+    <string name="live_screen_of">Screen of %1$s</string>
 </resources>

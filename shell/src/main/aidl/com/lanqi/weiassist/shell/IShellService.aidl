@@ -1,6 +1,7 @@
 package com.lanqi.weiassist.shell;
 
 import android.os.Bundle;
+import com.lanqi.weiassist.shell.IFrameListener;
 
 /**
  * The shell helper (ShellServer, running as the shell user) as the app sees it.
@@ -35,4 +36,20 @@ interface IShellService {
     boolean key(int displayId, int keyCode);
     /** Which apps are on which display: the display and activity lines of `dumpsys activity activities`. */
     String activities();
+
+    // ---- live previews --------------------------------------------------------------------------------
+
+    /**
+     * Send [listener] the display's frames, at most [maxFps] a second and only when the picture changed;
+     * the latest frame at once. Calling again changes the rate. Ends with unwatch, or when the app dies.
+     */
+    void watch(int displayId, IFrameListener listener, int maxFps);
+    void unwatch(int displayId, IFrameListener listener);
+    /** The app is done with frames up to [seq] (it shows a newer one): their buffers may be reused. */
+    oneway void frameDone(int displayId, IFrameListener listener, int seq);
+    /**
+     * Whether the display renders. Off: its output is disconnected, so its apps stop drawing (an idle
+     * session nobody watches); the last frame stays for screenshots and previews.
+     */
+    void setDisplayActive(int displayId, boolean active);
 }

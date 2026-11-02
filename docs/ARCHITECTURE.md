@@ -125,12 +125,33 @@ run side by side. A session runs until its task ends or the user stops it; leavi
 - **Lifecycle:** at most 3 at once. A display stays with its session for 3 minutes after a task ends or is
   stopped (a follow-up finds the app as it was), and is taken back first when another session needs room.
   Deleting a session releases it at once; the helper releases all displays when the app's process dies.
+- **Asleep when idle:** an idle session's display is switched off (its output disconnected): Android puts
+  it to sleep and stops its apps (measured: `state OFF`, activity `STOPPED`). The next task turns it on.
 - **One app, one task:** an app has one process, and a single-task app one window; launching it on a display
   moves it there. So `open_app` refuses an app another *running* session has open, and a single-task app
   the user has in front of them, and checks afterwards that the app landed on the session's display
   (`DisplayTasks` parses `dumpsys activity activities`).
 - **Pause:** Pi's `beforeToolCall` asks Kotlin's `gate` before every tool call; a paused session waits
   there, and a phone action already waiting gives way. Stop aborts the session's Agent.
+
+## Live previews
+
+Each session's display can be watched live: on the session's page, and side by side in the list's
+"Live screens" strip.
+
+- **No copies:** the helper sends the display's own GPU buffers (`HardwareBuffer`, over `IFrameListener`);
+  the app wraps each as a hardware Bitmap and Compose draws it scaled on the GPU. The app keeps the two
+  newest frames (shown, and maybe still being drawn) and hands older ones back (`frameDone`); the helper
+  never reuses a buffer the app still holds, and has at most 3 frames in flight per viewer.
+- **Adaptive rate:** a page asks for 12 fps, a thumbnail for 3 (`PreviewHub.Purpose`); halved in battery
+  saver or when the phone is warm (thermal status moderate), 1 fps when it is hot (severe). Frames are only
+  sent when the display changed, so a still screen costs nothing.
+- **Nothing when unseen:** a display is watched only while a preview is on screen and the app is visible
+  (`collectAsStateWithLifecycle`); otherwise the helper sends nothing.
+- **Measured (release build, realme, a task running):** app 5–26% CPU on the page, 18% on the list,
+  7% in the background; helper 0–3%. An endless spinner had cost about 75% (it redrew the page 60 times a
+  second) and was replaced by a still dot. Memory: app 91 MB PSS (7 MB graphics); helper 89 MB PSS, the
+  price of an app_process outside zygote plus the system context the display APIs need.
 
 ## Why each piece exists
 

@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -64,6 +66,7 @@ fun SessionListScreen(vm: AppViewModel, s: AgentState) {
     val rest = sessions.filterNot { it.status.active }
     LazyColumn(Modifier.fillMaxSize().imePadding(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
         item { NewTaskCard(vm) }
+        item { LiveStrip(vm, sessions) }
         if (busy.size > 1) item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(androidx.compose.ui.res.pluralStringResource(R.plurals.sessions_running, busy.size, busy.size), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
@@ -75,6 +78,28 @@ fun SessionListScreen(vm: AppViewModel, s: AgentState) {
         items(rest, key = { it.id }) { SessionCard(it, vm) }
         if (sessions.isEmpty()) item { Text(stringResource(R.string.sessions_empty), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline) }
         item { SettingsCard(vm, s) }
+    }
+}
+
+/** The sessions' screens side by side, live, while they have one. Tap one to open its session. */
+@Composable
+private fun LiveStrip(vm: AppViewModel, sessions: List<SessionSummary>) {
+    val displays by vm.displays.collectAsStateWithLifecycle()
+    val shown = sessions.filter { it.id in displays }
+    if (shown.isEmpty()) return
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(stringResource(R.string.live_screens), style = MaterialTheme.typography.titleSmall)
+        androidx.compose.foundation.lazy.LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            items(shown, key = { it.id }) { s ->
+                Column(Modifier.width(104.dp).clickable { vm.open(s.id) }, horizontalAlignment = Alignment.CenterHorizontally) {
+                    LivePreview(vm, displays.getValue(s.id), com.lanqi.weiassist.agent.PreviewHub.Purpose.Thumbnail, Modifier.fillMaxWidth(), s.title)
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
+                        if (s.status.active) Box(Modifier.size(6.dp).background(Color(0xFF2E7D32), RoundedCornerShape(3.dp)))
+                        Text(" " + s.title.ifBlank { stringResource(R.string.untitled) }, style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -159,8 +184,9 @@ private fun StatusChip(status: SessionStatus) {
         SessionStatus.Idle -> return
     }
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp)) {
-        if (status == SessionStatus.Running) CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 2.dp, color = color)
-        else Box(Modifier.size(8.dp).background(color, RoundedCornerShape(4.dp)))
+        // A still dot, not a spinner: an endless animation would redraw the whole page 60 times a second
+        // for as long as a task runs (measured: most of the app's CPU while working).
+        Box(Modifier.size(8.dp).background(color, RoundedCornerShape(4.dp)))
         Text(" $label", style = MaterialTheme.typography.labelMedium, color = color)
     }
 }
@@ -233,6 +259,17 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
         if (menu) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(onClick = { showTrace = !showTrace; menu = false }) { Text(stringResource(R.string.pi_events)) }
             TextButton(onClick = { confirmDelete = true; menu = false }) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }
+        }
+        val displays by vm.displays.collectAsStateWithLifecycle()
+        displays[s.id]?.let { display ->
+            var large by rememberSaveable { mutableStateOf(false) }
+            Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), contentAlignment = Alignment.Center) {
+                LivePreview(
+                    vm, display, com.lanqi.weiassist.agent.PreviewHub.Purpose.Page,
+                    Modifier.height(if (large) 520.dp else 240.dp).clickable { large = !large },
+                    stringResource(R.string.live_screen_of, s.title),
+                )
+            }
         }
         val list = rememberLazyListState()
         val count = session.items.size + (if (session.streaming.isNotEmpty()) 1 else 0)

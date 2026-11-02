@@ -47,6 +47,12 @@ class DisplayScreenPool(
 ) : ScreenPool {
     private class Lease(val target: Target.Virtual, var idleSince: Long? = null)
 
+    private val _displays = kotlinx.coroutines.flow.MutableStateFlow<Map<String, Int>>(emptyMap())
+    /** Each session's display, for previews. */
+    val displays: kotlinx.coroutines.flow.StateFlow<Map<String, Int>> = _displays
+
+    private fun publish() { _displays.value = leases.mapValues { it.value.target.displayId } }
+
     /** Whether a session is working now (set by the owner; see [guard]). */
     var isActive: (String) -> Boolean = { true }
     private val leases = LinkedHashMap<String, Lease>()
@@ -54,8 +60,13 @@ class DisplayScreenPool(
     @Synchronized override fun acquire(session: String): Target? {
         sweep()
         leases[session]?.let { l ->
-            if (shell.service()?.asBinder()?.isBinderAlive == true) { l.idleSince = null; return l.target }
+            if (shell.service()?.asBinder()?.isBinderAlive == true) {
+                if (l.idleSince != null) setActive(l.target.displayId, true)
+                l.idleSince = null
+                return l.target
+            }
             leases.remove(session) // the helper died with its displays
+            publish()
         }
         val helper = shell.service() ?: return fallback.acquire(session)
         if (leases.size >= max) {
@@ -66,7 +77,8 @@ class DisplayScreenPool(
             val id = helper.createDisplay(session, WIDTH, HEIGHT, DPI)
             check(id > 0) { "the helper returned display $id" } // never the phone's own screen
             Log.i(TAG, "display $id for $session")
-            Target.Virtual(id, WIDTH, HEIGHT, HelperIo(helper, id)) { pkg, tasks -> guard(session, pkg, tasks) }.also { leases[session] = Lease(it) }
+            Target.Virtual(id, WIDTH, HEIGHT, HelperIo(helper, id)) { pkg, tasks -> guard(session, pkg, tasks) }
+                .also { leases[session] = Lease(it); publish() }
         } catch (e: Exception) {
             Log.w(TAG, "no virtual display for $session: $e")
             fallback.acquire(session)
@@ -74,13 +86,17 @@ class DisplayScreenPool(
     }
 
     @Synchronized override fun idle(session: String) {
-        leases[session]?.idleSince = SystemClock.uptimeMillis()
+        leases[session]?.let { l ->
+            l.idleSince = SystemClock.uptimeMillis()
+            // Nothing happens on it until the next task: stop its apps drawing (the last picture stays).
+            setActive(l.target.displayId, false)
+        }
         fallback.idle(session)
         sweep()
     }
 
     @Synchronized override fun release(session: String) {
-        leases.remove(session)?.let { l -> runCatching { shell.service()?.releaseDisplay(l.target.displayId) } }
+        leases.remove(session)?.let { l -> runCatching { shell.service()?.releaseDisplay(l.target.displayId) }; publish() }
         fallback.release(session)
     }
 
@@ -105,7 +121,11 @@ class DisplayScreenPool(
     }
 
     /** The helper went away: its displays are gone with it. */
-    fun helperGone() = leases.clear()
+    @Synchronized fun helperGone() { leases.clear(); publish() }
+
+    private fun setActive(display: Int, active: Boolean) {
+        runCatching { shell.service()?.setDisplayActive(display, active) }.onFailure { Log.w(TAG, "display $display active=$active: $it") }
+    }
 
     /** Display ids in use, by session (for previews). */
     fun displays(): Map<String, Int> = leases.mapValues { it.value.target.displayId }

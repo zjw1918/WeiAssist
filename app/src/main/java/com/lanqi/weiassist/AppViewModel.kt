@@ -64,6 +64,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(2_000), null)
 
+    /** Each phone session's virtual display, while it has one. */
+    val displays: StateFlow<Map<String, Int>> = controller
+        .flatMapLatest { it?.displays ?: flowOf(emptyMap()) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    /** A display's live picture while collected (see PreviewHub). */
+    fun frames(display: Int, purpose: com.lanqi.weiassist.agent.PreviewHub.Purpose) =
+        controller.flatMapLatest { it?.previews?.frames(display, purpose) ?: flowOf(null) }
+
     /** One-shot browser requests from Pi's sign-in. */
     val openInBrowser = controller.flatMapLatest { it?.openInBrowser ?: emptyFlow() }
 
