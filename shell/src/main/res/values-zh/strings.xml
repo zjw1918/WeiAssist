@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shell_channel">无线调试配对</string>
+    <string name="shell_channel_desc">设置 Shell 后台时，在这里输入配对码。</string>
+    <string name="shell_pair_title">让小维助手与「无线调试」配对</string>
+    <string name="shell_pair_open_dialog">在开发者选项里打开「无线调试」，进入后点「使用配对码配对设备」，保持那个对话框打开。</string>
+    <string name="shell_pair_enter_code">已找到配对对话框。点这里的「输入配对码」，输入对话框里的 6 位数字。</string>
+    <string name="shell_pair_no_dialog">配对对话框没有打开。请再点一次「使用配对码配对设备」，然后输入新的配对码。</string>
+    <string name="shell_pairing">正在配对…</string>
+    <string name="shell_paired_starting">已配对，正在启动 Shell 助手…</string>
+    <string name="shell_ready">完成：小维助手的 Shell 助手已运行。</string>
+    <string name="shell_paired_not_started">已配对，但 Shell 助手没有启动。请打开小维助手 → 设置 → Shell 后台，点「启动」。</string>
+    <string name="shell_wrong_code">配对码不对。请核对对话框里的配对码再试（重新打开对话框会换新码）。</string>
+    <string name="shell_pair_failed">配对失败：%1$s</string>
+    <string name="shell_code_label">配对码</string>
+    <string name="shell_enter_code">输入配对码</string>
+    <string name="shell_open_settings">打开设置</string>
+    <string name="shell_cancel">取消</string>
+    <string name="shell_hint_wireless_off">「无线调试」没有打开（重启或没连 Wi-Fi 时会自动关闭）。请在开发者选项里打开，然后点「启动」。</string>
+    <string name="shell_hint_no_attach">Shell 助手没有回应，请再点一次「启动」。</string>
+</resources>

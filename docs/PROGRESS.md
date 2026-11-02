@@ -53,6 +53,19 @@ _Last updated: 2026-11-01_
   launch on it (`am start --display`); accessibility sees its windows; `input -d` taps and types. Trusted
   displays are refused on Android 12. ColorOS denies shell `WRITE_SECURE_SETTINGS` unless "Disable permission monitoring" is on.
 
+### Built-in shell backend (2026-11-01)
+- **`:shell` module:** pairing with Wireless debugging on the phone itself (code typed into a notification),
+  adb over TLS to the phone's own adbd, and a helper process running as shell (`ShellServer`) whose Binder
+  the app holds. Settings → Shell backend: Set up, Start, Stop, Test, Forget pairing.
+- **Verified on the realme:** paired on the first try (listed as `weiassist@RMX2121`); adbd matched our
+  key; the helper started through shell v2 and attached in under a second as uid 2000; it re-attached after
+  the app's process was killed; it replaced itself after an app update; `Test` ran `id` as shell.
+- **Learned on the device:** Android's provider restores a PKCS#8 RSA key as a non-CRT key (a cast failed,
+  so a new key was made each time); the legacy `shell:` service doesn't start the helper, shell v2 does;
+  this ROM announces no `_adb-tls-connect` mDNS service and doesn't expose `service.adb.tls.port`, so the
+  connect port is found by a loopback scan (about 10 s, then cached); ColorOS refuses `pm grant` from shell.
+- **Tests:** JVM 5 (HKDF RFC 5869 vector, GCM counters, adb public-key layout, certificate, adb framing).
+
 ### Verified on a real device (realme RMX2121, Android 12)
 - ChatGPT subscription sign-in, then "你好" through Pi (`gpt-6.1-sol`).
 - Gmail: sent an email to two different addresses, each after the confirmation card.
@@ -65,7 +78,7 @@ _Last updated: 2026-11-01_
 
 ## Next: multi-session, steps 2–5
 
-- [ ] **2. Built-in shell backend:** pair with Wireless debugging on the phone, start an `app_process` helper as shell, Binder link to the app.
+- [x] **2. Built-in shell backend:** pairing, adb over TLS, shell helper with Binder link. Not yet: tested across a reboot.
 - [ ] **3. A virtual display per phone session:** create/launch/input through the helper; read screens per display through accessibility.
 - [ ] **4. Live previews:** the display's Surface rendered in the session page and the list; adaptive size and frame rate; nothing rendered when hidden.
 - [ ] **5. Supervisor session:** a session whose tools manage the others (create, start, pause, resume, stop, delete, message); voice-ready.

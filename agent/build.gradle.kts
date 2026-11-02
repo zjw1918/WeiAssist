@@ -19,6 +19,7 @@ android {
 dependencies {
     api(project(":pi-runtime"))
     api(project(":phone"))
+    api(project(":shell"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.process)
     testImplementation(libs.junit)

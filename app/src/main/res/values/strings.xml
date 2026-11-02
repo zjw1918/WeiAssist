@@ -84,4 +84,16 @@
     <string name="delete_title">Delete this conversation?</string>
     <string name="delete_text">Its messages are removed from this phone. A running task is stopped first.</string>
     <string name="reply_hint">Message</string>
+    <string name="shell_title">Shell backend (virtual displays)</string>
+    <string name="shell_why">Lets each phone task run in its own virtual display, so several can work at once and you can watch them. Set up once with Wireless debugging (Developer options).</string>
+    <string name="shell_unsupported">Needs Android 11 or later (Wireless debugging).</string>
+    <string name="shell_not_paired">Not set up</string>
+    <string name="shell_stopped">Set up, not running</string>
+    <string name="shell_starting">Starting…</string>
+    <string name="shell_running">Running as %1$s</string>
+    <string name="shell_set_up">Set up</string>
+    <string name="shell_start">Start</string>
+    <string name="shell_stop">Stop</string>
+    <string name="shell_unpair">Forget pairing</string>
+    <string name="shell_test">Test</string>
 </resources>

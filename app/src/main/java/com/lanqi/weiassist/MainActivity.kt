@@ -73,6 +73,8 @@ class MainActivity : ComponentActivity() {
         readDebug(intent)
         // Debug builds: `--ez crashPi true` crashes Pi's renderer to test recovery.
         if (BuildConfig.DEBUG && intent.getBooleanExtra("crashPi", false)) viewModels<AppViewModel>().value.debugCrashRuntime()
+        // Debug builds: `--ez shellStart true` starts the shell helper through Wireless debugging.
+        if (BuildConfig.DEBUG && intent.getBooleanExtra("shellStart", false)) com.lanqi.weiassist.shell.ShellBackend.get(this).debugForceStart()
         // Debug builds: `--ez killProcess true` ends the process at once, as the system may, to test session recovery.
         if (BuildConfig.DEBUG && intent.getBooleanExtra("killProcess", false)) android.os.Process.killProcess(android.os.Process.myPid())
     }

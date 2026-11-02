@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="shell_channel">Wireless debugging pairing</string>
+    <string name="shell_channel_desc">Where you type the pairing code while setting up the shell backend.</string>
+    <string name="shell_pair_title">Pair WeiAssist with Wireless debugging</string>
+    <string name="shell_pair_open_dialog">In Developer options, turn on Wireless debugging, open it, and tap “Pair device with pairing code”. Keep that dialog open.</string>
+    <string name="shell_pair_enter_code">Found the pairing dialog. Tap “Enter code” here and type the 6-digit code it shows.</string>
+    <string name="shell_pair_no_dialog">The pairing dialog isn\'t open. Tap “Pair device with pairing code” again, then enter the new code.</string>
+    <string name="shell_pairing">Pairing…</string>
+    <string name="shell_paired_starting">Paired. Starting the shell helper…</string>
+    <string name="shell_ready">Done: WeiAssist\'s shell helper is running.</string>
+    <string name="shell_paired_not_started">Paired, but the helper didn\'t start. Open WeiAssist → Settings → Shell backend and tap Start.</string>
+    <string name="shell_wrong_code">That code didn\'t work. Check the code in the dialog and try again (a new dialog shows a new code).</string>
+    <string name="shell_pair_failed">Pairing failed: %1$s</string>
+    <string name="shell_code_label">Pairing code</string>
+    <string name="shell_enter_code">Enter code</string>
+    <string name="shell_open_settings">Open settings</string>
+    <string name="shell_cancel">Cancel</string>
+    <string name="shell_hint_wireless_off">Wireless debugging is off (it turns off after a reboot or without Wi-Fi). Turn it on in Developer options, then tap Start.</string>
+    <string name="shell_hint_no_attach">The helper didn\'t report back. Try Start again.</string>
+</resources>

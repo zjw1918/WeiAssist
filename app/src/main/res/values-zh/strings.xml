@@ -83,4 +83,16 @@
     <string name="delete_title">删除这个对话？</string>
     <string name="delete_text">对话内容会从手机上删除。正在执行的任务会先停止。</string>
     <string name="reply_hint">消息</string>
+    <string name="shell_title">Shell 后台（虚拟显示器）</string>
+    <string name="shell_why">让每个手机任务在自己的虚拟显示器里运行，多个任务可以同时进行，你也能看到它们在做什么。只需用「无线调试」（开发者选项）设置一次。</string>
+    <string name="shell_unsupported">需要 Android 11 或更高版本（无线调试）。</string>
+    <string name="shell_not_paired">未设置</string>
+    <string name="shell_stopped">已设置，未运行</string>
+    <string name="shell_starting">正在启动…</string>
+    <string name="shell_running">以 %1$s 身份运行</string>
+    <string name="shell_set_up">设置</string>
+    <string name="shell_start">启动</string>
+    <string name="shell_stop">停止</string>
+    <string name="shell_unpair">取消配对</string>
+    <string name="shell_test">测试</string>
 </resources>

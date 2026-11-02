@@ -48,6 +48,8 @@ class AgentService : Service() {
         super.onCreate()
         controller = AgentController(this)
         createChannel()
+        // The shell helper (for virtual displays): start it if it was set up and isn't running (e.g. after a reboot).
+        com.lanqi.weiassist.shell.ShellBackend.get(this).autoStart()
         scope.launch {
             kotlinx.coroutines.flow.combine(controller.state, controller.sessions.summaries) { s, list -> work(s, list) }
                 .distinctUntilChanged()

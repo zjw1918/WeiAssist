@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Talking to this phone's own adbd (Wireless debugging) on the loopback, and finding its ports by mDNS. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Never requested from the user: the shell helper may grant it (pm grant) so the app can turn
+         Wireless debugging back on after a reboot. Phones that refuse simply keep asking the user. -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
+
+    <application>
+        <!-- The shell helper hands over its Binder here; ShellBinderProvider accepts only shell and root. -->
+        <provider
+            android:name=".ShellBinderProvider"
+            android:authorities="${applicationId}.shell"
+            android:exported="true"
+            tools:ignore="ExportedContentProvider" />
+
+        <service
+            android:name=".PairingService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Pairing with the phone's own Wireless debugging: the user types the pairing code shown in Settings into this notification. Ends when pairing ends or the user cancels." />
+        </service>
+    </application>
+</manifest>

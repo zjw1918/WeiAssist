@@ -184,6 +184,9 @@ private fun SettingsCard(vm: AppViewModel, s: AgentState) {
                     onModel = vm::selectModel, onThinking = vm::selectThinking, subscription = s.provider?.credential == "oauth",
                 )
                 Text(stringResource(R.string.pi_runtime_info, s.piVersion.orEmpty()), style = MaterialTheme.typography.bodySmall)
+                androidx.compose.material3.HorizontalDivider()
+                ShellSection()
+                androidx.compose.material3.HorizontalDivider()
                 if (BuildConfig.DEBUG) Row(verticalAlignment = Alignment.CenterVertically) {
                     Switch(checked = vm.useMock, onCheckedChange = vm::setMock)
                     Text("  " + stringResource(R.string.dev_mock), style = MaterialTheme.typography.bodySmall)

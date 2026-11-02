@@ -12,6 +12,7 @@ Everything else adapts Android to what Pi expects.
                                    │ StateFlow<AgentState>, actions
 ┌────────────────────────── :agent ─┴─────────────────────────────────────┐
 │ AgentService   foreground while any session works · Stop all · results   │
+│                autoStart() of the shell backend                          │
 │ AgentController  owns PiEngine · account and model (AgentReducer)        │
 │ SessionManager   every conversation: run · queue · pause · stop · delete │
 │ SessionReducer   pure (session, Pi message) → session      ← unit tests │
@@ -60,6 +61,37 @@ All messages are JSON.
 | K→JS | `configure` (optionally with saved `messages`), `prompt`, `abort`, `dispose`, all with `session` | Session commands |
 
 Tests: [pi-host/test](../pi-host/test) runs the shipped bundle against a fake Kotlin side that speaks this exact protocol.
+
+## The shell backend (`:shell`)
+
+Virtual displays for other apps, input on any display and `am start --display` need the shell user's
+permissions. WeiAssist gets them without a computer, Shizuku or root:
+
+```
+ WeiAssist (app uid)                                   adbd (Wireless debugging)
+ ── PairingService ── TLS 1.3 + SPAKE2 ──────────────▶ pairing port   (once: our key is trusted)
+ ── ShellBackend ──── TLS 1.3 (our key), shell v2 ───▶ connect port   (each start)
+                         │ CLASSPATH=base.apk setsid app_process … ShellServer
+                         ▼
+ ShellBinderProvider ◀── Binder ──────────────────── ShellServer (uid 2000, outlives the app's process)
+```
+
+- **Pairing** is `adb pair`, byte for byte (AOSP `pairing_auth.cpp`, `pairing_connection.cpp`): BoringSSL's
+  SPAKE2 through a small JNI library (`libadbpair`), TLS 1.3 and keying-material export through a bundled
+  Conscrypt, HKDF and AES-128-GCM in Kotlin. The user types the code into a notification (inline reply),
+  because Settings' pairing dialog closes when they switch apps. The key is RSA-2048, stored encrypted
+  with a Keystore key (`AdbKeyStore`).
+- **Connecting** is `adb connect`: CNXN → STLS → TLS with our certificate → CNXN, then `shell,v2,raw:`.
+  The connect port changes every time Wireless debugging is turned on: the last one that worked, then
+  `service.adb.tls.port`, then mDNS, then a scan of the phone's own loopback for a port that answers like
+  adbd (some ROMs announce nothing).
+- **The helper** (`ShellServer`) is our own APK's code run by `app_process` as shell. It hands its Binder
+  to the app through `ShellBinderProvider` (accepts only uid 2000/0); it serves only the app's uid. When
+  the app's process dies it waits (watching `/proc`) and hands itself over again; it never starts the app.
+  It exits when its APK is replaced or removed; the app starts a new one (`autoStart`).
+- **After a reboot** Wireless debugging is off, so the helper can't start until the user turns it on
+  (the app then starts it by itself). Where the phone lets the helper grant `WRITE_SECURE_SETTINGS`, the
+  app could switch Wireless debugging on itself; ColorOS refuses that grant.
 
 ## Sessions
 

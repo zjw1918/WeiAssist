@@ -13,5 +13,16 @@ the app as pi/THIRD_PARTY_LICENSES.txt.
 - typebox — MIT License, Copyright (c) sinclairzx81
 - partial-json — MIT License, Copyright (c) Muspi Merol
 
+The shell backend (module :shell) bundles native code:
+
+- BoringSSL (io.github.vvb2060.ndk:boringssl, statically linked into libadbpair
+  for SPAKE2) — ISC License and OpenSSL License, Copyright The BoringSSL Authors
+  and The OpenSSL Project
+- Conscrypt (org.conscrypt:conscrypt-android) — Apache License 2.0,
+  Copyright The Android Open Source Project
+
+Its adb pairing and connection protocol follows the Android Open Source Project's
+adb (packages/modules/adb), Apache License 2.0.
+
 Android libraries (AndroidX, Jetpack Compose, Kotlin) are used under the
 Apache License 2.0.
