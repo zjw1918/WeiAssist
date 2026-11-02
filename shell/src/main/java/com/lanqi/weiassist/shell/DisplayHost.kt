@@ -70,14 +70,26 @@ internal class DisplayHost(
             HardwareBuffer.USAGE_CPU_READ_OFTEN or HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE)
         else ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, MAX_IMAGES) // no live previews before Android 10
         val dm = DisplayManager::class.java.getDeclaredConstructor(Context::class.java).newInstance(context)
-        // Untrusted (shell can't make trusted ones on Android 12), public so other apps may be launched on it,
-        // its own content only (no mirroring), touchable, and its apps closed when it goes.
-        val flags = DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC or DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY or
+        // Public so other apps may be launched on it, its own content only (no mirroring), touchable, and its
+        // apps closed when it goes.
+        val base = DisplayManager.VIRTUAL_DISPLAY_FLAG_PUBLIC or DisplayManager.VIRTUAL_DISPLAY_FLAG_OWN_CONTENT_ONLY or
             FLAG_SUPPORTS_TOUCH or FLAG_DESTROY_CONTENT_ON_REMOVAL
-        val vd = dm.createVirtualDisplay("weiassist-$name", width, height, dpi, reader.surface, flags)
+        // Trusted where shell may make it so (ADD_TRUSTED_DISPLAY, Android 13+): on an untrusted display Android
+        // refuses an app's own launches (unless the activity allows embedding, which few do) and puts them on the
+        // phone's screen instead (ActivityTaskSupervisor.isCallerAllowedToLaunchOnDisplay). With a focus of its
+        // own (14+), so taps on it never take focus from the user's screen; and no vibration for our taps.
+        val trusted = when {
+            Build.VERSION.SDK_INT >= 34 -> base or FLAG_TRUSTED or FLAG_TOUCH_FEEDBACK_DISABLED or FLAG_OWN_FOCUS or FLAG_STEAL_TOP_FOCUS_DISABLED
+            Build.VERSION.SDK_INT >= 33 -> base or FLAG_TRUSTED or FLAG_TOUCH_FEEDBACK_DISABLED
+            else -> base // shell can't make trusted displays on Android 12
+        }
+        val vd = (if (trusted != base) runCatching { dm.createVirtualDisplay("weiassist-$name", width, height, dpi, reader.surface, trusted) }
+            .onFailure { android.util.Log.w("WeiAssistShell", "trusted display refused, using an untrusted one: $it") }.getOrNull() else null)
+            ?: dm.createVirtualDisplay("weiassist-$name", width, height, dpi, reader.surface, base)
             ?: error("createVirtualDisplay returned null")
         val e = Entry(vd, reader)
         val id = vd.display.displayId
+        android.util.Log.i("WeiAssistShell", "display $id: flags ${Integer.toHexString(vd.display.flags)}")
         reader.setOnImageAvailableListener({ r -> onImage(id, e, r) }, handler)
         displays[id] = e
         return id
@@ -256,6 +268,10 @@ internal class DisplayHost(
         private const val MAX_IMAGES = 6
         private const val FLAG_SUPPORTS_TOUCH = 1 shl 6
         private const val FLAG_DESTROY_CONTENT_ON_REMOVAL = 1 shl 8
+        private const val FLAG_TRUSTED = 1 shl 10
+        private const val FLAG_TOUCH_FEEDBACK_DISABLED = 1 shl 13
+        private const val FLAG_OWN_FOCUS = 1 shl 14
+        private const val FLAG_STEAL_TOP_FOCUS_DISABLED = 1 shl 16
         /** InputManager.INJECT_INPUT_EVENT_MODE_WAIT_FOR_FINISH */
         private const val INJECT_WAIT_FOR_FINISH = 2
     }
