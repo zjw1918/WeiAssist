@@ -68,7 +68,8 @@ class ShellServer private constructor(
         require(displays.has(displayId)) { "no display $displayId" }
         require(Regex("[\\w.]+/[\\w.$]+").matches(component)) { "bad component $component" }
         // A task of its own (NEW_TASK | MULTIPLE_TASK): an app the user has open on the phone's screen stays there.
-        val r = exec("am start --display $displayId --user 0 -f 0x18000000 -n $component", 10_000)
+        // Quoted: class names may contain '$' (YouTube's Shell$HomeActivity), which sh would expand.
+        val r = exec("am start --display $displayId --user 0 -f 0x18000000 -n '$component'", 10_000)
         return r.getString("out").orEmpty().trim()
     }
 
