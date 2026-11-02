@@ -25,6 +25,7 @@ import { bridge, bridgeCall, settle } from "./bridge.ts";
 import { fetchEvents, nativeFetch } from "./native-fetch.ts";
 import { PhoneSession, phoneSystemPrompt, pruneOldScreens } from "./phone-tools.ts";
 import { SupervisorSession, supervisorSystemPrompt } from "./supervisor-tools.ts";
+import { bashPrompt, bashTool } from "./bash-tool.ts";
 import { dispatch } from "./shims/http.ts";
 
 declare const __PI_VERSION__: string;
@@ -261,11 +262,13 @@ async function configure(cfg: Config) {
 	session.agent = new Agent({
 		initialState: {
 			messages: history,
-			systemPrompt: cfg.systemPrompt ?? (phone ? phoneSystemPrompt(agentName) : supervisor ? supervisorSystemPrompt(agentName)
-				: `You are ${agentName}, a helpful assistant on the user's Android phone. Reply in the user's language.`),
+			systemPrompt: cfg.systemPrompt ?? (supervisor ? supervisorSystemPrompt(agentName)
+				: (phone ? phoneSystemPrompt(agentName)
+					: `You are ${agentName}, a helpful assistant on the user's Android phone. Reply in the user's language.`) + "\n" + bashPrompt),
 			model,
 			thinkingLevel: thinkingLevel as any,
-			tools: phone?.tools ?? supervisor?.tools ?? [],
+			// Chat and phone sessions get bash (Termux); the supervisor only manages sessions.
+			tools: supervisor ? supervisor.tools : [...(phone?.tools ?? []), bashTool(cfg.session)],
 		},
 		// Pi's hook: the pause gate, then risky taps wait for the user's OK.
 		beforeToolCall: beforeToolCall(session),

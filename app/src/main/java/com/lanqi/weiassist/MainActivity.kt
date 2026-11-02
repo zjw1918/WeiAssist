@@ -116,11 +116,19 @@ fun MainActivity.App(vm: AppViewModel = viewModel()) {
         vm.openInBrowser.collect { url -> CustomTabsIntent.Builder().build().launchUrl(this@App, url.toUri()) }
     }
     // Android 13+: the "working" notification (with its Stop button) needs permission to show.
-    if (android.os.Build.VERSION.SDK_INT >= 33) {
-        val ask = androidx.activity.compose.rememberLauncherForActivityResult(
-            androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
-        ) {}
-        LaunchedEffect(Unit) { ask.launch(android.Manifest.permission.POST_NOTIFICATIONS) }
+    // With Termux installed: permission to run the bash tool's commands in it (Termux.kt).
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val ask = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions(),
+    ) {}
+    LaunchedEffect(Unit) {
+        val wanted = buildList {
+            if (android.os.Build.VERSION.SDK_INT >= 33) add(android.Manifest.permission.POST_NOTIFICATIONS)
+            val termux = com.lanqi.weiassist.agent.Termux.PERMISSION
+            val hasTermux = runCatching { context.packageManager.getPackageInfo(com.lanqi.weiassist.agent.Termux.PACKAGE, 0) }.isSuccess
+            if (hasTermux) add(termux)
+        }.filter { androidx.core.content.ContextCompat.checkSelfPermission(context, it) != android.content.pm.PackageManager.PERMISSION_GRANTED }
+        if (wanted.isNotEmpty()) ask.launch(wanted.toTypedArray())
     }
     val openId by vm.openId.collectAsStateWithLifecycle()
     Scaffold { inner ->

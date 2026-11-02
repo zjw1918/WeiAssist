@@ -27,6 +27,7 @@ class AgentController(context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val pi = PiEngine(appContext, agentName = appContext.getString(R.string.agent_name))
     private val phone = PhoneActions(appContext)
+    val termux = Termux(appContext)
     private val prefs = appContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     private val _state = MutableStateFlow(
@@ -103,6 +104,13 @@ class AgentController(context: Context) {
                 else -> phone.run(m, target) { sessions.isPaused(id) }
             }
         }
+        // The bash tool (pi-host bash-tool.ts): commands run in Termux, in the session's own folder.
+        pi.registerHostCall("bash") { m ->
+            val id = m.optString("session")
+            if (!sessions.gate(id)) "stopped by the user"
+            else termux.run(id, m.getString("call"), m.getString("command"), m.optInt("timeout", 120))
+        }
+        pi.registerHostCall("bash_kill") { m -> termux.kill(m.optString("session"), m.getString("call")); null }
         pi.registerHostCall("supervisor") { m ->
             val caller = m.optString("session")
             // Only a supervisor session may manage the others.
@@ -121,7 +129,8 @@ class AgentController(context: Context) {
         // The shell helper came: queued phone sessions get displays. It went: so did its displays.
         scope.launch {
             shell.state.collect { st ->
-                if (st is com.lanqi.weiassist.shell.ShellState.Running) sessions.startQueued() else { screens.helperGone(); previews.reset() }
+                if (st is com.lanqi.weiassist.shell.ShellState.Running) { sessions.startQueued(); allowTermuxChildren() }
+                else { screens.helperGone(); previews.reset() }
             }
         }
         scope.launch {
@@ -129,6 +138,22 @@ class AgentController(context: Context) {
             loaded.complete(Unit)
             val ready = pi.start()
             _state.update { it.copy(piVersion = ready.optString("pi")) }
+        }
+    }
+
+    /**
+     * Android 12+ kills an app's child processes beyond 32 ("phantom processes"): that ends Termux builds, test
+     * runs and servers. The shell helper may lift the limit (= Developer options → Disable child process restrictions).
+     */
+    private fun allowTermuxChildren() {
+        if (android.os.Build.VERSION.SDK_INT < 31 || !termux.installed()) return
+        scope.launch(Dispatchers.IO) {
+            val s = shell.service() ?: return@launch
+            runCatching {
+                s.exec("device_config set_sync_disabled_for_tests persistent; " +
+                    "device_config put activity_manager max_phantom_processes 2147483647; " +
+                    "settings put global settings_enable_monitor_phantom_procs false", 10_000)
+            }.onFailure { android.util.Log.w("AgentController", "could not lift the child process limit", it) }
         }
     }
 

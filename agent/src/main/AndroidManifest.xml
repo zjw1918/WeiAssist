@@ -7,6 +7,12 @@
     <!-- Android 13+: show the "working" notification with its Stop button. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- The bash tool runs commands in Termux (Termux.kt); granted by the user, see Termux.SETUP. -->
+    <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
+    <queries>
+        <package android:name="com.termux" />
+    </queries>
+
     <application>
         <service
             android:name=".AgentService"
