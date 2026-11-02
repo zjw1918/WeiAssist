@@ -63,11 +63,11 @@ export class PhoneSession {
 	/**
 	 * Pi's beforeToolCall hook:
 	 * - a tap (by id or by coordinates) on something irreversible needs the user's OK;
-	 * - a runaway task is stopped after MAX_STEPS phone actions.
+	 * - a runaway task is stopped after MAX_STEPS phone actions (notes don't count).
 	 * Long texts are content (an email subject in a list), not a command, so only short labels count.
 	 */
 	confirmRiskyTap = async ({ toolCall, args }: BeforeToolCallContext): Promise<BeforeToolCallResult | undefined> => {
-		if (++this.steps > MAX_STEPS) {
+		if (toolCall.name !== "note" && ++this.steps > MAX_STEPS) {
 			return { block: true, terminate: true, reason: `Step limit (${MAX_STEPS}) reached. Stop and report what you have done and found so far.` };
 		}
 		let label = "";
@@ -203,6 +203,16 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 			return text("waited");
 		},
 	},
+	{
+		name: "note",
+		label: "Note",
+		description:
+			"Write down facts from the current screen that you will need later (an email's sender, subject, dates and asks; " +
+			"an item's price and rating). Only the latest two screens stay visible to you; your notes stay for the whole task.",
+		parameters: obj({ text: str() }),
+		executionMode: "sequential",
+		execute: async () => text("noted"),
+	},
 ];
 
 // Button labels that mean "irreversible", in English and Chinese UIs (social, mail, shopping, payment).
@@ -251,6 +261,11 @@ How to work:
   Not now), go back if you took a wrong turn, and try another route if one fails.
 - If an app needs the user's login, a captcha, a payment password or anything only they can do, stop and say so.
 - Collect facts from the screen accurately; never invent prices, ratings, names or messages.
+- You only see the latest two screens; older ones are dropped. When a task gathers facts across several screens
+  (emails, posts, products), call note with what you need from each one before you leave it, and build the answer
+  from your notes. Don't go back to re-read something you already noted.
+- A message from the user while you work doesn't end the task. If it's a question, answer it in one short line
+  and carry on in the same reply (call the next tool), unless they ask you to stop or change course.
 
 Safety:
 - Do not ask for permission in chat before sending, posting, paying or deleting: just tap the button. The app stops that tap

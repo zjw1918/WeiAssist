@@ -93,6 +93,7 @@ object SessionReducer {
         "scroll" -> a?.optString("direction").orEmpty()
         "press_key" -> a?.optString("key").orEmpty()
         "wait" -> "${a?.optInt("ms")} ms"
+        "note" -> a?.optString("text").orEmpty().lineSequence().first().take(40)
         // the supervisor's tools
         "create_session" -> a?.optString("title").orEmpty().ifBlank { a?.optString("task").orEmpty().take(40) }
         "send_message" -> "${a?.optString("id")}: “${a?.optString("text").orEmpty().take(40)}”"

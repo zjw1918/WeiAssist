@@ -201,6 +201,23 @@ test("old screens are pruned from the model's context, the latest two are kept",
 	assert.ok(mock.requests.length - before >= 5);
 });
 
+test("notes stay in the model's context after their screen is pruned, and never reach Kotlin", async () => {
+	const actions = [];
+	let n = 0;
+	const host = await startHost({
+		credentials: apiKeyCredentials,
+		hostCalls: { phone: (m) => { actions.push(m.action); return `app: x\n[1] TextView "screen ${++n}"`; } },
+	});
+	await phoneRun(host, "notes");
+	const input = JSON.parse(mock.requests.at(-1).body).input;
+	const note = input.find((i) => i.type === "function_call" && i.name === "note");
+	assert.match(note.arguments, /from Ann, ship by Friday/);
+	const outputs = input.filter((i) => i.type === "function_call_output").map((i) => JSON.stringify(i.output));
+	assert.match(outputs[0], /omitted/); // screen 1, which the note was taken from
+	assert.match(outputs[1], /noted/);
+	assert.deepEqual(actions, ["read_screen", "read_screen", "read_screen", "read_screen"]);
+});
+
 // ---- sessions ---------------------------------------------------------------------------------------
 
 const configure = async (host, session, extra = {}) => {

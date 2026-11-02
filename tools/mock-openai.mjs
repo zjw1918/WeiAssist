@@ -78,6 +78,14 @@ export const SCRIPTS = {
 		{ tool: "read_screen", args: {} },
 		{ text: "opened example.com" },
 	],
+	notes: [
+		{ tool: "read_screen", args: {} },
+		{ tool: "note", args: { text: "email 1: from Ann, ship by Friday" } },
+		{ tool: "read_screen", args: {} },
+		{ tool: "read_screen", args: {} },
+		{ tool: "read_screen", args: {} },
+		{ text: "summarised from notes" },
+	],
 	submit: [{ tool: "type_text", args: { id: 3, text: "example.com", submit: true } }, { tool: "press_key", args: { key: "enter" } }, { text: "submitted" }],
 	douban: [
 		{ tool: "open_app", args: { app: "com.douban.frodo" } },
