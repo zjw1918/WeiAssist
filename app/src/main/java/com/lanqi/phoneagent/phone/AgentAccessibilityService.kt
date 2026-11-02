@@ -49,7 +49,9 @@ class AgentAccessibilityService : AccessibilityService() {
         var next = 1
         fun walk(n: AccessibilityNodeInfo, depth: Int) {
             if (!n.isVisibleToUser) return
-            val text = n.text?.toString()?.replace("\n", " ")?.take(120).orEmpty()
+            // Password fields never leave the phone: the model only learns that one is there.
+            val text = if (n.isPassword) (if (n.text.isNullOrEmpty()) "" else "•••• (hidden password)")
+            else n.text?.toString()?.replace("\n", " ")?.take(120).orEmpty()
             val desc = n.contentDescription?.toString()?.replace("\n", " ")?.take(80).orEmpty()
             val hint = n.hintText?.toString().orEmpty()
             val useful = n.isClickable || n.isEditable || n.isScrollable || n.isCheckable || text.isNotEmpty() || desc.isNotEmpty()
@@ -62,6 +64,7 @@ class AgentAccessibilityService : AccessibilityService() {
                     if (n.isScrollable) add("scrollable")
                     if (n.isCheckable) add(if (n.isChecked) "checked" else "unchecked")
                     if (n.isFocused) add("focused")
+                    if (n.isPassword) add("password")
                     n.viewIdResourceName?.substringAfter(":id/")?.let { add("id=$it") }
                 }.joinToString(" ")
                 out.append("[$id] ").append(n.className?.toString()?.substringAfterLast('.') ?: "View")
