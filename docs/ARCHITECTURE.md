@@ -64,6 +64,16 @@ Tests: [pi-host/test](../pi-host/test) runs the shipped bundle against a fake Ko
 - **Foreground service:** a task must survive the user leaving or closing the app. While Pi works, `AgentService` is a started foreground service of type `specialUse`.
 - **Renderer recovery:** if the WebView renderer dies (OOM, killed), `PiEngine` boots a fresh Pi. Credentials survive, and a running task ends with a clear message.
 
+## Phones that freeze background apps
+
+Some vendors' battery managers (realme/ColorOS `OplusHansManager`, and similar on other OEMs) freeze
+background apps within about 30 s. They ignore foreground services and the battery-optimization exemption.
+
+- **During a task** the bound accessibility service keeps the app unfrozen (`importance=accessibility`).
+- **During ChatGPT sign-in** without accessibility on, the app may freeze while Chrome is in front. The
+  browser's redirect then waits in the loopback socket's queue and is answered as soon as the user
+  returns to the app (✕ in Chrome, or the notification). The sign-in screen tells the user to do that.
+
 ## Safety model
 
 1. **Irreversible actions:** a tap on Send/Pay/Delete-like labels goes through Pi's `beforeToolCall` hook, which shows an overlay card. Declining blocks the tap and ends the run.

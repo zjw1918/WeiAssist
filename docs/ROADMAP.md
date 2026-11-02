@@ -7,6 +7,8 @@ Status legend: ✅ done · 🔨 next · ⬜ planned
 
 ## 0. Where we are (Nov 2026)
 
+- ✅ **Resilience:** the app survives the Pi renderer dying (Pi restarts, credentials kept).
+
 - ✅ **Pi in the app:** pi-agent-core and pi-ai run in a hidden WebView, with native fetch and an encrypted credential store.
 - ✅ **Sign-in:** ChatGPT subscription or API key, both through Pi's own `models.login`.
 - ✅ **Models:** model and thinking-level pickers filled from Pi.
@@ -18,18 +20,19 @@ Status legend: ✅ done · 🔨 next · ⬜ planned
 
 ## 1. Foundation (make it solid before making it big)
 
-- 🔨 **Modules:**
+- ✅ **Modules:**
   - `:pi-runtime` (WebView host, bridge, native fetch, loopback, credential store);
   - `:agent` (controller, state, service);
   - `:phone` (accessibility tools);
   - `:app` (UI).
-  The goal is clear boundaries, separate tests, and a place for plugins later.
-- 🔨 **Reproducible build:** a Gradle task runs `pi-host`'s npm build (pinned Node via `.nvmrc`), so the committed `host.js` can never drift from source.
-- 🔨 **Tests:**
-  - unit tests for AgentController reducers (feed Pi messages, assert state);
-  - bridge contract tests in Node (pi-host against a fake bridge, plus the mock OpenAI server);
-  - instrumented tests for PhoneActions on a test app.
-- 🔨 **CI (GitHub Actions):** typecheck and bundle pi-host, lint, unit tests and `assembleDebug` on every PR. Signed release builds on tags.
+  Clear boundaries and separate tests. `:pi-runtime` knows nothing about phones; features plug in through `registerHostCall`.
+- ✅ **Reproducible build:** Gradle builds the Pi bundle from source (`buildPiHost<Variant>`, Node per `.nvmrc`). Nothing generated is committed.
+- ✅ **Tests:**
+  - pure `AgentReducer` with JVM tests;
+  - end-to-end tests of the shipped Pi bundle over the real bridge protocol, with a mock provider and scripted tool calls.
+- 🔨 **Instrumented tests:** PhoneActions against a small test app on an emulator in CI.
+- ✅ **CI (GitHub Actions):** pi-host tests, lint, unit tests and the debug APK on every PR.
+- ⬜ **Release workflow:** signed release builds on tags.
 - 🔨 **Conversation history:** persist Pi's transcript (Agent messages) in Room, so a restart doesn't lose the conversation. Resume a past chat.
 - ⬜ **Structured logging:** a ring buffer with an in-app "copy diagnostics" option. Secrets and typed text are always redacted.
 - ⬜ **Settings screen:** provider, model, thinking level, language, safety options.
@@ -51,7 +54,8 @@ Status legend: ✅ done · 🔨 next · ⬜ planned
 - ⬜ **Floating assistant bubble:** overlay, tap to open a mini panel, drag, shows a running indicator.
 - ⬜ **Voice input:** speech to text, push to talk on the bubble.
 - ⬜ **Readable confirmation card:** 收件人 / 主题 / 正文 instead of raw view classes; shows the target app's icon.
-- ⬜ **Polish:** Material You theming, dark mode, English and Chinese UI, accessibility of our own UI.
+- ✅ **English and Chinese UI**, including per-app language on Android 13+.
+- ⬜ **Polish:** Material You theming, dark mode, accessibility of our own UI.
 
 ## 4. Safety and privacy (trust is the product)
 
@@ -63,7 +67,8 @@ Status legend: ✅ done · 🔨 next · ⬜ planned
 
 ## 5. Open-source release
 
-- ⬜ **Community files:** LICENSE, CONTRIBUTING, CODE_OF_CONDUCT, SECURITY.md, issue and PR templates.
-- ⬜ **Docs:** ARCHITECTURE.md with diagrams, "write a tool" and "add a provider" guides, a privacy policy.
+- ✅ **Community files:** LICENSE (Apache-2.0), NOTICE, CONTRIBUTING, CODE_OF_CONDUCT, SECURITY.md, issue and PR templates.
+- ✅ **ARCHITECTURE.md**, including the bridge protocol.
+- ⬜ **More docs:** "write a tool" and "add a provider" guides, a privacy policy.
 - ⬜ **Releases:** signed APKs on GitHub Releases, plus F-Droid. Google Play's accessibility-API policy needs checking before any Play listing.
-- ⬜ **Branding:** final name, icon and screenshots for the README.
+- ⬜ **Branding:** the name is set (WeiAssist / 小维助手, `com.lanqi.weiassist`); still needed are an icon and screenshots for the README.
