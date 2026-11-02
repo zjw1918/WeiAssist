@@ -42,6 +42,8 @@ class MainActivity : ComponentActivity() {
     var debugRun = false
     var debugPhone = true
     var debugMock: Boolean? = null
+    /** `--ez mainOnly true|false`: phone sessions use the phone's own screen, as without the shell helper. */
+    var debugMainOnly: Boolean? = null
 
     /** Debug builds: `--es supervise "…"` says it to the supervisor. */
     val debugSupervise = androidx.compose.runtime.mutableStateOf<String?>(null)
@@ -49,6 +51,7 @@ class MainActivity : ComponentActivity() {
     private fun readDebug(i: android.content.Intent) {
         if (!BuildConfig.DEBUG) return
         i.getStringExtra("supervise")?.let { debugSupervise.value = it; debugMock = if (i.hasExtra("mock")) i.getBooleanExtra("mock", false) else null }
+        if (i.hasExtra("mainOnly")) debugMainOnly = i.getBooleanExtra("mainOnly", false)
         val task = i.getStringExtra("task") ?: return
         debugRun = i.getBooleanExtra("run", false)
         debugPhone = i.getBooleanExtra("phone", true)
@@ -90,6 +93,7 @@ fun MainActivity.App(vm: AppViewModel = viewModel()) {
         if (debugRun && s.screen != Screen.Connected) return@LaunchedEffect // wait for Pi and the account
         vm.input = task; vm.phoneMode = debugPhone; debugTask.value = null
         debugMock?.let(vm::setMock) // `--ez mock true`: the local mock model
+        debugMainOnly?.let(vm::debugMainOnly)
         if (debugRun) { debugRun = false; vm.startTask() }
     }
     LaunchedEffect(debugSupervise.value, s.screen) {

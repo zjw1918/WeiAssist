@@ -56,6 +56,9 @@ class DisplayScreenPool(
 
     private fun publish() { _displays.value = leases.mapValues { it.value.target.displayId } }
 
+    /** Debug builds: act as if there were no shell helper, so new sessions use the phone's own screen. */
+    @Volatile var debugMainOnly = false
+
     /** Whether a session is working now (set by the owner; see [guard]). */
     var isActive: (String) -> Boolean = { true }
     private val leases = LinkedHashMap<String, Lease>()
@@ -75,7 +78,7 @@ class DisplayScreenPool(
             leases.remove(session) // the helper died with its displays
             publish()
         }
-        val helper = shell.service() ?: return fallback.acquire(session)
+        val helper = shell.service()?.takeUnless { debugMainOnly } ?: return fallback.acquire(session)
         if (leases.size >= max) {
             val oldestIdle = leases.entries.filter { it.value.idleSince != null }.minByOrNull { it.value.idleSince!! } ?: return null
             release(oldestIdle.key)

@@ -115,6 +115,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun selectModel(id: String) = withAgent { selectModel(id) }
     fun selectThinking(level: String) = withAgent { selectThinking(level) }
     fun debugCrashRuntime() { if (BuildConfig.DEBUG) withAgent { debugCrashRuntime() } }
+    fun debugMainOnly(on: Boolean) { if (BuildConfig.DEBUG) withAgent { debugMainOnly(on) } }
 
     // ---- sessions ---------------------------------------------------------------------------------
     fun open(id: String?) {

@@ -252,6 +252,9 @@ class AgentController(context: Context) {
     /** Debug builds only: simulate Pi's WebView renderer dying, to test recovery on a device. */
     fun debugCrashRuntime() = pi.debugCrashRenderer()
 
+    /** Debug builds only: new phone sessions use the phone's own screen, as without the shell helper. */
+    fun debugMainOnly(on: Boolean) { screens.debugMainOnly = on }
+
     fun destroy() {
         pi.destroy()
         scope.cancel()
