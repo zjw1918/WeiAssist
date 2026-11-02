@@ -21,4 +21,7 @@ dependencies {
     api(project(":phone"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.process)
+    testImplementation(libs.junit)
+    // Android's org.json is a stub in local unit tests; use the real library there.
+    testImplementation(libs.org.json)
 }

@@ -15,7 +15,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import org.json.JSONArray
 import org.json.JSONObject
 
 /**
@@ -32,7 +31,7 @@ class AgentController(context: Context) {
 
     private val _state = MutableStateFlow(
         AgentState(
-            modelId = prefs.getString("modelId", null) ?: PI_DEFAULT_MODEL,
+            modelId = prefs.getString("modelId", null) ?: AgentReducer.PI_DEFAULT_MODEL,
             thinkingLevel = prefs.getString("thinkingLevel", null) ?: "medium",
         ),
     )
@@ -61,67 +60,18 @@ class AgentController(context: Context) {
         }
     }
 
-    // ---- Pi → state ---------------------------------------------------------------------------
+    // ---- Pi → state (pure transitions in AgentReducer) ------------------------------------------
     private fun onPi(m: JSONObject) {
-        when (m.optString("type")) {
-            "status" -> onStatus(m)
-            "auth_event" -> {
-                val e = m.getJSONObject("event")
-                when (e.optString("type")) {
-                    "auth_url" -> {
-                        val url = e.getString("url")
-                        updateSignIn { it.copy(authUrl = url) }
-                        _openInBrowser.tryEmit(url)
-                    }
-                    "progress", "info" -> updateSignIn { it.copy(progress = e.optString("message")) }
-                    "device_code" -> updateSignIn { it.copy(progress = "${e.optString("verificationUri")}  ·  ${e.optString("userCode")}") }
-                }
-            }
-            "auth_prompt" -> {
-                val p = m.getJSONObject("prompt")
-                val prompt = PendingPrompt(m.getString("id"), p.getString("type"), p.optString("message"), p.optString("placeholder").ifEmpty { null })
-                updateSignIn { it.copy(prompt = prompt) }
-            }
-            "auth_prompt_closed" -> updateSignIn { if (it.prompt?.id == m.getString("id")) it.copy(prompt = null) else it }
-            "login_done" -> {
-                _state.update { it.copy(screen = Screen.Connected, signIn = SignInState()) }
-                send(appContext.getString(R.string.first_hello), phoneTools = false) // first thing after sign-in: prove the connection
-            }
-            "login_failed" -> {
-                val msg = m.optString("message")
-                _state.update { it.copy(screen = Screen.Welcome, signIn = SignInState(error = msg.takeIf { it != "cancelled" })) }
-            }
-            // agent events
-            "text_delta" -> updateRun { it.copy(answer = it.answer + m.optString("delta")) }
-            "assistant_end" -> updateRun {
-                it.copy(error = if (m.optString("stopReason") == "error") friendly(m.optString("errorMessage")) else it.error)
-                    .trace("assistant_end · ${m.optString("provider")}/${m.optString("model")} · stop=${m.optString("stopReason")} · tokens=${m.optJSONObject("usage")?.optInt("totalTokens")}")
-            }
-            "tool_start" -> updateRun { it.trace("→ ${m.optString("tool")} ${m.optJSONObject("args")?.toString().orEmpty()}") }
-            "tool_end" -> updateRun { it.trace("  ${if (m.optBoolean("isError")) "✗" else "✓"} ${m.optString("output").lineSequence().firstOrNull().orEmpty().take(80)}") }
-            "configured" -> updateRun { it.trace("configured · ${m.optString("model")} · thinking=${m.optString("thinkingLevel")} → ${m.optString("baseUrl")} · auth=${m.optString("auth")}") }
-            "error" -> updateRun { it.copy(busy = false, error = friendly(m.optString("message"))).trace("error · ${m.optString("message")}") }
-            "idle" -> updateRun { it.copy(busy = false).trace("idle") }
-            else -> updateRun { it.trace(m.optString("type")) }
+        val before = _state.value
+        val (next, effect) = AgentReducer.reduce(before, m, ::friendly)
+        _state.value = next
+        if (next.modelId != before.modelId || next.thinkingLevel != before.thinkingLevel) persistModel()
+        when (effect) {
+            is Effect.OpenBrowser -> _openInBrowser.tryEmit(effect.url)
+            Effect.SignedIn -> send(appContext.getString(R.string.first_hello), phoneTools = false)
+            null -> Unit
         }
     }
-
-    private fun onStatus(m: JSONObject) {
-        val provider = parseProviders(m.getJSONArray("providers")).firstOrNull { it.id == PROVIDER }
-        _state.update { s ->
-            val screen = if (s.screen is Screen.SigningIn) s.screen else if (provider?.credential != null) Screen.Connected else Screen.Welcome
-            s.copy(provider = provider, screen = screen)
-        }
-        // Pi lists only the models this sign-in can use; keep the choice if it's still there,
-        // else take Pi's own default for the provider, else the first one.
-        val ms = provider?.models.orEmpty()
-        val current = _state.value.modelId
-        if (ms.isNotEmpty()) selectModel(if (ms.any { it.id == current }) current else (ms.firstOrNull { it.id == PI_DEFAULT_MODEL } ?: ms.first()).id)
-    }
-
-    private inline fun updateSignIn(crossinline f: (SignInState) -> SignInState) = _state.update { it.copy(signIn = f(it.signIn)) }
-    private inline fun updateRun(crossinline f: (RunState) -> RunState) = _state.update { it.copy(run = f(it.run)) }
-    private fun RunState.trace(line: String) = copy(trace = (trace + line).takeLast(MAX_TRACE))
 
     // ---- sign-in ----------------------------------------------------------------------------------
     fun signIn(method: AuthMethod) {
@@ -132,7 +82,7 @@ class AgentController(context: Context) {
     fun submitPrompt(value: String) {
         val p = _state.value.signIn.prompt ?: return
         if (value.isBlank()) return
-        updateSignIn { it.copy(prompt = null) }
+        _state.update { it.copy(signIn = it.signIn.copy(prompt = null)) }
         scope.launch { pi.answer(p.id, value.trim()) }
     }
 
@@ -147,13 +97,7 @@ class AgentController(context: Context) {
 
     // ---- model and thinking level -----------------------------------------------------------------
     fun selectModel(id: String) {
-        _state.update { s ->
-            // Keep the thinking level if the new model supports it; otherwise the nearest one it has.
-            val levels = s.provider?.models?.firstOrNull { it.id == id }?.thinkingLevels.orEmpty()
-            val level = if (levels.isEmpty() || s.thinkingLevel in levels) s.thinkingLevel
-            else LEVEL_ORDER.drop(LEVEL_ORDER.indexOf(s.thinkingLevel).coerceAtLeast(0)).firstOrNull { it in levels } ?: levels.last()
-            s.copy(modelId = id, thinkingLevel = level)
-        }
+        _state.update { AgentReducer.selectModel(it, id) }
         persistModel()
     }
 
@@ -193,7 +137,7 @@ class AgentController(context: Context) {
         if (!_state.value.run.busy) return
         phone.cancelWaits() // release a phone action paused while the user looks at the app
         scope.launch { pi.abort() }
-        updateRun { it.copy(busy = false).trace("stopped by user") }
+        _state.update { it.copy(run = it.run.copy(busy = false, trace = (it.run.trace + "stopped by user").takeLast(AgentReducer.MAX_TRACE))) }
     }
 
     fun destroy() {
@@ -202,30 +146,6 @@ class AgentController(context: Context) {
     }
 
     // ---- helpers ----------------------------------------------------------------------------------
-    private fun parseProviders(a: JSONArray) = (0 until a.length()).map { i ->
-        val p = a.getJSONObject(i)
-        val ms = p.getJSONArray("methods")
-        ProviderInfo(
-            id = p.getString("id"), name = p.getString("name"),
-            methods = (0 until ms.length()).map { j ->
-                val x = ms.getJSONObject(j)
-                AuthMethod(x.getString("type"), x.getString("name"), x.optString("label").ifEmpty { null }, x.optBoolean("subscription"))
-            },
-            credential = p.optString("credential").takeIf { it.isNotEmpty() && it != "null" },
-            models = p.getJSONArray("models").let { a2 ->
-                (0 until a2.length()).map { k ->
-                    val x = a2.getJSONObject(k)
-                    val lv = x.getJSONArray("thinkingLevels")
-                    ModelInfo(
-                        x.getString("id"), x.optString("name", x.getString("id")),
-                        (0 until lv.length()).map(lv::getString), x.optInt("contextWindow"),
-                        x.optJSONArray("input")?.toString()?.contains("image") == true,
-                    )
-                }
-            },
-        )
-    }
-
     /** Turn the provider's error text into something a user can act on; keep the original for the trace. */
     private fun friendly(msg: String): String = when {
         "insufficient_quota" in msg || "429" in msg && "quota" in msg -> appContext.getString(R.string.err_quota) + "\n" + msg
@@ -236,11 +156,7 @@ class AgentController(context: Context) {
     }
 
     companion object {
-        const val PROVIDER = "openai"
-        /** Pi CLI's defaultModelPerProvider["openai"] (coding-agent/src/core/model-resolver.ts). */
-        const val PI_DEFAULT_MODEL = "gpt-6.1-sol"
-        /** Pi's ThinkingLevel values, lowest to highest. */
-        val LEVEL_ORDER = listOf("off", "minimal", "low", "medium", "high", "xhigh", "max")
-        private const val MAX_TRACE = 300
+        const val PROVIDER = AgentReducer.PROVIDER
+        const val PI_DEFAULT_MODEL = AgentReducer.PI_DEFAULT_MODEL
     }
 }
