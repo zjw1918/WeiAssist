@@ -89,6 +89,25 @@ class ShellServer private constructor(
         return r.getInt("code") == 0
     }
 
+    override fun removeTask(taskId: Int): Boolean {
+        val r = exec("am stack remove $taskId", 5_000)
+        log("task $taskId removed: ${r.getInt("code")} ${r.getString("out").orEmpty().trim()}")
+        return r.getInt("code") == 0
+    }
+
+    override fun killApp(packageName: String): Boolean {
+        require(PACKAGE.matches(packageName)) { "not a package name: $packageName" }
+        val r = exec("am kill --user 0 $packageName", 5_000)
+        log("killed $packageName: ${r.getInt("code")} ${r.getString("out").orEmpty().trim()}")
+        return r.getInt("code") == 0
+    }
+
+    override fun isRunning(packageName: String): Boolean {
+        require(PACKAGE.matches(packageName)) { "not a package name: $packageName" }
+        // Any of its processes, including ":push"-like ones.
+        return exec("ps -A -o NAME | grep -qE '^${packageName.replace(".", "\\.")}(:|$)'", 5_000).getInt("code") == 0
+    }
+
     override fun watch(displayId: Int, listener: IFrameListener, maxFps: Int) { log("watch display $displayId at $maxFps fps"); displays.watch(displayId, listener, maxFps) }
     override fun unwatch(displayId: Int, listener: IFrameListener) { log("unwatch display $displayId"); displays.unwatch(displayId, listener) }
     override fun frameDone(displayId: Int, listener: IFrameListener, seq: Int) = displays.frameDone(displayId, listener, seq)
@@ -181,6 +200,8 @@ class ShellServer private constructor(
         const val SHELL_PACKAGE = "com.android.shell"
         const val METHOD_ATTACH = "attach"
         private const val TAG = "WeiAssistShell"
+        /** A package name, so it is safe on a shell command line. */
+        private val PACKAGE = Regex("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+$")
 
         private fun log(msg: String) { Log.i(TAG, msg); System.err.println("$TAG: $msg") }
 

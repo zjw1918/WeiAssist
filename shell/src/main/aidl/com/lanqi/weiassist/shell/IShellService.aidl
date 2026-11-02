@@ -38,6 +38,12 @@ interface IShellService {
     String activities();
     /** Move a root task to another display (an app that opened a task of its own on the phone's screen). */
     boolean moveTask(int taskId, int displayId);
+    /** Remove a root task (a session's app window, when its task ended). */
+    boolean removeTask(int taskId);
+    /** Kill an app's processes, if they are all in the background (`am kill`: never one the user sees or hears). */
+    boolean killApp(String packageName);
+    /** Whether the app has a running process. */
+    boolean isRunning(String packageName);
 
     // ---- live previews --------------------------------------------------------------------------------
 

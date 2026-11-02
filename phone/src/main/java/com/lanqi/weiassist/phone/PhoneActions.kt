@@ -95,6 +95,7 @@ class PhoneActions(private val context: Context) {
         // one of them to the front of the user's screen (a single-task app reuses its task): see reclaim.
         before?.tasks?.filter { it.display == 0 }?.forEach { t.usersTasks += it.id }
         val hiddenBefore = before?.tasks?.filter { it.display == 0 && it.pkg == pkg && !it.visible }?.map { it.id }?.toSet().orEmpty()
+        if (pkg !in t.apps && t.io.isRunning(pkg)) t.wereRunning += pkg
         t.apps += pkg
         val out = t.io.startActivity(component)
         if ("Error" in out) return "could not open $label: ${out.lineSequence().lastOrNull { it.isNotBlank() }.orEmpty()}"

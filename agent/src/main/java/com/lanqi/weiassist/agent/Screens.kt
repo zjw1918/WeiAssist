@@ -5,6 +5,7 @@ import android.os.SystemClock
 import android.util.Log
 import com.lanqi.weiassist.phone.DisplayIo
 import com.lanqi.weiassist.phone.DisplayTasks
+import com.lanqi.weiassist.phone.SessionApps
 import com.lanqi.weiassist.phone.Target
 import com.lanqi.weiassist.shell.IShellService
 import com.lanqi.weiassist.shell.ShellBackend
@@ -56,6 +57,8 @@ class DisplayScreenPool(
     /** Whether a session is working now (set by the owner; see [guard]). */
     var isActive: (String) -> Boolean = { true }
     private val leases = LinkedHashMap<String, Lease>()
+    /** Closing apps and releasing displays: binder calls and `am`, off the caller's thread, in order. */
+    private val closer = java.util.concurrent.Executors.newSingleThreadExecutor()
 
     @Synchronized override fun acquire(session: String): Target? {
         sweep()
@@ -88,15 +91,21 @@ class DisplayScreenPool(
     @Synchronized override fun idle(session: String) {
         leases[session]?.let { l ->
             l.idleSince = SystemClock.uptimeMillis()
-            // Nothing happens on it until the next task: stop its apps drawing (the last picture stays).
+            // Nothing happens on it until the next task: stop its apps drawing (the last picture stays),
+            // then close them, so they don't stay alive in the background.
             setActive(l.target.displayId, false)
+            closer.execute { SessionApps.close(l.target) { synchronized(this) { leases[session] === l && l.idleSince != null } } }
         }
         fallback.idle(session)
         sweep()
     }
 
     @Synchronized override fun release(session: String) {
-        leases.remove(session)?.let { l -> runCatching { shell.service()?.releaseDisplay(l.target.displayId) }; publish() }
+        leases.remove(session)?.let { l ->
+            publish()
+            // Its apps first (removing the display only finishes their activities; their processes would stay).
+            closer.execute { SessionApps.close(l.target); runCatching { shell.service()?.releaseDisplay(l.target.displayId) } }
+        }
         fallback.release(session)
     }
 
@@ -139,6 +148,9 @@ class DisplayScreenPool(
         override fun startActivity(component: String): String = call("Error: the shell helper is gone") { h.startActivity(display, component) }
         override fun tasks(): DisplayTasks? = call(null) { DisplayTasks.parse(h.activities()) }
         override fun moveTask(taskId: Int): Boolean = call(false) { h.moveTask(taskId, display) }
+        override fun removeTask(taskId: Int): Boolean = call(false) { h.removeTask(taskId) }
+        override fun killApp(pkg: String): Boolean = call(false) { h.killApp(pkg) }
+        override fun isRunning(pkg: String): Boolean = call(true) { h.isRunning(pkg) } // unknown: keep it alive
     }
 
     companion object {

@@ -21,6 +21,8 @@ sealed interface Target {
         val ownTasks: MutableSet<Int> = java.util.Collections.synchronizedSet(HashSet())
         /** Tasks that were on the phone's screen before the session opened anything (the user's; never moved). */
         val usersTasks: MutableSet<Int> = java.util.Collections.synchronizedSet(HashSet())
+        /** Apps that were already running when the session opened them: never killed when it ends (see SessionApps). */
+        val wereRunning: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet())
     }
 }
 
@@ -37,4 +39,10 @@ interface DisplayIo {
     fun tasks(): DisplayTasks?
     /** Move a task to this display. */
     fun moveTask(taskId: Int): Boolean
+    /** Remove a root task. */
+    fun removeTask(taskId: Int): Boolean
+    /** Kill an app's processes if they are all in the background. */
+    fun killApp(pkg: String): Boolean
+    /** Whether the app has a running process. */
+    fun isRunning(pkg: String): Boolean
 }
