@@ -11,6 +11,8 @@ import {
 	type Credential,
 	type CredentialStore,
 	createModels,
+	createProvider,
+	envApiKeyAuth,
 	InMemoryCredentialStore,
 	isContextOverflow,
 	type Model,
@@ -24,6 +26,7 @@ import { xaiProvider } from "@earendil-works/pi-ai/providers/xai";
 import { moonshotaiProvider } from "@earendil-works/pi-ai/providers/moonshotai";
 import { moonshotaiCnProvider } from "@earendil-works/pi-ai/providers/moonshotai-cn";
 import { mistralProvider } from "@earendil-works/pi-ai/providers/mistral";
+import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
 import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
 import { opencodeGoProvider } from "@earendil-works/pi-ai/providers/opencode-go";
 // Pi's catalog of models OpenAI offers to ChatGPT accounts ("Codex with a ChatGPT account").
@@ -91,6 +94,109 @@ for (const p of [
  */
 const OAUTH_PROVIDERS = new Set(["openai"]);
 
+// ---- custom providers -------------------------------------------------------------------------------
+// The user's own OpenAI-compatible endpoints (vLLM, Ollama, relays…), defined in the app and sent here
+// with init and on every change. Built the way Pi builds its own providers (and its CLI's models.json).
+
+interface CustomModelConfig {
+	id: string;
+	/** Tokens; 0/absent = 128K. The app fills it from the server's model list or Pi's catalog (lookupModels). */
+	contextWindow?: number;
+	/** Whether it reads images (phone tasks send screenshots); absent = the provider's `images`. */
+	images?: boolean;
+}
+
+interface CustomProviderConfig {
+	id: string;
+	name: string;
+	baseUrl: string;
+	/** Model ids (older app versions) or per-model settings. */
+	models: (string | CustomModelConfig)[];
+	/** Default for models that don't say whether they read images. */
+	images: boolean;
+}
+
+const DEFAULT_CONTEXT = 128_000;
+
+/** Aggregators list other vendors' models under their own terms (prices, limits): a vendor's own entry wins. */
+const AGGREGATORS = new Set(["openrouter", "opencode", "opencode-go"]);
+
+/**
+ * A model id as relays tend to vary it: lowercase, no vendor prefix ("anthropic/…"), no ":free"-style tag,
+ * and "." or "_" written as "-" (claude-sonnet-5.5 vs claude-sonnet-5-5).
+ */
+const normalizeModelId = (id: string) =>
+	id.toLowerCase().replace(/^.*\//, "").replace(/:.*$/, "").replace(/^~/, "").replace(/[._]/g, "-");
+
+const EFFORT_SUFFIX = /-(minimal|low|medium|high|xhigh|max|thinking|nothinking|no-thinking|think|reasoning)$/;
+
+/**
+ * What Pi's catalog knows about models with these ids (a relay usually passes vendors' model names
+ * through): context window, whether they read images, and which catalog entry matched. Unknown ids are left out.
+ */
+function lookupModels(ids: string[]) {
+	const builtIn = models.getProviders().filter((p) => !customIds.has(p.id));
+	const ordered = [...builtIn.filter((p) => !AGGREGATORS.has(p.id)), ...builtIn.filter((p) => AGGREGATORS.has(p.id))];
+	const out: Record<string, { contextWindow: number; images: boolean; match: string }> = {};
+	const find = (id: string, want: string) => {
+		for (const p of ordered) {
+			const m = models.getModels(p.id).find((x) => x.id === id) ?? models.getModels(p.id).find((x) => normalizeModelId(x.id) === want);
+			if (m) return { contextWindow: m.contextWindow, images: m.input.includes("image"), match: `${p.id}/${m.id}` };
+		}
+	};
+	for (const id of ids) {
+		const want = normalizeModelId(id);
+		// Relays often name a reasoning-effort variant with a suffix (gemini-3.8-flash-high): same model, same window.
+		const found = find(id, want) ?? find(id, want.replace(EFFORT_SUFFIX, ""));
+		if (found) out[id] = found;
+	}
+	return out;
+}
+
+const customIds = new Set<string>();
+
+function customProvider(c: CustomProviderConfig) {
+	return createProvider({
+		id: c.id,
+		name: c.name,
+		baseUrl: c.baseUrl,
+		auth: { apiKey: envApiKeyAuth(`${c.name} API key`, []) },
+		models: c.models.map((x) => {
+			const m: CustomModelConfig = typeof x === "string" ? { id: x } : x;
+			return {
+			id: m.id,
+			name: m.id,
+			api: "openai-completions" as const,
+			provider: c.id,
+			baseUrl: c.baseUrl,
+			reasoning: false,
+			input: (m.images ?? c.images) ? (["text", "image"] as const) : (["text"] as const),
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: m.contextWindow || DEFAULT_CONTEXT,
+			maxTokens: 16_384,
+			// Many OpenAI-compatible servers reject OpenAI's newer "developer" role and "store" field.
+			compat: { supportsStore: false, supportsDeveloperRole: false },
+			};
+		}),
+		api: openAICompletionsApi(),
+	});
+}
+
+/** Make Pi's custom providers exactly [list]; a removed one loses its saved key too. */
+async function setCustomProviders(list: CustomProviderConfig[]) {
+	const keep = new Set(list.map((c) => c.id));
+	for (const id of customIds) {
+		if (keep.has(id)) continue;
+		models.deleteProvider(id);
+		await credentials.delete(id);
+		customIds.delete(id);
+	}
+	for (const c of list) {
+		models.setProvider(customProvider(c));
+		customIds.add(c.id);
+	}
+}
+
 let deviceId = "";
 let agentName = "Pi";
 let login: AbortController | undefined;
@@ -110,6 +216,7 @@ async function status() {
 			p.auth.apiKey && { type: "api_key", name: p.auth.apiKey.name },
 		].filter(Boolean),
 		credential: infos.find((i) => i.providerId === p.id)?.type ?? null,
+		custom: customIds.has(p.id),
 		models: modelsFor(p.id, infos.find((i) => i.providerId === p.id)?.type),
 	}));
 	bridge({ type: "status", providers });
@@ -401,9 +508,21 @@ const arg = (json: string) => JSON.parse(json);
 			deviceId = a.deviceId;
 			agentName = a.agentName ?? agentName;
 			if (a.credentials) await credentials.load(JSON.parse(a.credentials));
+			// Before the first status, so a custom provider in use is still there when Kotlin picks one.
+			await setCustomProviders(a.customProviders ?? []);
 			await status();
 		}),
 	status: () => guard("status", status),
+	/** Synchronous, for evaluateJavascript's result: Pi's catalog entries for these model ids (see lookupModels). */
+	lookupModels: (json: string) => JSON.stringify(lookupModels(arg(json).ids ?? [])),
+	/** The app's custom providers changed; `key` (optional) is a new API key for `provider`. */
+	setCustomProviders: (json: string) =>
+		guard("setCustomProviders", async () => {
+			const a = arg(json);
+			await setCustomProviders(a.providers ?? []);
+			if (a.provider && a.key) await credentials.modify(a.provider, async () => ({ type: "api_key", key: a.key }));
+			await status();
+		}),
 	login: (json: string) => guard("login", () => startLogin(arg(json).provider, arg(json).type)),
 	cancelLogin: () => login?.abort(),
 	answer: (json: string) => {

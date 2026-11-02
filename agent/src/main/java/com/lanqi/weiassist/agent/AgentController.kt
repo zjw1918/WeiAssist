@@ -39,6 +39,15 @@ class AgentController(context: Context) {
     )
     val state: StateFlow<AgentState> = _state.asStateFlow()
 
+    /** The user's own OpenAI-compatible providers, in the order they were added. */
+    private val _customProviders = MutableStateFlow(CustomProvider.listFromJson(prefs.getString("customProviders", null)))
+    val customProviders: StateFlow<List<CustomProvider>> = _customProviders.asStateFlow()
+
+    init {
+        // Sent with Pi's init, so a custom provider in use is there before the first status.
+        pi.customProviders = { CustomProvider.listToJson(_customProviders.value) }
+    }
+
     /** Dev builds: send model calls to the local mock server (tools/mock-openai.mjs). */
     @Volatile var mockBaseUrl: String? = null
 
@@ -200,6 +209,59 @@ class AgentController(context: Context) {
 
     fun reopenBrowser() { _state.value.signIn.authUrl?.let { _openInBrowser.tryEmit(it) } }
     fun cancelSignIn() { scope.launch { pi.cancelLogin() } }
+
+    // ---- custom providers --------------------------------------------------------------------------
+    /**
+     * Add or update a custom provider. A new [key] is saved with it and makes it the provider in use;
+     * without one, an existing provider keeps its saved key.
+     */
+    fun saveCustomProvider(p: CustomProvider, key: String?) {
+        val old = _customProviders.value
+        val list = if (old.any { it.id == p.id }) old.map { if (it.id == p.id) p else it } else old + p
+        _customProviders.value = list
+        val json = CustomProvider.listToJson(list)
+        prefs.edit().putString("customProviders", json.toString()).apply()
+        val k = key?.trim()?.ifEmpty { null }
+        if (k != null) {
+            // Pi's next status has it signed in: the reducer keeps it as the provider in use.
+            _state.update { it.copy(providerId = p.id, modelId = prefs.getString("modelId.${p.id}", null) ?: "") }
+            persistModel()
+        }
+        scope.launch { pi.setCustomProviders(json, p.id, k) }
+    }
+
+    /** Remove a custom provider and its saved key; if it was in use, Pi's next status moves to another. */
+    fun deleteCustomProvider(id: String) {
+        val list = _customProviders.value.filter { it.id != id }
+        _customProviders.value = list
+        val json = CustomProvider.listToJson(list)
+        prefs.edit().putString("customProviders", json.toString()).remove("modelId.$id").apply()
+        scope.launch { pi.setCustomProviders(json) }
+    }
+
+    /**
+     * List a server's models, with what is known of each (server figures, else Pi's catalog); [key] blank =
+     * the key saved for [savedFor], if any. Returns (base URL to use, models).
+     */
+    suspend fun fetchCustomModels(baseUrl: String, key: String?, savedFor: String?): Pair<String, List<CustomModel>> {
+        val (base, listed) = CustomProvider.fetchModels(baseUrl, key?.ifBlank { null } ?: savedFor?.let(pi::savedApiKey))
+        val catalog = lookupCatalog(listed.map { it.id })
+        return base to listed.map { CustomProvider.merge(it, catalog[it.id]) }
+    }
+
+    /** Typed model ids, with what Pi's catalog knows of them. */
+    suspend fun describeCustomModels(ids: List<String>): List<CustomModel> {
+        val catalog = lookupCatalog(ids)
+        return ids.map { CustomProvider.merge(ServerModel(it), catalog[it]) }
+    }
+
+    private suspend fun lookupCatalog(ids: List<String>): Map<String, CatalogModel> {
+        val o = runCatching { pi.lookupModels(ids) }.getOrElse { JSONObject() }
+        return o.keys().asSequence().associateWith { id ->
+            val m = o.getJSONObject(id)
+            CatalogModel(m.optInt("contextWindow"), m.optBoolean("images", true), m.optString("match"))
+        }
+    }
 
     /** Sign out of the provider in use; Pi's next status moves to another signed-in one, if any. */
     fun signOut() {

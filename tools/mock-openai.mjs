@@ -121,6 +121,36 @@ function scriptedTurn(body) {
 	return { ...turn, args };
 }
 
+/**
+ * What GET /models lists: one entry with a server-side context length (as vLLM reports it), one id
+ * Pi's catalog knows (as a relay passes it through), one the app knows nothing about.
+ */
+export const MOCK_MODELS = [
+	{ id: "mock-vision", max_model_len: 32768 },
+	{ id: "deepseek-flash" },
+	{ id: "mock-chat" },
+];
+
+/** A streamed chat completion that answers MOCK_REPLY, chunk by chunk, as OpenAI-compatible servers do. */
+function chatCompletion(res, body, delayMs) {
+	res.writeHead(200, { ...cors, "content-type": "text/event-stream", "cache-control": "no-cache" });
+	const base = { id: `chatcmpl_mock_${Date.now()}`, object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model: body.model ?? "mock" };
+	const chunks = [
+		{ ...base, choices: [{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: null }] },
+		...[...MOCK_REPLY].map((ch) => ({ ...base, choices: [{ index: 0, delta: { content: ch }, finish_reason: null }] })),
+		{ ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
+		{ ...base, choices: [], usage: { prompt_tokens: 12, completion_tokens: 9, total_tokens: 21 } },
+	];
+	let i = 0;
+	const tick = () => {
+		if (i < chunks.length) {
+			res.write(`data: ${JSON.stringify(chunks[i++])}\n\n`);
+			setTimeout(tick, delayMs);
+		} else res.end("data: [DONE]\n\n");
+	};
+	tick();
+}
+
 const cors = {
 	"access-control-allow-origin": "*",
 	"access-control-allow-headers": "*",
@@ -156,6 +186,16 @@ function handle(req, res, { requests, log, delayMs }) {
 		log(JSON.stringify(shown, null, 2));
 		log(body);
 		requests.push({ method: req.method, url: req.url, headers: req.headers, body });
+		// An OpenAI-compatible server's model list and chat completions, for the app's custom providers.
+		if (req.method === "GET" && req.url?.endsWith("/models")) {
+			res.writeHead(200, { ...cors, "content-type": "application/json" });
+			res.end(JSON.stringify({ object: "list", data: MOCK_MODELS.map((m) => ({ ...m, object: "model", owned_by: "mock" })) }));
+			return;
+		}
+		if (req.method === "POST" && req.url?.endsWith("/chat/completions")) {
+			chatCompletion(res, JSON.parse(body || "{}"), delayMs);
+			return;
+		}
 		if (req.method !== "POST" || !req.url?.endsWith("/responses")) {
 			res.writeHead(404, cors).end();
 			return;

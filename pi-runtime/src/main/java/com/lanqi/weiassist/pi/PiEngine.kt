@@ -120,7 +120,8 @@ class PiEngine(context: Context, private val agentName: String) {
         when (m.optString("type")) {
             "ready" -> {
                 Log.d(TAG, "Pi ${m.optString("pi")} ready")
-                js("init", JSONObject().put("deviceId", deviceId).put("agentName", agentName).put("credentials", store.read()))
+                js("init", JSONObject().put("deviceId", deviceId).put("agentName", agentName).put("credentials", store.read())
+                    .put("customProviders", customProviders()))
                 ready.complete(m)
             }
             // Pi wrote its credential store: persist it encrypted before anything else happens (the
@@ -168,6 +169,36 @@ class PiEngine(context: Context, private val agentName: String) {
     suspend fun cancelPrompt(id: String) = call("answer", JSONObject().put("id", id).put("cancel", true))
     suspend fun cancelLogin() = call("cancelLogin", null)
     suspend fun logout(provider: String) = call("logout", JSONObject().put("provider", provider))
+    /**
+     * The user's own providers, sent with init (also after a renderer restart). Set before [start].
+     * Each: { id, name, baseUrl, models: [ids], images }.
+     */
+    @Volatile var customProviders: () -> org.json.JSONArray = { org.json.JSONArray() }
+    /**
+     * Pi's catalog entries for these model ids (pi-host lookupModels): { id: { contextWindow, images, match } },
+     * only for ids Pi knows. Empty if Pi isn't running.
+     */
+    suspend fun lookupModels(ids: List<String>): JSONObject {
+        start()
+        val arg = JSONObject().put("ids", org.json.JSONArray(ids))
+        val raw = withContext(Dispatchers.Main) {
+            kotlinx.coroutines.suspendCancellableCoroutine<String?> { cont ->
+                val w = webView
+                if (w == null) cont.resumeWith(Result.success(null))
+                // evaluateJavascript hands back the expression's value as JSON: here a JSON string literal.
+                else w.evaluateJavascript("PiHost.lookupModels(${JSONObject.quote(arg.toString())})") { cont.resumeWith(Result.success(it)) }
+            }
+        }
+        return runCatching { JSONObject(org.json.JSONTokener(raw).nextValue() as String) }.getOrDefault(JSONObject())
+    }
+
+    /** The API key saved for [provider], if it signed in with one (e.g. to list a custom server's models). */
+    fun savedApiKey(provider: String): String? = runCatching {
+        JSONObject(store.read() ?: return null).optJSONObject(provider)?.takeIf { it.optString("type") == "api_key" }?.optString("key")
+    }.getOrNull()?.ifEmpty { null }
+    /** The custom providers changed; [key], if given, is [provider]'s new API key. */
+    suspend fun setCustomProviders(list: org.json.JSONArray, provider: String? = null, key: String? = null) =
+        call("setCustomProviders", JSONObject().put("providers", list).apply { if (provider != null && key != null) put("provider", provider).put("key", key) })
     /**
      * Create or replace session [session]'s Pi Agent. [tools] names a tool set pi-host knows ("phone", "supervisor");
      * null = plain chat. [messages] restores a saved transcript (pi-host's `transcript` message); without

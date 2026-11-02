@@ -7,11 +7,13 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -28,6 +30,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lanqi.weiassist.AppViewModel
 import com.lanqi.weiassist.R
 import com.lanqi.weiassist.agent.AgentState
@@ -40,6 +43,16 @@ fun ProvidersTab(vm: AppViewModel, s: AgentState) {
     var confirmSignOut by rememberSaveable { mutableStateOf(false) }
     // A provider not signed in with several sign-in methods: which one (asked in a dialog).
     var connecting by rememberSaveable { mutableStateOf<String?>(null) }
+    // The custom-provider form: "" = adding one, else the id being edited.
+    var customForm by rememberSaveable { mutableStateOf<String?>(null) }
+    val customs by vm.customProviders.collectAsStateWithLifecycle()
+    customForm?.let { id ->
+        // Home's scaffold leaves the insets to each tab (contentWindowInsets = 0): keep clear of the status bar.
+        Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 32.dp)) {
+            CustomProviderScreen(vm, customs.firstOrNull { it.id == id }) { customForm = null }
+        }
+        return
+    }
     Scaffold(
         modifier = Modifier.nestedScroll(bar.nestedScrollConnection),
         contentWindowInsets = WindowInsets(0),
@@ -67,16 +80,25 @@ fun ProvidersTab(vm: AppViewModel, s: AgentState) {
                         onClick = when {
                             active -> null
                             how != null -> { { vm.selectProvider(p.id) } }
+                            p.custom -> { { customForm = p.id } }
                             p.methods.size == 1 -> { { vm.signIn(p.id, p.methods.first()) } }
                             else -> { { connecting = p.id } }
                         },
                         trailing = {
+                            if (p.custom) IconButton(onClick = { customForm = p.id }) {
+                                AppIcon(R.drawable.ic_edit, stringResource(R.string.custom_edit_title), Modifier.size(20.dp))
+                            }
                             if (active) Box(Modifier.size(28.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape), contentAlignment = Alignment.Center) {
                                 AppIcon(R.drawable.ic_check_circle, stringResource(R.string.provider_in_use), Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
                             }
                         },
                     )
                 }
+                GroupDivider()
+                GroupRow(
+                    title = stringResource(R.string.custom_add_title), icon = R.drawable.ic_add,
+                    description = stringResource(R.string.custom_add_row), onClick = { customForm = "" },
+                )
                 GroupDivider()
                 GroupRow(
                     title = stringResource(R.string.sign_out_of, provider?.name ?: "…"), icon = R.drawable.ic_logout,

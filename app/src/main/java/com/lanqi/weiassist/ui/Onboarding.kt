@@ -36,7 +36,7 @@ import com.lanqi.weiassist.agent.ProviderInfo
 
 /** Step 1: pick how to connect. The cards are Pi's own auth methods, for every provider Pi offers here. */
 @Composable
-fun WelcomeScreen(providers: List<ProviderInfo>, piVersion: String?, error: String?, onPick: (String, AuthMethod) -> Unit) {
+fun WelcomeScreen(providers: List<ProviderInfo>, piVersion: String?, error: String?, onPick: (String, AuthMethod) -> Unit, onCustom: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(stringResource(R.string.welcome_title), style = MaterialTheme.typography.headlineMedium)
         Text(stringResource(R.string.welcome_body, piVersion.orEmpty()),
@@ -52,6 +52,8 @@ fun WelcomeScreen(providers: List<ProviderInfo>, piVersion: String?, error: Stri
                 MethodCard(title, body, note = m.label ?: m.name, primary = m.subscription, onClick = { onPick(p.id, m) })
             }
         }
+        // The user's own OpenAI-compatible server (CustomProviderScreen).
+        MethodCard(stringResource(R.string.custom_add_title), stringResource(R.string.custom_add_row), note = null, primary = false, onClick = onCustom)
         error?.let { Text(stringResource(R.string.last_error, it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
     }
 }
@@ -101,13 +103,13 @@ fun methodText(p: ProviderInfo, m: AuthMethod): Pair<String, String> {
 }
 
 @Composable
-private fun MethodCard(title: String, body: String, note: String, primary: Boolean, onClick: () -> Unit) {
+private fun MethodCard(title: String, body: String, note: String?, primary: Boolean, onClick: () -> Unit) {
     val colors = if (primary) CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer) else CardDefaults.cardColors()
     Card(onClick = onClick, colors = colors, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(title, style = MaterialTheme.typography.titleLarge)
             if (body.isNotEmpty()) Text(body, style = MaterialTheme.typography.bodyMedium)
-            Text(stringResource(R.string.method_pi, note), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (note != null) Text(stringResource(R.string.method_pi, note), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

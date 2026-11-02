@@ -6,7 +6,11 @@ data class AuthMethod(val type: String, val name: String, val label: String?, va
 /** A chat model as Pi describes it, with the thinking levels Pi says it supports. */
 data class ModelInfo(val id: String, val name: String, val thinkingLevels: List<String>, val contextWindow: Int, val images: Boolean)
 
-data class ProviderInfo(val id: String, val name: String, val methods: List<AuthMethod>, val credential: String?, val models: List<ModelInfo>)
+/** [custom]: one of the user's own providers ([CustomProvider]), editable in the app. */
+data class ProviderInfo(
+    val id: String, val name: String, val methods: List<AuthMethod>, val credential: String?, val models: List<ModelInfo>,
+    val custom: Boolean = false,
+)
 
 /** A question Pi's login flow is asking (Pi's AuthPrompt): "secret" = API key, "manual_code" = pasted redirect URL. */
 data class PendingPrompt(val id: String, val type: String, val message: String, val placeholder: String?)

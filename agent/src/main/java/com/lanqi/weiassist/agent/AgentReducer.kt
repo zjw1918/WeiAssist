@@ -123,6 +123,7 @@ object AgentReducer {
                 AuthMethod(x.getString("type"), x.getString("name"), x.optString("label").ifEmpty { null }, x.optBoolean("subscription"))
             },
             credential = p.optString("credential").takeIf { it.isNotEmpty() && it != "null" },
+            custom = p.optBoolean("custom"),
             models = p.getJSONArray("models").let { a2 ->
                 (0 until a2.length()).map { k ->
                     val x = a2.getJSONObject(k)

@@ -103,6 +103,75 @@ test("OpenCode requests carry the session's id, as OpenCode requires", async () 
 	assert.equal(req.headers["x-opencode-session"], "oc1");
 });
 
+test("a custom OpenAI-compatible provider: offered, keyed, used for chat, and removable", async () => {
+	const custom = { id: "custom-mock", name: "My server", baseUrl: mock.url, models: ["mock-vision", "mock-chat"], images: true };
+	const host = await startHost({ customProviders: [custom] });
+	const status = await host.waitFor("status");
+	const p = status.providers.find((x) => x.id === "custom-mock");
+	assert.equal(p.name, "My server");
+	assert.equal(p.custom, true);
+	assert.deepEqual(p.methods.map((m) => m.type), ["api_key"]);
+	assert.deepEqual(p.models.map((m) => m.id), ["mock-vision", "mock-chat"]);
+	assert.ok(p.models.every((m) => m.input.includes("image")));
+
+	// The app saves the key with the provider (no separate sign-in step).
+	host.call("setCustomProviders", { providers: [custom], provider: "custom-mock", key: "sk-mine" });
+	await host.waitFor("status", (s) => s.providers.find((x) => x.id === "custom-mock")?.credential === "api_key");
+	assert.deepEqual(JSON.parse(host.state.credentials)["custom-mock"], { type: "api_key", key: "sk-mine" });
+
+	const before = mock.requests.length;
+	host.call("configure", { session: "c1", provider: "custom-mock", modelId: "mock-vision", thinkingLevel: "off" });
+	await host.waitFor("configured");
+	host.call("prompt", { session: "c1", text: "你好" });
+	await host.waitFor("idle");
+	const end = host.messages.find((m) => m.type === "assistant_end");
+	assert.equal(end.errorMessage, undefined);
+	assert.equal(end.api, "openai-completions");
+	assert.equal(host.messages.filter((m) => m.type === "text_delta").map((m) => m.delta).join(""), MOCK_REPLY);
+	const req = mock.requests[before];
+	assert.equal(req.url, "/v1/chat/completions");
+	assert.equal(req.headers.authorization, "Bearer sk-mine");
+	const body = JSON.parse(req.body);
+	assert.equal(body.model, "mock-vision");
+	assert.equal(body.store, undefined, "no OpenAI-only store field");
+	assert.ok(!body.messages.some((m) => m.role === "developer"), "system role, not developer");
+
+	// Removing it drops the provider and its key.
+	host.call("setCustomProviders", { providers: [] });
+	await host.waitFor("status", (s) => !s.providers.some((x) => x.id === "custom-mock"));
+	assert.equal(JSON.parse(host.state.credentials)["custom-mock"], undefined);
+});
+
+test("Pi's catalog fills in what a custom server's model list lacks, matching relays' spellings", async () => {
+	const host = await startHost();
+	await host.waitFor("status");
+	const found = JSON.parse(host.call("lookupModels", { ids: ["claude-sonnet-5.5", "anthropic/claude-sonnet-5-5", "deepseek-flash", "DeepSeek-V4.1-Flash:free", "my-finetune"] }));
+	// A vendor's own entry wins over an aggregator's listing of the same model.
+	assert.equal(found["claude-sonnet-5.5"].match, "anthropic/claude-sonnet-5-5");
+	assert.equal(found["anthropic/claude-sonnet-5-5"].match, "anthropic/claude-sonnet-5-5");
+	assert.ok(found["claude-sonnet-5.5"].contextWindow > 0);
+	assert.equal(found["claude-sonnet-5.5"].images, true);
+	assert.equal(found["deepseek-flash"].match, "deepseek/deepseek-flash");
+	assert.equal(found["deepseek-flash"].contextWindow, 1_000_000);
+	assert.ok(found["DeepSeek-V4.1-Flash:free"], "matched through an aggregator's listing");
+	assert.equal(found["my-finetune"], undefined);
+	const effort = JSON.parse(host.call("lookupModels", { ids: ["gemini-3.8-flash-high", "deepseek-flash-thinking"] }));
+	assert.equal(effort["gemini-3.8-flash-high"].match, "google/gemini-3.8-flash");
+	assert.equal(effort["deepseek-flash-thinking"].match, "deepseek/deepseek-flash");
+});
+
+test("a custom provider's models keep their own context window and image support", async () => {
+	const custom = { id: "custom-x", name: "X", baseUrl: mock.url, images: true,
+		models: ["plain", { id: "small", contextWindow: 32_000, images: false }] };
+	const host = await startHost({ customProviders: [custom] });
+	const p = (await host.waitFor("status")).providers.find((x) => x.id === "custom-x");
+	const [plain, small] = p.models;
+	assert.equal(plain.contextWindow, 128_000);
+	assert.ok(plain.input.includes("image"));
+	assert.equal(small.contextWindow, 32_000);
+	assert.deepEqual(small.input, ["text"]);
+});
+
 test("ChatGPT sign-in starts Pi's OAuth flow on the loopback port and can be cancelled", async () => {
 	const host = await startHost();
 	host.call("login", { provider: "openai", type: "oauth" });

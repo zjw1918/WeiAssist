@@ -113,6 +113,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun cancelSignIn() = withAgent { cancelSignIn() }
     fun signOut() = withAgent { signOut() }
     fun selectModel(id: String) = withAgent { selectModel(id) }
+    val customProviders: StateFlow<List<com.lanqi.weiassist.agent.CustomProvider>> = controller
+        .flatMapLatest { it?.customProviders ?: flowOf(emptyList()) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    fun saveCustomProvider(p: com.lanqi.weiassist.agent.CustomProvider, key: String?) = withAgent { saveCustomProvider(p, key) }
+    fun deleteCustomProvider(id: String) = withAgent { deleteCustomProvider(id) }
+    suspend fun fetchCustomModels(baseUrl: String, key: String?, savedFor: String?) =
+        controller.value?.fetchCustomModels(baseUrl, key, savedFor) ?: error("not ready")
+    suspend fun describeCustomModels(ids: List<String>) =
+        controller.value?.describeCustomModels(ids) ?: ids.map { com.lanqi.weiassist.agent.CustomModel(it) }
     fun selectThinking(level: String) = withAgent { selectThinking(level) }
     fun debugCrashRuntime() { if (BuildConfig.DEBUG) withAgent { debugCrashRuntime() } }
     fun debugMainOnly(on: Boolean) { if (BuildConfig.DEBUG) withAgent { debugMainOnly(on) } }

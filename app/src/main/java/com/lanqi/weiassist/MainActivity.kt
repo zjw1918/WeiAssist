@@ -33,6 +33,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lanqi.weiassist.agent.Screen
 import com.lanqi.weiassist.ui.ApiKeySignIn
 import com.lanqi.weiassist.ui.AppTheme
+import com.lanqi.weiassist.ui.CustomProviderScreen
 import com.lanqi.weiassist.ui.HomeScreen
 import com.lanqi.weiassist.ui.Tab
 import com.lanqi.weiassist.ui.SubscriptionSignIn
@@ -129,6 +130,8 @@ fun MainActivity.App(vm: AppViewModel = viewModel()) {
     }
     // Above the sign-in screens, so cancelling a sign-in from the AI providers tab returns to that tab.
     var homeTab by rememberSaveable { mutableStateOf(Tab.Sessions) }
+    // The welcome screen's "custom provider" form is open.
+    var welcomeCustom by rememberSaveable { mutableStateOf(false) }
     if (s.screen == Screen.Connected) {
         HomeScreen(vm, s, homeTab) { homeTab = it }
         return
@@ -146,7 +149,9 @@ fun MainActivity.App(vm: AppViewModel = viewModel()) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             when (val screen = s.screen) {
-                Screen.Welcome -> WelcomeScreen(s.providers, s.piVersion, s.signIn.error, vm::signIn)
+                Screen.Welcome ->
+                    if (welcomeCustom) CustomProviderScreen(vm, null) { welcomeCustom = false }
+                    else WelcomeScreen(s.providers, s.piVersion, s.signIn.error, vm::signIn) { welcomeCustom = true }
                 is Screen.SigningIn -> {
                     // Sign-in is a state, not a navigation destination: Back cancels it like the Cancel button,
                     // returning to where it started, instead of closing the app.

@@ -17,7 +17,7 @@ export function buildBundle() {
 	return bundle;
 }
 
-export async function startHost({ credentials = null, hostCalls = {} } = {}) {
+export async function startHost({ credentials = null, customProviders = [], hostCalls = {} } = {}) {
 	// Kotlin's pause gate: by default every session may go on.
 	hostCalls = { gate: () => true, ...hostCalls };
 	const messages = [];
@@ -58,7 +58,7 @@ export async function startHost({ credentials = null, hostCalls = {} } = {}) {
 		for (const w of [...waiters]) if (w.match(m)) { waiters.splice(waiters.indexOf(w), 1); w.resolve(m); }
 		switch (m.type) {
 			case "ready":
-				call("init", { deviceId: "3f1c2a9e-6b7d-4e21-9a0c-5d8e7f6a1b2c", agentName: "WeiAssist", credentials: state.credentials });
+				call("init", { deviceId: "3f1c2a9e-6b7d-4e21-9a0c-5d8e7f6a1b2c", agentName: "WeiAssist", credentials: state.credentials, customProviders });
 				break;
 			case "credentials_changed":
 				state.credentials = m.json;
