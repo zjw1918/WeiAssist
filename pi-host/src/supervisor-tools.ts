@@ -2,7 +2,7 @@
 // stop, delete, read, wait). Each tool asks Kotlin (SessionCommands, via the "supervisor" host call);
 // Kotlin does the work, asks the user before deleting anything, and wraps other sessions' words as data.
 import type { AgentTool, BeforeToolCallContext, BeforeToolCallResult } from "@earendil-works/pi-agent-core";
-import { Type } from "@earendil-works/pi-ai";
+import { arr, bool, int, num, obj, oneOf, opt, str } from "@earendil-works/pi-schema";
 import { bridgeCall } from "./bridge.ts";
 
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }], details: {} });
@@ -37,7 +37,7 @@ export class SupervisorSession {
 	};
 }
 
-const id = Type.String({ description: "Session id (from list_sessions or create_session), or its exact title" });
+const id = str({ description: "Session id (from list_sessions or create_session), or its exact title" });
 
 const makeTools = (s: SupervisorSession): AgentTool<any>[] => [
 	{
@@ -46,14 +46,14 @@ const makeTools = (s: SupervisorSession): AgentTool<any>[] => [
 		description:
 			"All sessions (most recent first): id, kind (phone = operates the phone in its own screen; chat = talks only), status " +
 			"(Running, Queued, Paused, Idle, Interrupted), title, the app it uses, and its last line.",
-		parameters: Type.Object({}),
+		parameters: obj({}),
 		execute: async (_id, _p, signal) => text(await s.call("list", {}, signal)),
 	},
 	{
 		name: "get_session",
 		label: "Read a session",
 		description: "One session in detail: status, its latest answer or error, and its recent steps. Use it to collect a session's result.",
-		parameters: Type.Object({ id }),
+		parameters: obj({ id }),
 		execute: async (_id, p: any, signal) => text(await s.call("get", { id: p.id }, signal)),
 	},
 	{
@@ -63,10 +63,10 @@ const makeTools = (s: SupervisorSession): AgentTool<any>[] => [
 			"Start a new session working on a task, and return its id at once (it runs in the background). phone = true if the task " +
 			"needs to operate apps on the phone (each phone session gets a screen of its own and runs alongside the others); false for " +
 			"pure questions. Write the task as complete, self-contained instructions: the session knows nothing else.",
-		parameters: Type.Object({
-			task: Type.String(),
-			phone: Type.Boolean(),
-			title: Type.Optional(Type.String({ description: "Short title for the session list" })),
+		parameters: obj({
+			task: str(),
+			phone: bool(),
+			title: opt(str({ description: "Short title for the session list" })),
 		}),
 		execute: async (_id, p: any, signal) => text(await s.call("create", { task: p.task, phone: p.phone, title: p.title ?? "" }, signal)),
 	},
@@ -74,7 +74,7 @@ const makeTools = (s: SupervisorSession): AgentTool<any>[] => [
 		name: "send_message",
 		label: "Message a session",
 		description: "Send a session a follow-up message or a new task (it must not be working; wait_for it first). Use it to pass one session's result to another.",
-		parameters: Type.Object({ id, text: Type.String() }),
+		parameters: obj({ id, text: str() }),
 		execute: async (_id, p: any, signal) => text(await s.call("send", { id: p.id, text: p.text }, signal)),
 	},
 	{
@@ -83,42 +83,42 @@ const makeTools = (s: SupervisorSession): AgentTool<any>[] => [
 		description:
 			"Wait until the given sessions have finished their current tasks (or timeout_seconds, at most 600), then return their status " +
 			"and results. Use it to coordinate: wait for one, then give its result to another.",
-		parameters: Type.Object({ ids: Type.Array(Type.String({ description: "Session ids or exact titles" })), timeout_seconds: Type.Optional(Type.Integer()) }),
+		parameters: obj({ ids: arr(str({ description: "Session ids or exact titles" })), timeout_seconds: opt(int()) }),
 		execute: async (_id, p: any, signal) => text(await s.call("wait", { ids: p.ids, timeout: Math.min(Math.max(p.timeout_seconds ?? 300, 5), 600) }, signal)),
 	},
 	{
 		name: "pause_session",
 		label: "Pause a session",
 		description: "Pause a working session: it holds before its next action, until resumed.",
-		parameters: Type.Object({ id }),
+		parameters: obj({ id }),
 		execute: async (_id, p: any, signal) => text(await s.call("pause", { id: p.id }, signal)),
 	},
 	{
 		name: "resume_session",
 		label: "Resume a session",
 		description: "Resume a paused session, or continue an Interrupted one (the app was restarted mid-task).",
-		parameters: Type.Object({ id }),
+		parameters: obj({ id }),
 		execute: async (_id, p: any, signal) => text(await s.call("resume", { id: p.id }, signal)),
 	},
 	{
 		name: "stop_session",
 		label: "Stop a session",
 		description: "Stop a session's current task (the conversation is kept and can go on later).",
-		parameters: Type.Object({ id }),
+		parameters: obj({ id }),
 		execute: async (_id, p: any, signal) => text(await s.call("stop", { id: p.id }, signal)),
 	},
 	{
 		name: "delete_session",
 		label: "Delete a session",
 		description: "Delete a session and its conversation for good. The user is asked to confirm on screen; if they decline, it stays.",
-		parameters: Type.Object({ id }),
+		parameters: obj({ id }),
 		execute: async (_id, p: any, signal) => text(await s.call("delete", { id: p.id }, signal)),
 	},
 	{
 		name: "rename_session",
 		label: "Rename a session",
 		description: "Give a session a clearer title.",
-		parameters: Type.Object({ id, title: Type.String() }),
+		parameters: obj({ id, title: str() }),
 		execute: async (_id, p: any, signal) => text(await s.call("rename", { id: p.id, title: p.title }, signal)),
 	},
 ];

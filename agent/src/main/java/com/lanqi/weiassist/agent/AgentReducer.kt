@@ -19,8 +19,8 @@ sealed interface Effect {
  */
 object AgentReducer {
     const val PROVIDER = "openai"
-    /** Pi CLI's defaultModelPerProvider["openai"] (coding-agent/src/core/model-resolver.ts). */
-    const val PI_DEFAULT_MODEL = "gpt-6.1-sol"
+    /** The model a new install starts with (and falls back to when the saved one is not offered): GPT-6.1 Terra, at medium thinking. */
+    const val PI_DEFAULT_MODEL = "gpt-6.1-terra"
     /** Pi's ThinkingLevel values, lowest to highest. */
     val LEVEL_ORDER = listOf("off", "minimal", "low", "medium", "high", "xhigh", "max")
 

@@ -4,12 +4,13 @@
   "type": "module",
   "scripts": {
     "build": "tsc -p . && node build.mjs",
-    "upgrade-pi": "npm install @earendil-works/pi-agent-core@latest @earendil-works/pi-ai@latest --save-exact --ignore-scripts && npm run build",
+    "upgrade-pi": "npm install @earendil-works/pi-agent-core@latest @earendil-works/pi-ai@latest @earendil-works/pi-schema@latest --save-exact --ignore-scripts && npm run build",
     "test": "node --test --test-concurrency=1 test/*.test.mjs"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "1.4.0",
-    "@earendil-works/pi-ai": "1.4.0"
+    "@earendil-works/pi-agent-core": "1.5.0",
+    "@earendil-works/pi-ai": "1.5.0",
+    "@earendil-works/pi-schema": "1.5.0"
   },
   "devDependencies": {
     "esbuild": "0.25.12",

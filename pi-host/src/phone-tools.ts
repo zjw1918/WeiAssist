@@ -2,7 +2,7 @@
 // AccessibilityService (AgentAccessibilityService.kt) to look at or act on the screen.
 // Risky taps (send, pay, delete…) go through Pi's beforeToolCall hook, which asks the user first.
 import type { AgentMessage, AgentTool, BeforeToolCallContext, BeforeToolCallResult } from "@earendil-works/pi-agent-core";
-import { Type } from "@earendil-works/pi-ai";
+import { arr, bool, int, num, obj, oneOf, opt, str } from "@earendil-works/pi-schema";
 import { bridgeCall } from "./bridge.ts";
 
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }], details: {} });
@@ -86,7 +86,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		name: "open_app",
 		label: "Open app",
 		description: "Open an installed app by its name or package name, e.g. \"Gmail\" or \"com.google.android.gm\".",
-		parameters: Type.Object({ app: Type.String({ description: "App name or package name" }) }),
+		parameters: obj({ app: str({ description: "App name or package name" }) }),
 		executionMode: "sequential",
 		execute: async (_id, p: any, signal) => text(await s.phone("open_app", { app: p.app }, signal)),
 	},
@@ -96,7 +96,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		description:
 			"Read what is on the screen now: one line per element, `[id] Class \"text\" (description) flags @x,y` " +
 			"(@x,y is the element's centre). Ids are only valid until the next read_screen. Read again after every action.",
-		parameters: Type.Object({}),
+		parameters: obj({}),
 		executionMode: "sequential",
 		execute: async (_id, _p, signal) => text(await s.readScreen(signal)),
 	},
@@ -104,7 +104,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		name: "tap",
 		label: "Tap",
 		description: "Tap the element with this id from the latest read_screen.",
-		parameters: Type.Object({ id: Type.Integer() }),
+		parameters: obj({ id: int() }),
 		executionMode: "sequential",
 		execute: async (_id, p: any, signal) => text(await s.phone("tap", { id: p.id }, signal)),
 	},
@@ -112,7 +112,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		name: "tap_at",
 		label: "Tap at",
 		description: "Tap a screen point (pixels, as in read_screen's @x,y or a screenshot scaled to the screen size). Use when read_screen has no element for what you need.",
-		parameters: Type.Object({ x: Type.Integer(), y: Type.Integer() }),
+		parameters: obj({ x: int(), y: int() }),
 		executionMode: "sequential",
 		execute: async (_id, p: any, signal) => text(await s.phone("tap_at", { x: p.x, y: p.y }, signal)),
 	},
@@ -120,7 +120,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		name: "long_press",
 		label: "Long press",
 		description: "Long-press the element with this id (e.g. to open a context menu).",
-		parameters: Type.Object({ id: Type.Integer() }),
+		parameters: obj({ id: int() }),
 		executionMode: "sequential",
 		execute: async (_id, p: any, signal) => text(await s.phone("long_press", { id: p.id }, signal)),
 	},
@@ -131,9 +131,9 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 			"Swipe across the screen like a finger. \"up\" reveals content further down (scrolls a feed down), \"down\" goes back up, " +
 			"\"left\"/\"right\" for carousels and tabs. fraction = share of the screen (0.2-0.8, default 0.6). " +
 			"Works where scroll does not (many feeds don't report themselves scrollable).",
-		parameters: Type.Object({
-			direction: Type.Union([Type.Literal("up"), Type.Literal("down"), Type.Literal("left"), Type.Literal("right")]),
-			fraction: Type.Optional(Type.Number()),
+		parameters: obj({
+			direction: oneOf(["up", "down", "left", "right"]),
+			fraction: opt(num()),
 		}),
 		executionMode: "sequential",
 		execute: async (_id, p: any, signal) => text(await s.phone("swipe", { direction: p.direction, fraction: p.fraction ?? 0.6 }, signal)),
@@ -144,7 +144,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		description:
 			"See the screen as an image (scaled down; multiply coordinates by the factor given). Use it when read_screen " +
 			"misses things: images, prices drawn as pictures, videos, custom-drawn lists. Prefer read_screen for text and ids.",
-		parameters: Type.Object({}),
+		parameters: obj({}),
 		executionMode: "sequential",
 		execute: async (_id, _p, signal) => {
 			const data = await s.phone("screenshot", {}, signal);
@@ -162,7 +162,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		name: "type_text",
 		label: "Type text",
 		description: "Replace the text of an editable element (from the latest read_screen) with the given text.",
-		parameters: Type.Object({ id: Type.Integer(), text: Type.String() }),
+		parameters: obj({ id: int(), text: str() }),
 		executionMode: "sequential",
 		execute: async (_id, p: any, signal) => {
 			s.noteTyped(p.id, p.text);
@@ -173,9 +173,9 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		name: "scroll",
 		label: "Scroll",
 		description: "Scroll a scrollable element (or the first scrollable one if id is omitted) forward (down) or backward (up).",
-		parameters: Type.Object({
-			id: Type.Optional(Type.Integer()),
-			direction: Type.Union([Type.Literal("forward"), Type.Literal("backward")]),
+		parameters: obj({
+			id: opt(int()),
+			direction: oneOf(["forward", "backward"]),
 		}),
 		executionMode: "sequential",
 		execute: async (_id, p: any, signal) => text(await s.phone("scroll", { id: p.id ?? -1, direction: p.direction }, signal)),
@@ -184,7 +184,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		name: "press_key",
 		label: "Press key",
 		description: "Press a system key: back, home or recents.",
-		parameters: Type.Object({ key: Type.Union([Type.Literal("back"), Type.Literal("home"), Type.Literal("recents")]) }),
+		parameters: obj({ key: oneOf(["back", "home", "recents"]) }),
 		executionMode: "sequential",
 		execute: async (_id, p: any, signal) => text(await s.phone("press_key", { key: p.key }, signal)),
 	},
@@ -192,7 +192,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		name: "wait",
 		label: "Wait",
 		description: "Wait (milliseconds, max 5000) when something is still loading. Actions already wait for the screen to settle.",
-		parameters: Type.Object({ ms: Type.Integer() }),
+		parameters: obj({ ms: int() }),
 		executionMode: "sequential",
 		execute: async (_id, p: any, signal) => {
 			signal?.throwIfAborted();

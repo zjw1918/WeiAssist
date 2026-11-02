@@ -48,8 +48,8 @@ class AgentReducerTest {
     }
 
     @Test fun `a model this sign-in cannot use falls back to Pi's default`() {
-        val s = reduce(base.copy(modelId = "gpt-5.4-mini"), status("oauth", model("gpt-6-luna", "off", "low"), model("gpt-6.1-sol", "low", "medium"))).state
-        assertEquals("gpt-6.1-sol", s.modelId)
+        val s = reduce(base.copy(modelId = "gpt-5.4-mini"), status("oauth", model("gpt-6-luna", "off", "low"), model("gpt-6.1-sol", "low", "medium"), model("gpt-6.1-terra", "low", "medium"))).state
+        assertEquals("gpt-6.1-terra", s.modelId)
     }
 
     @Test fun `without Pi's default the first model is chosen`() {
