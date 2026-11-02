@@ -20,7 +20,7 @@
     <string name="cancel">Cancel</string>
     <string name="default_input">Hello</string>
     <string name="welcome_title">Hi, I\'m WeiAssist</string>
-    <string name="welcome_body">First, connect me to an AI model. I talk to models through Pi %1$s. OpenAI is set up here; other providers can follow.</string>
+    <string name="welcome_body">First, connect me to an AI model. I talk to models through Pi %1$s: OpenAI and DeepSeek are set up here.</string>
     <string name="method_sub_title">Sign in with ChatGPT</string>
     <string name="method_sub_body">Use your ChatGPT account. Usage counts against your plan, with no extra payment. Chrome opens: sign in, allow, and come back here.</string>
     <string name="method_key_title">Use an OpenAI API key</string>
@@ -44,6 +44,16 @@
     <string name="key_step2">On the API keys page, tap Create new secret key and copy the key that starts with sk-.</string>
     <string name="key_step3">Paste it below. The key stays on this phone, encrypted with the system keystore.</string>
     <string name="open_keys_page">Open the API keys page</string>
+    <string name="method_deepseek_title">Use a DeepSeek API key</string>
+    <string name="method_deepseek_body">Pay as you go: top up your balance at platform.deepseek.com, then create a key.</string>
+    <string name="key_title_deepseek">Enter your DeepSeek API key</string>
+    <string name="key_deepseek_step1">Top up your balance at platform.deepseek.com.</string>
+    <string name="key_deepseek_step2">On the API keys page, create a new API key and copy the key that starts with sk-.</string>
+    <string name="provider_not_connected">Not connected. Tap to add.</string>
+    <string name="provider_use">Connected with %1$s. Tap to use it.</string>
+    <string name="provider_in_use">In use</string>
+    <string name="sign_out_of">Sign out of %1$s</string>
+    <string name="connect_provider">Connect %1$s</string>
     <string name="connect">Connect</string>
     <string name="level_off">Off</string>
     <string name="level_minimal">Minimal</string>

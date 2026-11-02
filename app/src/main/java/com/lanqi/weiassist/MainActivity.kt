@@ -135,10 +135,10 @@ fun MainActivity.App(vm: AppViewModel = viewModel()) {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             when (val screen = s.screen) {
-                Screen.Welcome -> WelcomeScreen(s.provider, s.piVersion, s.signIn.error, vm::signIn)
+                Screen.Welcome -> WelcomeScreen(s.providers, s.piVersion, s.signIn.error, vm::signIn)
                 is Screen.SigningIn ->
                     if (screen.method.type == "oauth") SubscriptionSignIn(s.signIn.authUrl, s.signIn.progress, s.signIn.prompt, vm::reopenBrowser, vm::submitPrompt, vm::cancelSignIn)
-                    else ApiKeySignIn(s.signIn.prompt, s.signIn.progress, vm::submitPrompt, vm::cancelSignIn)
+                    else ApiKeySignIn(screen.provider, s.signIn.prompt, s.signIn.progress, vm::submitPrompt, vm::cancelSignIn)
                 Screen.Starting, Screen.Connected -> Unit
             }
         }

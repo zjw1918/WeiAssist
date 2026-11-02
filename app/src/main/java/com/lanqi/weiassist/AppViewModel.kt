@@ -106,7 +106,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun withAgent(f: AgentController.() -> Unit) { controller.value?.f() }
 
-    fun signIn(method: AuthMethod) = withAgent { signIn(method) }
+    fun signIn(provider: String, method: AuthMethod) = withAgent { signIn(provider, method) }
+    fun selectProvider(id: String) = withAgent { selectProvider(id) }
     fun submitPrompt(value: String) = withAgent { submitPrompt(value) }
     fun reopenBrowser() = withAgent { reopenBrowser() }
     fun cancelSignIn() = withAgent { cancelSignIn() }

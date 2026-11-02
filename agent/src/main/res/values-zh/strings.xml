@@ -13,6 +13,7 @@
     <string name="channel_results">任务结果</string>
     <string name="channel_results_desc">你离开小维助手时，任务完成后告诉你结果。</string>
     <string name="err_quota">API 账户余额不足：API 和 ChatGPT 订阅分开计费，请到 platform.openai.com 充值。</string>
+    <string name="err_deepseek_balance">DeepSeek 账户余额不足，请到 platform.deepseek.com 充值。</string>
     <string name="err_key">密钥无效或已过期，请退出后重新登录。</string>
     <string name="err_model">这个账号用不了模型 %1$s，在上面换一个试试。</string>
     <string name="first_hello">你好</string>

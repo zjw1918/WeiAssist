@@ -18,9 +18,12 @@ sealed interface Effect {
  * No Android, no Pi, no I/O, so every transition is unit-tested (AgentReducerTest).
  */
 object AgentReducer {
-    const val PROVIDER = "openai"
-    /** The model a new install starts with (and falls back to when the saved one is not offered): GPT-6.1 Terra, at medium thinking. */
-    const val PI_DEFAULT_MODEL = "gpt-6.1-terra"
+    const val DEFAULT_PROVIDER = "openai"
+    /**
+     * Each provider's model to start with (and fall back to when the saved one is not offered).
+     * DeepSeek: V4.1 Flash, the DeepSeek model that reads images (phone tasks send screenshots).
+     */
+    val DEFAULT_MODELS = mapOf("openai" to "gpt-6.1-terra", "deepseek" to "deepseek-flash")
     /** Pi's ThinkingLevel values, lowest to highest. */
     val LEVEL_ORDER = listOf("off", "minimal", "low", "medium", "high", "xhigh", "max")
 
@@ -43,10 +46,15 @@ object AgentReducer {
             Result(s.withSignIn { copy(prompt = prompt) })
         }
         "auth_prompt_closed" -> Result(s.withSignIn { if (prompt?.id == m.getString("id")) copy(prompt = null) else this })
-        "login_done" -> Result(s.copy(screen = Screen.Connected, signIn = SignInState()), Effect.SignedIn)
+        "login_done" -> {
+            // The provider just connected is the one new messages use.
+            val id = m.optString("provider").ifEmpty { s.providerId }
+            Result(pickModel(s.copy(providerId = id, screen = Screen.Connected, signIn = SignInState())), Effect.SignedIn)
+        }
         "login_failed" -> {
             val msg = m.optString("message")
-            Result(s.copy(screen = Screen.Welcome, signIn = SignInState(error = msg.takeIf { it != "cancelled" })))
+            val back = (s.screen as? Screen.SigningIn)?.returnTo ?: Screen.Welcome
+            Result(s.copy(screen = back, signIn = SignInState(error = msg.takeIf { it != "cancelled" })))
         }
         // Pi's runtime restarted: the controller re-creates the sessions' Agents (see SessionManager).
         "runtime_restarted" -> Result(s, Effect.RuntimeRestarted)
@@ -54,15 +62,34 @@ object AgentReducer {
     }
 
     private fun onStatus(s: AgentState, m: JSONObject): AgentState {
-        val provider = parseProviders(m.getJSONArray("providers")).firstOrNull { it.id == PROVIDER }
-        val screen = if (s.screen is Screen.SigningIn) s.screen else if (provider?.credential != null) Screen.Connected else Screen.Welcome
-        val next = s.copy(provider = provider, screen = screen)
-        // Pi lists only the models this sign-in can use; keep the choice if it's still there,
-        // else take Pi's own default for the provider, else the first one.
-        val ms = provider?.models.orEmpty()
-        if (ms.isEmpty()) return next
-        val id = if (ms.any { it.id == s.modelId }) s.modelId else (ms.firstOrNull { it.id == PI_DEFAULT_MODEL } ?: ms.first()).id
-        return selectModel(next, id)
+        val providers = parseProviders(m.getJSONArray("providers"))
+        // Keep the chosen provider while it is signed in; else move to one that is (e.g. after signing out of it).
+        val active = providers.firstOrNull { it.id == s.providerId && it.credential != null }
+            ?: providers.firstOrNull { it.credential != null }
+        val screen = when {
+            s.screen is Screen.SigningIn -> s.screen
+            active != null -> Screen.Connected
+            else -> Screen.Welcome
+        }
+        return pickModel(s.copy(providers = providers, providerId = active?.id ?: s.providerId, screen = screen))
+    }
+
+    /** Use another signed-in provider; [savedModel] is the model last used with it. */
+    fun selectProvider(s: AgentState, id: String, savedModel: String?): AgentState {
+        if (s.providers.none { it.id == id && it.credential != null }) return s
+        return pickModel(s.copy(providerId = id, modelId = savedModel ?: ""))
+    }
+
+    /**
+     * Pi lists only the models this sign-in can use; keep the choice if it's still there,
+     * else take the provider's default, else the first one.
+     */
+    private fun pickModel(s: AgentState): AgentState {
+        val ms = s.provider?.models.orEmpty()
+        if (ms.isEmpty()) return s
+        val id = if (ms.any { it.id == s.modelId }) s.modelId
+        else (ms.firstOrNull { it.id == DEFAULT_MODELS[s.providerId] } ?: ms.first()).id
+        return selectModel(s, id)
     }
 
     /** Choose a model; keep the thinking level if it supports it, else the nearest level at or above it. */

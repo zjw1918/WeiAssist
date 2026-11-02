@@ -25,6 +25,19 @@ test("starts and offers Pi's two OpenAI sign-in methods", async () => {
 	assert.ok(openai.models.every((m) => Array.isArray(m.thinkingLevels)), "each model lists Pi's thinking levels");
 });
 
+test("offers Pi's DeepSeek provider with its API-key sign-in and models", async () => {
+	const host = await startHost();
+	const status = await host.waitFor("status");
+	const deepseek = status.providers.find((p) => p.id === "deepseek");
+	assert.deepEqual(deepseek.methods.map((m) => m.type), ["api_key"]);
+	assert.ok(deepseek.models.some((m) => m.id === "deepseek-flash"), "the app's default DeepSeek model is in Pi's catalog");
+	host.call("login", { provider: "deepseek", type: "api_key" });
+	const prompt = await host.waitFor("auth_prompt");
+	host.call("answer", { id: prompt.id, value: "sk-ds" });
+	await host.waitFor("login_done", (m) => m.provider === "deepseek");
+	assert.deepEqual(JSON.parse(host.state.credentials).deepseek, { type: "api_key", key: "sk-ds" });
+});
+
 test("API-key sign-in goes through Pi's own login and is mirrored to Kotlin", async () => {
 	const host = await startHost();
 	host.call("login", { provider: "openai", type: "api_key" });

@@ -32,7 +32,7 @@ class SessionManager(
     private val scope: CoroutineScope,
     private val strings: Strings,
     /** The model and thinking level a message uses, and the mock server URL in dev mode. */
-    private val settings: () -> Triple<String, String, String?>,
+    private val settings: () -> RunSettings,
     private val screens: ScreenPool = MainScreenPool(),
 ) {
     /** Localized texts the manager needs (supplied by the controller, which has a Context). */
@@ -181,14 +181,14 @@ class SessionManager(
         if (s.pendingTask == null) return
         if (s.status == SessionStatus.Queued) update(id) { SessionReducer.withStatus(it, SessionStatus.Running, System.currentTimeMillis()) }
         scope.launch {
-            val (model, thinking, mock) = settings()
+            val (provider, model, thinking, mock) = settings()
             val phone = s.summary.phone
             val tools = when { s.summary.supervisor -> "supervisor"; phone -> "phone"; else -> null }
-            val config = listOf(model, thinking, mock, tools).joinToString("|")
+            val config = listOf(provider, model, thinking, mock, tools).joinToString("|")
             if (configured[id] != config) {
                 // First use in this runtime: give Pi the saved conversation back.
                 val history = if (id !in configured) withContext(io) { store.loadTranscript(id) } else null
-                pi.configure(id, AgentController.PROVIDER, model, thinking, mock, tools = tools, messages = history)
+                pi.configure(id, provider, model, thinking, mock, tools = tools, messages = history)
                 configured[id] = config
             }
             // Read now: messages typed while Pi was being set up joined the task (see send).
@@ -365,6 +365,9 @@ class SessionManager(
                 .onFailure { Log.e(TAG, "session $id not saved", it) }
         }
     }
+
+    /** What a session's Pi Agent is set up with: the provider, model and thinking level in use, and dev builds' mock server. */
+    data class RunSettings(val provider: String, val model: String, val thinking: String, val mock: String?)
 
     companion object { private const val TAG = "Sessions" }
 }

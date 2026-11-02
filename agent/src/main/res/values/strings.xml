@@ -13,6 +13,7 @@
     <string name="channel_results">Task results</string>
     <string name="channel_results_desc">Tells you the result when a task finishes while you\'re away from WeiAssist.</string>
     <string name="err_quota">Your API account is out of credit. API usage is billed separately from ChatGPT; add credit at platform.openai.com.</string>
+    <string name="err_deepseek_balance">Your DeepSeek account is out of balance. Top up at platform.deepseek.com.</string>
     <string name="err_key">The key is invalid or has expired. Sign out and sign in again.</string>
     <string name="err_model">This account can\'t use the model %1$s. Pick another one above.</string>
     <string name="first_hello">Hello</string>

@@ -14,7 +14,8 @@ data class PendingPrompt(val id: String, val type: String, val message: String, 
 sealed interface Screen {
     data object Starting : Screen
     data object Welcome : Screen
-    data class SigningIn(val method: AuthMethod) : Screen
+    /** [returnTo]: where cancelling goes (a provider added from the AI providers tab goes back there). */
+    data class SigningIn(val provider: String, val method: AuthMethod, val returnTo: Screen = Welcome) : Screen
     data object Connected : Screen
 }
 
@@ -33,11 +34,15 @@ data class SignInState(
 data class AgentState(
     val screen: Screen = Screen.Starting,
     val piVersion: String? = null,
-    val provider: ProviderInfo? = null,
+    /** Every provider Pi offers here, with its sign-in (if any). */
+    val providers: List<ProviderInfo> = emptyList(),
+    /** The provider new messages use. */
+    val providerId: String = AgentReducer.DEFAULT_PROVIDER,
     val signIn: SignInState = SignInState(),
     val modelId: String = "",
     val thinkingLevel: String = "medium",
 ) {
+    val provider: ProviderInfo? get() = providers.firstOrNull { it.id == providerId }
     val model: ModelInfo? get() = provider?.models?.firstOrNull { it.id == modelId }
     val signingInWithBrowser: Boolean get() = (screen as? Screen.SigningIn)?.method?.type == "oauth"
 }

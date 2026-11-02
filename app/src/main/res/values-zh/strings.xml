@@ -20,7 +20,7 @@
     <string name="cancel">取消</string>
     <string name="default_input">你好</string>
     <string name="welcome_title">你好，我是小维助手</string>
-    <string name="welcome_body">先给我接上一个大模型。我用 Pi %1$s 和模型对话，演示用的是 OpenAI，以后换别家也行。</string>
+    <string name="welcome_body">先给我接上一个大模型。我用 Pi %1$s 和模型对话，目前可以接 OpenAI 和 DeepSeek。</string>
     <string name="method_sub_title">用 ChatGPT 订阅登录</string>
     <string name="method_sub_body">用你的 ChatGPT 账号登录，额度算在订阅里，不用另外充值。会打开 Chrome，登录并同意后回到这里。</string>
     <string name="method_key_title">用 OpenAI API key</string>
@@ -44,6 +44,16 @@
     <string name="key_step2">在 API keys 页面点 Create new secret key，复制以 sk- 开头的密钥</string>
     <string name="key_step3">粘贴到下面。密钥只存在这台手机上，用系统密钥库加密</string>
     <string name="open_keys_page">打开 API keys 页面</string>
+    <string name="method_deepseek_title">用 DeepSeek API key</string>
+    <string name="method_deepseek_body">按用量付费：在 platform.deepseek.com 充值，再创建一个密钥。</string>
+    <string name="key_title_deepseek">填入 DeepSeek API key</string>
+    <string name="key_deepseek_step1">在 platform.deepseek.com 充值</string>
+    <string name="key_deepseek_step2">在 API keys 页面创建新的 API key，复制以 sk- 开头的密钥</string>
+    <string name="provider_not_connected">未连接，点一下添加</string>
+    <string name="provider_use">已通过 %1$s 连接，点一下切换使用</string>
+    <string name="provider_in_use">使用中</string>
+    <string name="sign_out_of">退出 %1$s</string>
+    <string name="connect_provider">连接 %1$s</string>
     <string name="connect">连接</string>
     <string name="level_off">不思考</string>
     <string name="level_minimal">最少</string>

@@ -15,6 +15,7 @@ import {
 	type Model,
 } from "@earendil-works/pi-ai";
 import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
+import { deepseekProvider } from "@earendil-works/pi-ai/providers/deepseek";
 // Pi's catalog of models OpenAI offers to ChatGPT accounts ("Codex with a ChatGPT account").
 import { OPENAI_CODEX_MODELS } from "@earendil-works/pi-ai/providers/openai-codex.models";
 // Pi's public entry point for embedding its OAuth flows in a bundle (what Pi's own standalone binary
@@ -65,6 +66,7 @@ class MirroredCredentialStore implements CredentialStore {
 const credentials = new MirroredCredentialStore();
 const models = createModels({ credentials });
 models.setProvider(openaiProvider());
+models.setProvider(deepseekProvider());
 
 let deviceId = "";
 let agentName = "Pi";

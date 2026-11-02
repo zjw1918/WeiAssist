@@ -38,6 +38,8 @@ import com.lanqi.weiassist.agent.AgentState
 fun ProvidersTab(vm: AppViewModel, s: AgentState) {
     val bar = TopAppBarDefaults.pinnedScrollBehavior()
     var confirmSignOut by rememberSaveable { mutableStateOf(false) }
+    // A provider not signed in with several sign-in methods: which one (asked in a dialog).
+    var connecting by rememberSaveable { mutableStateOf<String?>(null) }
     Scaffold(
         modifier = Modifier.nestedScroll(bar.nestedScrollConnection),
         contentWindowInsets = WindowInsets(0),
@@ -45,27 +47,45 @@ fun ProvidersTab(vm: AppViewModel, s: AgentState) {
     ) { inner ->
         Column(Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
             val provider = s.provider
-            val how = when (provider?.credential) {
-                "oauth" -> stringResource(R.string.auth_subscription)
-                "api_key" -> stringResource(R.string.auth_api_key)
-                else -> null
-            }
             SectionHeader(stringResource(R.string.section_provider))
             Group {
-                GroupRow(
-                    title = provider?.name ?: "…", icon = R.drawable.ic_sparkle,
-                    description = how?.let { stringResource(R.string.provider_via, it) },
-                    trailing = {
-                        Box(Modifier.size(28.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape), contentAlignment = Alignment.Center) {
-                            AppIcon(R.drawable.ic_check_circle, stringResource(R.string.provider_connected), Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
-                        }
-                    },
-                )
+                s.providers.forEachIndexed { i, p ->
+                    if (i > 0) GroupDivider()
+                    val how = when (p.credential) {
+                        "oauth" -> stringResource(R.string.auth_subscription)
+                        "api_key" -> stringResource(R.string.auth_api_key)
+                        else -> null
+                    }
+                    val active = p.id == s.providerId && how != null
+                    GroupRow(
+                        title = p.name, icon = R.drawable.ic_sparkle,
+                        description = when {
+                            how == null -> stringResource(R.string.provider_not_connected)
+                            active -> stringResource(R.string.provider_via, how)
+                            else -> stringResource(R.string.provider_use, how)
+                        },
+                        onClick = when {
+                            active -> null
+                            how != null -> { { vm.selectProvider(p.id) } }
+                            p.methods.size == 1 -> { { vm.signIn(p.id, p.methods.first()) } }
+                            else -> { { connecting = p.id } }
+                        },
+                        trailing = {
+                            if (active) Box(Modifier.size(28.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape), contentAlignment = Alignment.Center) {
+                                AppIcon(R.drawable.ic_check_circle, stringResource(R.string.provider_in_use), Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                            }
+                        },
+                    )
+                }
                 GroupDivider()
                 GroupRow(
-                    title = stringResource(R.string.sign_out), icon = R.drawable.ic_logout,
+                    title = stringResource(R.string.sign_out_of, provider?.name ?: "…"), icon = R.drawable.ic_logout,
                     description = stringResource(R.string.switch_method_hint), onClick = { confirmSignOut = true },
                 )
+            }
+            s.signIn.error?.let {
+                Text(stringResource(R.string.last_error, it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp))
             }
 
             SectionHeader(stringResource(R.string.section_model))
@@ -82,6 +102,21 @@ fun ProvidersTab(vm: AppViewModel, s: AgentState) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 12.dp),
             )
         }
+    }
+    s.providers.firstOrNull { it.id == connecting }?.let { p ->
+        AlertDialog(
+            onDismissRequest = { connecting = null },
+            title = { Text(stringResource(R.string.connect_provider, p.name)) },
+            text = {
+                Column {
+                    p.methods.sortedByDescending { it.subscription }.forEach { m ->
+                        TextButton(onClick = { connecting = null; vm.signIn(p.id, m) }) { Text(methodText(p.id, m).first) }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { connecting = null }) { Text(stringResource(R.string.cancel)) } },
+        )
     }
     // Signing out deletes the saved credential, so ask first.
     if (confirmSignOut) AlertDialog(

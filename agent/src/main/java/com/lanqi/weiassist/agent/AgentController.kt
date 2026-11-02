@@ -32,7 +32,8 @@ class AgentController(context: Context) {
 
     private val _state = MutableStateFlow(
         AgentState(
-            modelId = prefs.getString("modelId", null) ?: AgentReducer.PI_DEFAULT_MODEL,
+            providerId = prefs.getString("providerId", null) ?: AgentReducer.DEFAULT_PROVIDER,
+            modelId = prefs.getString("modelId", null) ?: "",
             thinkingLevel = prefs.getString("thinkingLevel", null) ?: "medium",
         ),
     )
@@ -52,7 +53,7 @@ class AgentController(context: Context) {
             override fun runtimeRestarted() = appContext.getString(R.string.err_runtime_restarted)
             override fun continueTask() = appContext.getString(R.string.continue_task)
         },
-        settings = { Triple(_state.value.modelId, _state.value.thinkingLevel, mockBaseUrl) },
+        settings = { with(_state.value) { SessionManager.RunSettings(providerId, modelId, thinkingLevel, mockBaseUrl) } },
         screens = screens,
     )
 
@@ -168,7 +169,7 @@ class AgentController(context: Context) {
         val before = _state.value
         val (next, effect) = AgentReducer.reduce(before, m)
         _state.value = next
-        if (next.modelId != before.modelId || next.thinkingLevel != before.thinkingLevel) persistModel()
+        if (next.providerId != before.providerId || next.modelId != before.modelId || next.thinkingLevel != before.thinkingLevel) persistModel()
         when (effect) {
             is Effect.OpenBrowser -> _openInBrowser.tryEmit(effect.url)
             Effect.SignedIn -> scope.launch {
@@ -181,9 +182,13 @@ class AgentController(context: Context) {
     }
 
     // ---- sign-in ----------------------------------------------------------------------------------
-    fun signIn(method: AuthMethod) {
-        _state.update { it.copy(screen = Screen.SigningIn(method), signIn = SignInState()) }
-        scope.launch { pi.login(PROVIDER, method.type) }
+    /** Sign in to [provider]; from the AI providers tab (already connected), cancelling goes back there. */
+    fun signIn(provider: String, method: AuthMethod) {
+        _state.update {
+            val back = if (it.screen == Screen.Connected) Screen.Connected else Screen.Welcome
+            it.copy(screen = Screen.SigningIn(provider, method, back), signIn = SignInState())
+        }
+        scope.launch { pi.login(provider, method.type) }
     }
 
     fun submitPrompt(value: String) {
@@ -196,9 +201,17 @@ class AgentController(context: Context) {
     fun reopenBrowser() { _state.value.signIn.authUrl?.let { _openInBrowser.tryEmit(it) } }
     fun cancelSignIn() { scope.launch { pi.cancelLogin() } }
 
+    /** Sign out of the provider in use; Pi's next status moves to another signed-in one, if any. */
     fun signOut() {
         sessions.stopAll()
-        scope.launch { pi.logout(PROVIDER) }
+        val id = _state.value.providerId
+        scope.launch { pi.logout(id) }
+    }
+
+    /** Use another signed-in provider for new messages, with the model last used with it. */
+    fun selectProvider(id: String) {
+        _state.update { AgentReducer.selectProvider(it, id, prefs.getString("modelId.$id", null)) }
+        persistModel()
     }
 
     // ---- model and thinking level -----------------------------------------------------------------
@@ -213,7 +226,8 @@ class AgentController(context: Context) {
     }
 
     private fun persistModel() = with(_state.value) {
-        prefs.edit().putString("modelId", modelId).putString("thinkingLevel", thinkingLevel).apply()
+        prefs.edit().putString("providerId", providerId).putString("modelId", modelId).putString("modelId.$providerId", modelId)
+            .putString("thinkingLevel", thinkingLevel).apply()
     }
 
     // ---- sessions ---------------------------------------------------------------------------------
@@ -246,15 +260,12 @@ class AgentController(context: Context) {
     // ---- helpers ----------------------------------------------------------------------------------
     /** Turn the provider's error text into something a user can act on; keep the original for the trace. */
     private fun friendly(msg: String): String = when {
+        "Insufficient Balance" in msg || "402" in msg && _state.value.providerId == "deepseek" ->
+            appContext.getString(R.string.err_deepseek_balance) + "\n" + msg
         "insufficient_quota" in msg || "429" in msg && "quota" in msg -> appContext.getString(R.string.err_quota) + "\n" + msg
         "401" in msg || "invalid_api_key" in msg || "Incorrect API key" in msg -> appContext.getString(R.string.err_key) + "\n" + msg
         "model_not_found" in msg || "model" in msg && ("not found" in msg || "does not exist" in msg) ->
             appContext.getString(R.string.err_model, _state.value.modelId) + "\n" + msg
         else -> msg
-    }
-
-    companion object {
-        const val PROVIDER = AgentReducer.PROVIDER
-        const val PI_DEFAULT_MODEL = AgentReducer.PI_DEFAULT_MODEL
     }
 }

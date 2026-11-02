@@ -29,7 +29,51 @@ class AgentReducerTest {
         ),
     )
 
+    private fun openai(credential: String?, vararg models: JSONObject) = JSONObject().put("id", "openai").put("name", "OpenAI")
+        .put("credential", credential ?: JSONObject.NULL)
+        .put("methods", JSONArray().put(JSONObject().put("type", "api_key").put("name", "OpenAI API key")))
+        .put("models", JSONArray(models.toList()))
+
+    private fun deepseek(credential: String?) = JSONObject().put("id", "deepseek").put("name", "DeepSeek")
+        .put("credential", credential ?: JSONObject.NULL)
+        .put("methods", JSONArray().put(JSONObject().put("type", "api_key").put("name", "DeepSeek API key")))
+        .put("models", JSONArray().put(model("deepseek-v4-pro", "high", "max")).put(model("deepseek-flash", "low", "high", "max")))
+
+    private fun statusOf(vararg providers: JSONObject) = msg("status", "providers" to JSONArray(providers.toList()))
+
     private fun reduce(s: AgentState, m: JSONObject) = AgentReducer.reduce(s, m)
+
+    @Test fun `signing in to DeepSeek makes it the provider in use, with its default model`() {
+        val shown = reduce(base, statusOf(openai("api_key", model("gpt-6.1-sol", "low", "medium")), deepseek(null))).state
+        assertEquals("openai", shown.providerId)
+        val signingIn = shown.copy(screen = Screen.SigningIn("deepseek", AuthMethod("api_key", "DeepSeek API key", null, false), Screen.Connected))
+        val r = reduce(signingIn, msg("login_done", "provider" to "deepseek"))
+        assertEquals(Effect.SignedIn, r.effect)
+        assertEquals("deepseek", r.state.providerId)
+        assertEquals("deepseek-flash", r.state.modelId)
+        assertEquals("high", r.state.thinkingLevel) // DeepSeek has no "medium": the next level up
+        assertEquals("deepseek", reduce(r.state, statusOf(openai("api_key", model("gpt-6.1-sol", "low")), deepseek("api_key"))).state.providerId)
+    }
+
+    @Test fun `signing out of the provider in use moves to another signed-in one`() {
+        val s = reduce(base.copy(providerId = "deepseek"), statusOf(openai("api_key", model("gpt-6.1-sol", "low", "medium")), deepseek(null))).state
+        assertEquals("openai", s.providerId)
+        assertEquals(Screen.Connected, s.screen)
+        assertEquals("gpt-6.1-sol", s.modelId)
+    }
+
+    @Test fun `selecting a provider restores its last model, or its default`() {
+        val s = reduce(base, statusOf(openai("api_key", model("gpt-6.1-sol", "low", "medium")), deepseek("api_key"))).state
+        assertEquals("deepseek-v4-pro", AgentReducer.selectProvider(s, "deepseek", "deepseek-v4-pro").modelId)
+        assertEquals("deepseek-flash", AgentReducer.selectProvider(s, "deepseek", null).modelId)
+        val notSignedIn = reduce(base, statusOf(openai("api_key", model("gpt-6.1-sol", "low")), deepseek(null))).state
+        assertEquals("openai", AgentReducer.selectProvider(notSignedIn, "deepseek", null).providerId)
+    }
+
+    @Test fun `cancelling a sign-in started from the providers tab goes back there`() {
+        val s = base.copy(screen = Screen.SigningIn("deepseek", AuthMethod("api_key", "k", null, false), Screen.Connected))
+        assertEquals(Screen.Connected, reduce(s, msg("login_failed", "message" to "cancelled")).state.screen)
+    }
 
     @Test fun `signed-out status shows the welcome screen with Pi's two methods`() {
         val s = reduce(base, status(null)).state
@@ -43,7 +87,7 @@ class AgentReducerTest {
     }
 
     @Test fun `status does not interrupt a sign-in in progress`() {
-        val signingIn = base.copy(screen = Screen.SigningIn(AuthMethod("oauth", "x", null, true)))
+        val signingIn = base.copy(screen = Screen.SigningIn("openai", AuthMethod("oauth", "x", null, true)))
         assertTrue(reduce(signingIn, status(null)).state.screen is Screen.SigningIn)
     }
 
@@ -77,7 +121,7 @@ class AgentReducerTest {
     }
 
     @Test fun `login done connects and asks for the hello`() {
-        val r = reduce(base.copy(screen = Screen.SigningIn(AuthMethod("oauth", "x", null, true))), msg("login_done"))
+        val r = reduce(base.copy(screen = Screen.SigningIn("openai", AuthMethod("oauth", "x", null, true))), msg("login_done"))
         assertEquals(Screen.Connected, r.state.screen)
         assertEquals(Effect.SignedIn, r.effect)
     }
