@@ -147,6 +147,8 @@ class AgentController(context: Context) {
                 else { screens.helperGone(); previews.reset() }
             }
         }
+        // Attachments picked in an earlier process were never sent (the boxes holding them are gone).
+        scope.launch(Dispatchers.IO) { Attachments.clearStaging(appContext) }
         scope.launch {
             sessions.load()
             loaded.complete(Unit)
@@ -209,6 +211,9 @@ class AgentController(context: Context) {
 
     fun reopenBrowser() { _state.value.signIn.authUrl?.let { _openInBrowser.tryEmit(it) } }
     fun cancelSignIn() { scope.launch { pi.cancelLogin() } }
+
+    /** Copy a picked file in, ready to attach to a message (see Attachments). */
+    suspend fun attach(uri: android.net.Uri): Attachment = Attachments.import(appContext, uri)
 
     // ---- custom providers --------------------------------------------------------------------------
     /**
@@ -294,10 +299,10 @@ class AgentController(context: Context) {
 
     // ---- sessions ---------------------------------------------------------------------------------
     /** Start a task in a new session; returns its id. */
-    suspend fun startTask(text: String, phoneTools: Boolean): String {
+    suspend fun startTask(text: String, phoneTools: Boolean, attachments: List<Attachment> = emptyList()): String {
         loaded.await()
         val id = sessions.create(phone = phoneTools)
-        sessions.send(id, text)
+        sessions.send(id, text, attachments)
         return id
     }
 

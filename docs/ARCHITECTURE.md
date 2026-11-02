@@ -57,8 +57,9 @@ All messages are JSON.
 | JS→K | `fetch` / `fetch_abort` | Native HTTP for Pi (no CORS). The reply streams back as `fetchHead`, `fetchChunk`, `fetchEnd` or `fetchError`. |
 | JS→K | `http_listen` / `http_close` / `http_response` | The `node:http` shim. Pi's OAuth callback server runs on a real loopback socket. |
 | JS→K | any registered host call (`gate`, `phone`, `confirm`), with `session` | `bridgeCall(type, …)`, answered with `PiHost.reply(id, ok, value)`. Tool arguments are nested under `args`. `gate` runs before every tool call and holds a paused session. |
-| K→JS | `init`, `status`, `login`, `answer`, `cancelLogin`, `logout` | App-wide commands |
-| K→JS | `configure` (optionally with saved `messages`), `prompt`, `abort`, `dispose`, all with `session` | Session commands |
+| K→JS | `init` (with the user's `customProviders`), `status`, `login`, `answer`, `cancelLogin`, `logout`, `setCustomProviders` | App-wide commands |
+| K→JS | `lookupModels` (synchronous: its return value comes back through `evaluateJavascript`) | Pi's catalog entries for model ids (custom providers' context windows) |
+| K→JS | `configure` (optionally with saved `messages`), `prompt` and `steer` (optionally with attachment `content` blocks), `abort`, `dispose`, all with `session` | Session commands |
 
 Tests: [pi-host/test](../pi-host/test) runs the shipped bundle against a fake Kotlin side that speaks this exact protocol.
 

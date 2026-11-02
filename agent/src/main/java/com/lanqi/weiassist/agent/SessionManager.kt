@@ -152,16 +152,18 @@ class SessionManager(
      * The user's message to a session: start (or queue) a task. While the session works, the message
      * steers it instead (Pi reads it after the current turn). False if the session is unknown.
      */
-    suspend fun send(id: String, text: String): Boolean {
-        if (text.isBlank()) return false
+    suspend fun send(id: String, text: String, attachments: List<Attachment> = emptyList()): Boolean {
+        if (text.isBlank() && attachments.isEmpty()) return false
         val flow = loadLive(id) ?: return false
+        // Staged files move into the session's folder: they live as long as it does.
+        val files = withContext(io) { Attachments.keep(attachments, store.attachmentsDir(id)) }
         if (flow.value.busy) {
             val now = System.currentTimeMillis()
             // Pi hasn't been given this task yet (it waits for a screen, or is being set up): the message joins it.
-            if (id !in prompted) update(id) { SessionReducer.joinTask(it, text.trim(), now) }
+            if (id !in prompted) update(id) { SessionReducer.joinTask(it, text.trim(), now, files) }
             else {
-                update(id) { SessionReducer.steered(it, text.trim(), now) }
-                pi.steer(id, text.trim())
+                update(id) { SessionReducer.steered(it, text.trim(), now, files) }
+                pi.steer(id, text.trim(), Attachments.content(files))
             }
             return true
         }
@@ -169,8 +171,9 @@ class SessionManager(
         val now = System.currentTimeMillis()
         val canRun = !phone || screens.acquire(id) != null
         update(id) { s ->
-            val titled = if (s.summary.title.isBlank()) s.copy(summary = s.summary.copy(title = text.trim().lineSequence().first().take(40))) else s
-            SessionReducer.userMessage(titled, text.trim(), queued = !canRun, now = now)
+            val title = text.trim().lineSequence().first().take(40).ifBlank { files.firstOrNull()?.name.orEmpty() }
+            val titled = if (s.summary.title.isBlank()) s.copy(summary = s.summary.copy(title = title)) else s
+            SessionReducer.userMessage(titled, text.trim(), queued = !canRun, now = now, attachments = files)
         }
         paused.getOrPut(id) { MutableStateFlow(false) }.value = false
         if (canRun) start(id) else queue.addLast(id)
@@ -181,7 +184,8 @@ class SessionManager(
     private fun lateSteer(id: String, text: String) {
         val s = live[id]?.value ?: return
         if (s.busy) { // a new task started meanwhile: steer that one
-            if (id in prompted) scope.launch { pi.steer(id, text) } else Log.w(TAG, "late steer for $id dropped: next task not started")
+            val files = s.items.firstOrNull { it is ChatItem.User && it.delivery == Delivery.Queued && it.text == text }?.let { (it as ChatItem.User).attachments }.orEmpty()
+            if (id in prompted) scope.launch { pi.steer(id, text, Attachments.content(files)) } else Log.w(TAG, "late steer for $id dropped: next task not started")
             return
         }
         val canRun = !s.summary.phone || screens.acquire(id) != null
@@ -195,7 +199,7 @@ class SessionManager(
 
     private fun start(id: String) {
         val s = live[id]?.value ?: return
-        if (s.pendingTask == null) return
+        if (s.pendingTask == null && s.pendingAttachments.isEmpty()) return
         if (s.status == SessionStatus.Queued) update(id) { SessionReducer.withStatus(it, SessionStatus.Running, System.currentTimeMillis()) }
         scope.launch {
             val (provider, model, thinking, mock) = settings()
@@ -209,8 +213,9 @@ class SessionManager(
                 configured[id] = config
             }
             // Read now: messages typed while Pi was being set up joined the task (see send).
-            val task = live[id]?.value?.takeIf { it.busy }?.pendingTask ?: return@launch
-            pi.prompt(id, task)
+            val now = live[id]?.value?.takeIf { it.busy } ?: return@launch
+            val task = now.pendingTask ?: if (now.pendingAttachments.isNotEmpty()) "" else return@launch
+            pi.prompt(id, task, Attachments.content(now.pendingAttachments))
             prompted += id
         }
     }

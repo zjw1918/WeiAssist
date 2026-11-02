@@ -206,4 +206,12 @@
     <string name="steer_hint">补充说明（当前这一步做完后读到）</string>
     <string name="steer_queued">等当前这一步做完</string>
     <string name="steer_not_delivered">未送达：任务已先停止</string>
+    <string name="attach">添加附件</string>
+    <string name="attach_photos">照片</string>
+    <string name="attach_files">文件（图片、PDF、文本）</string>
+    <string name="attach_remove">移除</string>
+    <string name="attach_hint">可以附上照片、PDF 或文本文件</string>
+    <string name="attach_unsupported">无法附加 %1$s：只能读取图片、PDF 和文本文件。</string>
+    <string name="attach_too_large">%1$s 太大了（最大 30 MB）。</string>
+    <string name="attach_failed">附件添加失败：%1$s</string>
 </resources>

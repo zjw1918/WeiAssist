@@ -10,6 +10,8 @@ and a supervisor session that manages the others in words, ready for voice. Veri
 (Android 12) and a Xiaomi (HyperOS, Android 16) with the mock and the real model. Apps now stay on their
 session's display (trusted displays on Android 13+); Pi 1.5.0 with GPT-6.1 Terra as the default model.
 Chat and phone sessions can now run Linux commands in Termux with a `bash` tool (branch `feat/termux-bash`).
+Since 2026-11-03 (branch `feat/more-providers`): 11 of Pi's providers plus the user's own OpenAI-compatible
+servers, and messages can carry images, PDFs and text files.
 
 ## Done
 
@@ -217,6 +219,46 @@ Chat and phone sessions can now run Linux commands in Termux with a `bash` tool 
 - **Verified on the Xiaomi** with the real model: during `sleep 30` in bash, "also run date" was delivered after the
   step and answered in the same run; steering then Stop shows *Not delivered* and no error.
 
+### Providers: more of Pi's, and the user's own (2026-11-03)
+- **Built-in providers:** OpenAI, DeepSeek, OpenCode Zen and Go, Anthropic, Google, OpenRouter, xAI, Moonshot (intl
+  and CN) and Mistral, registered from one list in `pi-host/src/host.ts`. Only OpenAI offers OAuth
+  (`OAUTH_PROVIDERS`); the others sign in by API key until each OAuth flow is tried in the WebView (and the
+  provider allows a subscription in a third-party app). Agents get the session id as `sessionId`, which OpenCode
+  needs (`x-opencode-session`) and OpenAI uses for prompt caching.
+- **Generic sign-in screens:** cards and the key page come from Pi's provider name and auth methods, plus an
+  optional guide per provider (`GUIDES` in `ui/Onboarding.kt`: keys page, key prefix); out-of-credit errors name
+  the provider; a provider without a default model starts with its first one that reads images.
+- **Custom providers:** any OpenAI-compatible endpoint (vLLM, Ollama, LM Studio, a relay), added from the AI
+  providers tab or the welcome screen: name, base URL, key, models (fetched from `/models`, `/v1` added when only
+  that answers, or typed). Pi host builds each with `createProvider` (no `store` field or `developer` role); the
+  list goes with `init`, so one in use is there before the first status. Plain http is allowed for the user's
+  own servers; the form warns.
+- **Context per model:** from the server's list (`max_model_len`, `context_length`, `context_window`,
+  `max_context_length`, `meta.n_ctx_train`, `input_modalities`), else Pi's catalog by id (vendor prefix, `.`/`-`,
+  `:tags` and effort suffixes like `-high` ignored; a vendor's own entry before aggregators), else 128K. The form
+  shows where each value came from and lets the user correct it; Ollama's small default `num_ctx` gets a warning.
+- **Back on a sign-in page** cancels it, returning to the tab it started from.
+- **Bundle:** 578 → 1466 KiB (Google's and Anthropic's SDKs); `standardwebhooks` (Anthropic SDK webhooks) is stubbed.
+- **Verified on the Xiaomi** against the mock server: fetch models, save, chat through `/chat/completions`, the
+  three context sources, delete; a relay-saved `gemini-3.8-flash-high` filled in from Pi's catalog.
+  OpenCode Go answered 403 "An active OpenCode Go subscription is required" for a key without one (not an app bug).
+
+### Attachments: images, PDFs and text files (2026-11-03)
+- **Picking:** a "+" by the session's message box and in the new-session sheet: photos (system photo picker) or
+  files. Images are scaled to 1600 px (JPEG); PDFs and text are copied (text recognised by content, so code files
+  work); other binary files are refused with a message; 30 MB at most. Staged in the cache, moved into the
+  session's folder when sent, deleted with the session; staging is cleared at start.
+- **To the model** (`agent/Attachments.kt` → Pi content blocks): images as images; PDFs as page images (first 8);
+  text inline (100K characters). A model that can't read images gets a note instead. Messages can be files only;
+  attachments travel with a message that waits for a screen, joins a task or is steered.
+- **On the page:** thumbnails and file tiles in the message; tap an image for a full-screen viewer (pinch or
+  double-tap to zoom toward the tap, drag, tap or Back to close).
+- **Tests:** pi-host 39 (custom provider round trip, catalog lookup, attachments, text-only model); JVM 65
+  (`CustomProviderTest`, `AttachmentsReducerTest`).
+- **Verified on the Xiaomi** with the mock: photo and PDF from the new-session sheet reached the server (PDF as two
+  page images); a zip was refused; the viewer zooms and pans. Not verified on the device: a `.txt` attachment,
+  because HyperOS's file picker doesn't list text files.
+
 ### Verified on a real device (realme RMX2121, Android 12)
 - ChatGPT subscription sign-in, then "你好" through Pi (`gpt-6.1-sol`).
 - Gmail: sent an email to two different addresses, each after the confirmation card.
@@ -312,7 +354,11 @@ Tested 2026-11-03 with `--ez mainOnly true` (YouTube: found the channel's subscr
 - [ ] **Direct intents** where they beat UI automation: share, open URL, alarm, calendar.
 - [ ] **Per-app permissions** (allow / ask / never) and sensitive-screen detection (FLAG_SECURE, payment, OTP).
 - [ ] **Floating assistant bubble** and a wake word (voice input already reaches the supervisor through the phone's speech recognizer).
-- [ ] **More providers:** DeepSeek is in; still Anthropic, Google, OpenRouter, local.
+- [x] **More providers** (2026-11-03): see *Providers* above. Later: OAuth for OpenRouter, Copilot and others,
+  each tried in the WebView; thinking levels for custom models (relays may reject the reasoning fields).
+- [ ] **Attachments, later:** HyperOS's file picker hides text files, so they can't be picked there; images are
+  kept in the Pi transcript (large conversations); other binary files can't reach Termux (its home is private).
+- [ ] **Readable provider errors:** 403/429 bodies (e.g. "Go subscription required", free-usage limits) are shown raw.
 - [ ] **Release workflow:** signed builds on tags. Not yet on GitHub: the user still has to pick the org and repo name.
 - [ ] **Instrumented tests** for PhoneActions on an emulator.
 - [ ] **Repo folder:** the local folder is still `PhoneAgent`; rename it if wanted.

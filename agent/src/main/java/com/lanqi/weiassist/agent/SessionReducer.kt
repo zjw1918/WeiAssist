@@ -54,31 +54,34 @@ object SessionReducer {
     }
 
     /** The user's message starts a task (queued until the screen is free when it operates the phone). */
-    fun userMessage(s: SessionState, text: String, queued: Boolean, now: Long) =
-        s.add(ChatItem.User(text), now).preview(text, now)
-            .copy(error = null, streaming = "", pendingTask = text)
+    fun userMessage(s: SessionState, text: String, queued: Boolean, now: Long, attachments: List<Attachment> = emptyList()) =
+        s.add(ChatItem.User(text, attachments = attachments), now).preview(previewOf(text, attachments), now)
+            .copy(error = null, streaming = "", pendingTask = text, pendingAttachments = attachments)
             .status(if (queued) SessionStatus.Queued else SessionStatus.Running, now)
 
     /** A message while Pi is working: shown at once, delivered when Pi takes it after the current turn. */
-    fun steered(s: SessionState, text: String, now: Long) =
-        s.add(ChatItem.User(text, Delivery.Queued), now).preview(text, now).trace("steer · queued")
+    fun steered(s: SessionState, text: String, now: Long, attachments: List<Attachment> = emptyList()) =
+        s.add(ChatItem.User(text, Delivery.Queued, attachments), now).preview(previewOf(text, attachments), now).trace("steer · queued")
 
     /** A message while the task waits for a screen (Pi hasn't started): it joins the task. */
-    fun joinTask(s: SessionState, text: String, now: Long) =
-        s.add(ChatItem.User(text), now).preview(text, now).copy(pendingTask = listOfNotNull(s.pendingTask, text).joinToString("\n\n"))
+    fun joinTask(s: SessionState, text: String, now: Long, attachments: List<Attachment> = emptyList()) =
+        s.add(ChatItem.User(text, attachments = attachments), now).preview(previewOf(text, attachments), now).copy(
+            pendingTask = listOfNotNull(s.pendingTask, text.ifBlank { null }).joinToString("\n\n"),
+            pendingAttachments = s.pendingAttachments + attachments,
+        )
 
     /** Pi's run ended just before a steered message reached it: that message starts the next task. */
     fun lateSteer(s: SessionState, text: String, queued: Boolean, now: Long) =
-        s.delivered(text).copy(error = null, streaming = "", pendingTask = text)
+        s.delivered(text).copy(error = null, streaming = "", pendingTask = text, pendingAttachments = s.queuedAttachments(text))
             .status(if (queued) SessionStatus.Queued else SessionStatus.Running, now).trace("steer · late, sent as a new message")
 
     fun stopped(s: SessionState, now: Long) =
-        s.copy(streaming = "", pendingTask = null).undelivered().status(SessionStatus.Idle, now).trace("stopped by user")
+        s.copy(streaming = "", pendingTask = null, pendingAttachments = emptyList()).undelivered().status(SessionStatus.Idle, now).trace("stopped by user")
 
     /** Pi's runtime died under this session: its run is over. */
     fun runtimeLost(s: SessionState, message: String, now: Long): SessionState =
         if (!s.busy) s.trace("runtime restarted")
-        else s.copy(streaming = "", pendingTask = null, error = message).undelivered().status(SessionStatus.Idle, now)
+        else s.copy(streaming = "", pendingTask = null, pendingAttachments = emptyList(), error = message).undelivered().status(SessionStatus.Idle, now)
             .add(ChatItem.Error(message), now).preview(message, now, error = true).trace("runtime restarted")
 
     fun withStatus(s: SessionState, status: SessionStatus, now: Long) = s.status(status, now)
@@ -102,6 +105,13 @@ object SessionReducer {
         "wait_for" -> a?.optJSONArray("ids")?.let { ids -> (0 until ids.length()).joinToString(", ") { ids.getString(it) } }.orEmpty()
         else -> ""
     }
+
+    /** The list shows the text, or the attached files' names for a message without text. */
+    private fun previewOf(text: String, attachments: List<Attachment>) = text.ifBlank { attachments.joinToString(", ") { it.name } }
+
+    /** The attachments of the oldest queued message with this text. */
+    private fun SessionState.queuedAttachments(text: String): List<Attachment> =
+        items.firstOrNull { it is ChatItem.User && it.delivery == Delivery.Queued && it.text == text }?.let { (it as ChatItem.User).attachments }.orEmpty()
 
     /** The oldest queued message with this text is delivered (an exact match: Pi echoes what was steered). */
     private fun SessionState.delivered(text: String): SessionState {

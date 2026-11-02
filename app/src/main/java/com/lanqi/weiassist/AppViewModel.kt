@@ -11,6 +11,8 @@ import androidx.lifecycle.viewModelScope
 import com.lanqi.weiassist.agent.AgentController
 import com.lanqi.weiassist.agent.AgentService
 import com.lanqi.weiassist.agent.AgentState
+import com.lanqi.weiassist.agent.Attachment
+import com.lanqi.weiassist.agent.Attachments
 import com.lanqi.weiassist.agent.AuthMethod
 import com.lanqi.weiassist.agent.SessionState
 import com.lanqi.weiassist.agent.SessionSummary
@@ -80,6 +82,35 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var input by mutableStateOf(prefs.getString("input", null) ?: app.getString(R.string.default_input))
     /** Reply box on a session's page. */
     var reply by mutableStateOf("")
+    /** Files attached to the new-session box ([inputAttachments]) and the reply box, not sent yet. */
+    val inputAttachments = androidx.compose.runtime.mutableStateListOf<Attachment>()
+    val replyAttachments = androidx.compose.runtime.mutableStateListOf<Attachment>()
+
+    /** Copy picked files in and add them to the new-session box ([toReply] false) or the reply box. */
+    fun attach(uris: List<android.net.Uri>, toReply: Boolean) {
+        val c = controller.value ?: return
+        val target = if (toReply) replyAttachments else inputAttachments
+        viewModelScope.launch {
+            for (u in uris) {
+                runCatching { c.attach(u) }
+                    .onSuccess { target += it }
+                    .onFailure { e ->
+                        val app = getApplication<Application>()
+                        val msg = when (e) {
+                            is Attachments.Unsupported -> app.getString(R.string.attach_unsupported, e.name)
+                            is Attachments.TooLarge -> app.getString(R.string.attach_too_large, e.name)
+                            else -> app.getString(R.string.attach_failed, e.message ?: e.javaClass.simpleName)
+                        }
+                        android.widget.Toast.makeText(app, msg, android.widget.Toast.LENGTH_LONG).show()
+                    }
+            }
+        }
+    }
+
+    fun removeAttachment(a: Attachment, fromReply: Boolean) {
+        (if (fromReply) replyAttachments else inputAttachments).remove(a)
+        Attachments.discard(listOf(a))
+    }
     /** New tasks may operate the phone (needs the accessibility service). */
     var phoneMode by mutableStateOf(prefs.getBoolean("phoneMode", false))
     /** Show the live screens of sessions that have used theirs (see usedScreen); the user may hide them. */
@@ -136,17 +167,27 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Start the typed task in a new session and open it. */
     fun startTask() {
         val c = controller.value ?: return
-        val text = input.trim().ifEmpty { return }
+        val text = input.trim()
+        val files = inputAttachments.toList()
+        if (text.isEmpty() && files.isEmpty()) return
         prefs.edit().putBoolean("phoneMode", phoneMode).putString("input", input).apply()
-        viewModelScope.launch { open(c.startTask(text, phoneMode)) }
+        inputAttachments.clear()
+        viewModelScope.launch { open(c.startTask(text, phoneMode, files)) }
     }
 
     /** A follow-up message in the open session (while it works, it steers the task). */
     fun sendReply() {
         val c = controller.value ?: return
         val id = openId.value ?: return
-        val text = reply.trim().ifEmpty { return }
-        viewModelScope.launch { if (c.sessions.send(id, text)) reply = "" }
+        val text = reply.trim()
+        val files = replyAttachments.toList()
+        if (text.isEmpty() && files.isEmpty()) return
+        viewModelScope.launch {
+            if (c.sessions.send(id, text, files)) {
+                reply = ""
+                replyAttachments.removeAll(files)
+            }
+        }
     }
 
     fun stop(id: String) = withAgent { stop(id) }

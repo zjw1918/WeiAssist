@@ -207,4 +207,12 @@
     <string name="steer_hint">Add to the task (read after this step)</string>
     <string name="steer_queued">Waiting for the current step</string>
     <string name="steer_not_delivered">Not delivered: the task stopped first</string>
+    <string name="attach">Attach</string>
+    <string name="attach_photos">Photos</string>
+    <string name="attach_files">Files (images, PDF, text)</string>
+    <string name="attach_remove">Remove</string>
+    <string name="attach_hint">Attach photos, PDFs or text files</string>
+    <string name="attach_unsupported">Can\'t attach %1$s: only images, PDFs and text files can be read.</string>
+    <string name="attach_too_large">%1$s is too large (30 MB at most).</string>
+    <string name="attach_failed">Couldn\'t attach the file: %1$s</string>
 </resources>

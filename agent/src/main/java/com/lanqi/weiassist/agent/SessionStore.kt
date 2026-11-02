@@ -15,6 +15,10 @@ import java.io.File
  */
 class SessionStore(root: File) {
     private val dir = File(root, "sessions").apply { mkdirs() }
+    private val attachmentsRoot = File(root, "attachments")
+
+    /** Where a session's attached files are kept (see Attachments.keep). */
+    fun attachmentsDir(id: String) = File(attachmentsRoot, id)
 
     private fun file(id: String, kind: String) = AtomicFile(File(dir, "$id.$kind.json"))
 
@@ -34,7 +38,10 @@ class SessionStore(root: File) {
     fun loadTranscript(id: String): JSONArray? = read(file(id, "pi"))?.let { runCatching { JSONArray(it) }.getOrNull() }
     fun saveTranscript(id: String, messages: JSONArray) = write(file(id, "pi"), messages.toString())
 
-    fun delete(id: String) = listOf("meta", "chat", "pi").forEach { file(id, it).delete() }
+    fun delete(id: String) {
+        listOf("meta", "chat", "pi").forEach { file(id, it).delete() }
+        attachmentsDir(id).deleteRecursively()
+    }
 
     private fun read(f: AtomicFile): String? = runCatching { String(f.readFully()) }.getOrNull()
 
@@ -66,6 +73,7 @@ class SessionStore(root: File) {
         fun itemJson(i: ChatItem): JSONObject = when (i) {
             is ChatItem.User -> JSONObject().put("k", "user").put("text", i.text)
                 .also { if (i.delivery != Delivery.Sent) it.put("delivery", i.delivery.name) }
+                .also { if (i.attachments.isNotEmpty()) it.put("attachments", JSONArray(i.attachments.map(Attachment::toJson))) }
             is ChatItem.Assistant -> JSONObject().put("k", "assistant").put("text", i.text)
             is ChatItem.Error -> JSONObject().put("k", "error").put("text", i.text)
             is ChatItem.Step -> JSONObject().put("k", "step").put("tool", i.tool).put("detail", i.detail)
@@ -77,7 +85,7 @@ class SessionStore(root: File) {
             "user" -> ChatItem.User(o.getString("text"), when (o.optString("delivery")) {
                 "Queued", "NotDelivered" -> Delivery.NotDelivered
                 else -> Delivery.Sent
-            })
+            }, Attachment.listFrom(o.optJSONArray("attachments")))
             "assistant" -> ChatItem.Assistant(o.getString("text"))
             "error" -> ChatItem.Error(o.getString("text"))
             "step" -> ChatItem.Step(o.getString("tool"), o.optString("detail"), if (o.isNull("ok")) null else o.getBoolean("ok"), o.optString("result"))

@@ -172,6 +172,40 @@ test("a custom provider's models keep their own context window and image support
 	assert.deepEqual(small.input, ["text"]);
 });
 
+// A 1×1 PNG.
+const PIXEL = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+test("attached images and files reach the model with the typed text; only the typed text is echoed", async () => {
+	const host = await startHost({ credentials: apiKeyCredentials });
+	const before = mock.requests.length;
+	host.call("configure", { session: "a1", provider: "openai", modelId: "gpt-5.4-mini", thinkingLevel: "low", baseUrl: mock.url });
+	await host.waitFor("configured");
+	host.call("prompt", { session: "a1", text: "what is this?", content: [
+		{ type: "text", text: '<attachment name="pic.png" type="image"/>' },
+		{ type: "image", mimeType: "image/png", data: PIXEL },
+		{ type: "text", text: '<attachment name="notes.txt">\nbuy llamas\n</attachment>' },
+	] });
+	await host.waitFor("idle");
+	assert.equal(host.messages.find((m) => m.type === "message_end" && m.role === "user").text, "what is this?");
+	const input = JSON.stringify(JSON.parse(mock.requests[before].body).input);
+	assert.match(input, /what is this\?/);
+	assert.match(input, /buy llamas/);
+	assert.ok(input.includes(`data:image/png;base64,${PIXEL}`), "the image is sent as an image");
+});
+
+test("a model that can't read images gets a note in place of an attached image", async () => {
+	const custom = { id: "custom-t", name: "T", baseUrl: mock.url, images: false, models: ["text-only"] };
+	const host = await startHost({ customProviders: [custom], credentials: JSON.stringify({ "custom-t": { type: "api_key", key: "k" } }) });
+	const before = mock.requests.length;
+	host.call("configure", { session: "a2", provider: "custom-t", modelId: "text-only", thinkingLevel: "off" });
+	await host.waitFor("configured");
+	host.call("prompt", { session: "a2", text: "", content: [{ type: "image", mimeType: "image/png", data: PIXEL }] });
+	await host.waitFor("idle");
+	const body = mock.requests[before].body;
+	assert.ok(!body.includes(PIXEL), "no image data sent");
+	assert.match(body, /can't see images/);
+});
+
 test("ChatGPT sign-in starts Pi's OAuth flow on the loopback port and can be cancelled", async () => {
 	const host = await startHost();
 	host.call("login", { provider: "openai", type: "oauth" });

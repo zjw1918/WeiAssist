@@ -216,9 +216,12 @@ class PiEngine(context: Context, private val agentName: String) {
         if (messages != null) cfg.put("messages", messages)
         call("configure", cfg)
     }
-    suspend fun prompt(session: String, text: String) = call("prompt", JSONObject().put("session", session).put("text", text))
+    /** [content]: Pi content blocks that go with [text] (attached images, files), or null. */
+    suspend fun prompt(session: String, text: String, content: org.json.JSONArray? = null) =
+        call("prompt", JSONObject().put("session", session).put("text", text).apply { if (content != null && content.length() > 0) put("content", content) })
     /** A message for a session that is working: Pi reads it after the current turn (Agent.steer). */
-    suspend fun steer(session: String, text: String) = call("steer", JSONObject().put("session", session).put("text", text))
+    suspend fun steer(session: String, text: String, content: org.json.JSONArray? = null) =
+        call("steer", JSONObject().put("session", session).put("text", text).apply { if (content != null && content.length() > 0) put("content", content) })
     suspend fun abort(session: String) = call("abort", JSONObject().put("session", session))
     /** Drop a session's Agent from the runtime (its saved transcript is the app's business). */
     suspend fun dispose(session: String) = call("dispose", JSONObject().put("session", session))

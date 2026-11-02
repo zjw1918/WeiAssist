@@ -321,7 +321,7 @@ function forward(session: string, event: AgentEvent) {
 			} else {
 				// A user message's text: Kotlin marks a steered message as delivered when Pi takes it.
 				const text = m.role === "user"
-					? (typeof m.content === "string" ? m.content : (m.content ?? []).filter((c: any) => c.type === "text").map((c: any) => c.text).join(""))
+					? typedText(m.content)
 					: undefined;
 				send({ type: "message_end", role: m.role, text });
 				// The user's message is in the transcript now: save, so a crash before the turn ends keeps it.
@@ -417,7 +417,31 @@ async function configure(cfg: Config) {
 	bridge({ type: "configured", session: cfg.session, provider: model.provider, model: model.id, api: model.api, baseUrl: model.baseUrl, auth: auth?.type ?? null, thinkingLevel, messages: history.length });
 }
 
-async function prompt(id: string, text: string) {
+/** Content blocks the app attaches to a message (Kotlin Attachments.content): text, or image. */
+type Block = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
+
+/**
+ * The user's message: typed [text], then attached files. A model that can't read images gets a note
+ * in place of each image, so it can say so instead of failing.
+ */
+function userMessage(s: Session, text: string, attached: Block[] = []): AgentMessage {
+	const images = s.agent.state.model.input.includes("image");
+	const content: Block[] = [];
+	if (text) content.push({ type: "text", text });
+	for (const b of attached) {
+		if (b.type === "image" && !images) content.push({ type: "text", text: "<attachment>(an image: the model in use can't see images; tell the user to pick one that can)</attachment>" });
+		else content.push(b);
+	}
+	if (content.length === 0) content.push({ type: "text", text: "(empty message)" });
+	return { role: "user", content, timestamp: Date.now() } as AgentMessage;
+}
+
+/** What the user typed in a user message: its text blocks, without the attached files (see userMessage). */
+const typedText = (content: any) =>
+	typeof content === "string" ? content
+		: (content ?? []).filter((c: any) => c.type === "text" && !c.text.startsWith("<attachment")).map((c: any) => c.text).join("");
+
+async function prompt(id: string, text: string, attached?: Block[]) {
 	const s = need(id);
 	if (s.running) throw new Error("this session is already working");
 	s.running = true;
@@ -425,7 +449,8 @@ async function prompt(id: string, text: string) {
 	s.supervisor?.reset();
 	try {
 		if (needsCompaction(s.agent.state.messages, s.agent.state.model.contextWindow)) await compactSession(s);
-		await s.agent.prompt(text);
+		if (attached?.length) await s.agent.prompt(userMessage(s, text, attached));
+		else await s.agent.prompt(text);
 		// Pi takes steered messages after each turn, also the last one; one that came in as the run was
 		// ending is still queued: go on with it, so nothing the user typed is left behind.
 		while (s.agent.hasQueuedMessages()) await s.agent.continue();
@@ -470,13 +495,14 @@ async function compactSession(s: Session, dropFailed = false): Promise<boolean> 
  * turn (Agent.steer), so the model reads it before its next step. If the run has already ended,
  * Kotlin is told (steer_late) and sends it as a new message.
  */
-function steer(id: string, text: string) {
+function steer(id: string, text: string, attached?: Block[]) {
 	const s = sessions.get(id);
 	if (!s?.running) {
+		// Kotlin still has the attachments (on its queued message) and sends them with the text.
 		bridge({ type: "steer_late", session: id, text });
 		return;
 	}
-	s.agent.steer({ role: "user", content: [{ type: "text", text }], timestamp: Date.now() } as AgentMessage);
+	s.agent.steer(userMessage(s, text, attached));
 }
 
 /** Stop: drop what the user queued too, so the run doesn't go on with it. */
@@ -534,8 +560,8 @@ const arg = (json: string) => JSON.parse(json);
 	},
 	logout: (json: string) => guard("logout", async () => { await models.logout(arg(json).provider); await status(); }),
 	configure: (json: string) => { const a = arg(json); guard("configure", () => configure(a), a.session); },
-	prompt: (json: string) => { const a = arg(json); guard("prompt", () => prompt(a.session, a.text), a.session); },
-	steer: (json: string) => { const a = arg(json); guard("steer", async () => steer(a.session, a.text), a.session); },
+	prompt: (json: string) => { const a = arg(json); guard("prompt", () => prompt(a.session, a.text, a.content), a.session); },
+	steer: (json: string) => { const a = arg(json); guard("steer", async () => steer(a.session, a.text, a.content), a.session); },
 	abort: (json: string) => abort(arg(json).session),
 	dispose: (json: string) => dispose(arg(json).session),
 	/** Sessions alive in this runtime (after a renderer restart this is empty: Kotlin reconfigures). */

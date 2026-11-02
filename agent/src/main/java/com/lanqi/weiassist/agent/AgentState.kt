@@ -71,7 +71,7 @@ enum class SessionStatus {
 /** One entry in a conversation, as the user sees it. */
 sealed interface ChatItem {
     /** [delivery]: a message typed while the session works waits for Pi to take it (Pi's steering). */
-    data class User(val text: String, val delivery: Delivery = Delivery.Sent) : ChatItem
+    data class User(val text: String, val delivery: Delivery = Delivery.Sent, val attachments: List<Attachment> = emptyList()) : ChatItem
     data class Assistant(val text: String) : ChatItem
     /** A tool the agent used: [ok] is null while it runs. */
     data class Step(val tool: String, val detail: String, val ok: Boolean? = null, val result: String = "") : ChatItem
@@ -113,6 +113,8 @@ data class SessionState(
     val trace: List<String> = emptyList(),
     /** The task that is queued or running (the latest user message). */
     val pendingTask: String? = null,
+    /** Files attached to [pendingTask]. */
+    val pendingAttachments: List<Attachment> = emptyList(),
 ) {
     val id get() = summary.id
     val status get() = summary.status

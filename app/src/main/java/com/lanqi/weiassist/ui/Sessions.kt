@@ -253,6 +253,12 @@ private fun NewSessionSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                 trailingIcon = if (vm.input.isEmpty()) null else { { ClearButton { vm.input = "" } } },
                 shape = MaterialTheme.shapes.medium,
             )
+            // Files for the first message: photos, PDFs, text files.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                AttachButton { vm.attach(it, toReply = false) }
+                if (vm.inputAttachments.isEmpty()) Text(stringResource(R.string.attach_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else AttachmentStrip(vm.inputAttachments, { vm.removeAttachment(it, fromReply = false) })
+            }
             if (vm.phoneMode && !accessibilityOn) Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.medium) {
                 Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
                     Text(stringResource(R.string.a11y_needed), color = MaterialTheme.colorScheme.onErrorContainer, style = MaterialTheme.typography.bodyMedium)
@@ -261,7 +267,7 @@ private fun NewSessionSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                     }
                 }
             }
-            Button(onClick = { vm.startTask(); onDismiss() }, enabled = vm.input.isNotBlank(), modifier = Modifier.fillMaxWidth().height(52.dp)) {
+            Button(onClick = { vm.startTask(); onDismiss() }, enabled = vm.input.isNotBlank() || vm.inputAttachments.isNotEmpty(), modifier = Modifier.fillMaxWidth().height(52.dp)) {
                 Text(stringResource(R.string.start))
             }
         }
@@ -463,7 +469,11 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
             ) {
                 if (s.status != SessionStatus.Idle) Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.End) { SessionActions(s, vm) }
                 // While it works, a message steers it: the model reads it after its current step.
-                Composer(vm.reply, { vm.reply = it }, stringResource(if (session.busy) R.string.steer_hint else R.string.reply_hint), onSend = vm::sendReply)
+                Composer(
+                    vm.reply, { vm.reply = it }, stringResource(if (session.busy) R.string.steer_hint else R.string.reply_hint), onSend = vm::sendReply,
+                    sendEnabled = vm.reply.isNotBlank() || vm.replyAttachments.isNotEmpty(),
+                    attachments = vm.replyAttachments, onAttach = { vm.attach(it, toReply = true) }, onRemoveAttachment = { vm.removeAttachment(it, fromReply = true) },
+                )
             }
         }
     }
@@ -512,7 +522,8 @@ private fun ChatRow(item: ChatItem) {
     when (item) {
         is ChatItem.User -> Column(Modifier.fillMaxWidth().padding(start = 48.dp), horizontalAlignment = Alignment.End) {
             val sent = item.delivery == Delivery.Sent
-            Text(
+            MessageAttachments(item.attachments, Modifier.padding(bottom = if (item.text.isBlank()) 0.dp else 6.dp))
+            if (item.text.isNotBlank()) Text(
                 item.text, style = MaterialTheme.typography.bodyLarge, color = if (sent) c.onPrimaryContainer else c.onSurfaceVariant,
                 modifier = Modifier.widthIn(max = 320.dp)
                     .background(if (sent) c.primaryContainer else c.surfaceContainerHigh, RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp))

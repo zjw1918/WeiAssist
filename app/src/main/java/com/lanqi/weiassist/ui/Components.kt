@@ -132,8 +132,15 @@ fun Composer(
     maxLines: Int = 5,
     containerColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
     extra: (@Composable () -> Unit)? = null,
+    /** With these, a "+" before the box attaches files, shown above it until sent. */
+    attachments: List<com.lanqi.weiassist.agent.Attachment> = emptyList(),
+    onAttach: ((List<android.net.Uri>) -> Unit)? = null,
+    onRemoveAttachment: (com.lanqi.weiassist.agent.Attachment) -> Unit = {},
 ) {
-    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(modifier.fillMaxWidth()) {
+    AttachmentStrip(attachments, onRemoveAttachment, Modifier.padding(start = 4.dp, bottom = 8.dp))
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(if (onAttach != null) 2.dp else 8.dp)) {
+        if (onAttach != null) Box(Modifier.padding(bottom = 4.dp)) { AttachButton(onAttach) }
         TextField(
             value, onValueChange,
             modifier = Modifier.weight(1f),
@@ -156,6 +163,7 @@ fun Composer(
             onClick = onSend, enabled = sendEnabled, modifier = Modifier.padding(bottom = 4.dp).size(48.dp),
             colors = IconButtonDefaults.filledIconButtonColors(),
         ) { AppIcon(R.drawable.ic_arrow_upward, stringResource(R.string.send)) }
+    }
     }
 }
 

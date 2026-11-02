@@ -10,7 +10,7 @@ Status legend: ✅ done · 🔨 next · ⬜ planned. Current status and todo: [P
 - ✅ **Resilience:** the app survives the Pi renderer dying (Pi restarts, credentials kept).
 
 - ✅ **Pi in the app:** pi-agent-core and pi-ai run in a hidden WebView, with native fetch and an encrypted credential store.
-- ✅ **Sign-in:** ChatGPT subscription or API key, both through Pi's own `models.login`.
+- ✅ **Sign-in:** ChatGPT subscription or an API key for any offered provider, through Pi's own `models.login`.
 - ✅ **Models:** model and thinking-level pickers filled from Pi.
 - ✅ **Phone tools:** Pi `AgentTool`s over an AccessibilityService (read screen, tap, type, scroll, keys, open app).
 - ✅ **Confirmation:** Send/Pay/Delete-like taps need the user's OK, via Pi's `beforeToolCall` and an overlay card.
@@ -46,7 +46,8 @@ Status legend: ✅ done · 🔨 next · ⬜ planned. Current status and todo: [P
 - ⬜ **Direct actions before UI automation:** intents for share, open URL, dial (with confirm), alarm/timer and calendar insert; contacts lookup with permission. Faster and more reliable than tapping.
 - ⬜ **Robustness:** wait for UI idle instead of fixed waits, verify each action's effect, recover from dialogs/keyboards/permission prompts, retry with backoff.
 - ⬜ **Skills:** per-app hints ("in Gmail, the Send button is the paper-plane") as small Markdown files, in the spirit of Pi's skills.
-- 🔨 **All of Pi's providers:** ChatGPT, OpenAI API and DeepSeek are in; Anthropic, Google, OpenRouter and local OpenAI-compatible servers to come.
+- ✅ **Providers:** 11 of Pi's (OpenAI, DeepSeek, OpenCode, Anthropic, Google, OpenRouter, xAI, Moonshot, Mistral) and the user's own OpenAI-compatible servers, with per-model context detection.
+- ✅ **Attachments:** images, PDFs (as page images) and text files in messages, with a full-screen image viewer.
 - ✅ **Long tasks:** a visible step list; the user can steer mid-task (Pi's `steer`/follow-up queue).
 
 ## 3. Experience
