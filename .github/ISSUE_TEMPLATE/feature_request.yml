@@ -1,0 +1,20 @@
+name: Feature request
+description: Suggest something WeiAssist should do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What do you want to get done?
+      description: The real task or problem, e.g. "reply to the last WeChat message from my mom".
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How should WeiAssist help?
+  - type: textarea
+    id: safety
+    attributes:
+      label: Safety and privacy
+      description: Could this send, pay, delete or reveal something? How should the user stay in control?

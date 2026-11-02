@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pi-host:
+    name: Pi host (typecheck, bundle, end-to-end tests)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: pi-host
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: pi-host/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npx tsc -p .
+      - run: npm test
+
+  android:
+    name: Android (lint, unit tests, debug APK)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7 # Gradle builds the Pi bundle with npm
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: pi-host/package-lock.json
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+      - uses: gradle/actions/setup-gradle@v6
+      - run: ./gradlew lint testDebugUnitTest assembleDebug --stacktrace
+      - uses: actions/upload-artifact@v7
+        with:
+          name: weiassist-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 14
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: reports
+          path: |
+            **/build/reports/lint-results-*.html
+            **/build/reports/tests/
+          retention-days: 14

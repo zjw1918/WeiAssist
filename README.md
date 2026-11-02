@@ -1,69 +1,66 @@
-# PhoneAgent · 小维助手 (spike: Pi on Android)
+# WeiAssist · 小维助手
 
-Milestone 0: send "你好" through **Pi** (github.com/earendil-works/pi, v1.4.0) to OpenAI and show the reply.
+**An open-source AI assistant that operates your Android phone for you.**
+Tell it what you want ("send an email to Aurora saying hello") and it opens the app, fills in the
+details and asks you before it presses Send.
 
-## Rule: use Pi as published
-Import only Pi's public package exports, and use its own APIs. Never patch or deep-import Pi internals; that way upgrading Pi is just `npm run upgrade-pi`.
-`npm run build` type-checks `pi-host/src` against Pi's published types first, so a breaking upgrade fails at build time.
+WeiAssist is built on **[Pi](https://github.com/earendil-works/pi)**, the minimal, extensible agent
+harness. Pi handles models, sign-in and the agent loop; WeiAssist gives it eyes and hands on Android.
 
-What we use from Pi:
-- `Agent`, `AgentTool` and the `beforeToolCall` hook;
-- `createModels`, `models.login` / `logout` / `streamSimple`, and the `CredentialStore` interface;
-- `getSupportedThinkingLevels` / `clampThinkingLevel`, `openaiProvider`, and `OPENAI_CODEX_MODELS`;
-- `registerBunOAuthFlows` (from `@earendil-works/pi-ai/bun-oauth`).
+> **Status: early development.** It works end to end on real devices, for example sending an email in
+> Gmail with a confirmation step. Expect rough edges. See the [roadmap](docs/ROADMAP.md).
 
-What we add is environment only, not Pi logic:
-- a `fetch`, a minimal `node:http` (the slice Pi's login flows use), and `node:crypto.randomBytes`;
-- the phone tools, which are ordinary `AgentTool`s.
+## What it can do today
 
-## How Pi runs on Android
-Pi is TypeScript. The CLI (`pi-coding-agent`) needs Node ≥ 22.19, which Android doesn't have
-(nodejs-mobile stops at Node 18). But Pi's two core layers are browser-safe and checked so upstream (`check:browser-smoke`):
-- `@earendil-works/pi-ai`: providers, auth, streaming (OpenAI, Anthropic, Google, DeepSeek, …)
-- `@earendil-works/pi-agent-core`: the `Agent` loop, tool calls, events
+- **Sign in your way:** with your **ChatGPT subscription** (Pi's "Sign in with ChatGPT") or an **OpenAI API key**. Credentials stay on the phone, encrypted with the Android Keystore.
+- **Pick a model and thinking level:** the list comes from Pi, filtered to what your sign-in can use.
+- **Operate other apps:** read the screen, tap, type, scroll, press keys and open apps, through an accessibility service you turn on yourself.
+- **Ask before anything irreversible:** Send, Pay and Delete need your OK on an on-screen card.
+- **Keep working in the background:** tasks run in a foreground service. Stop is always in the notification, and the result arrives as a notification.
+- **Stay out of your way:** it never touches WeiAssist itself, pauses while you look at it, and never sends password fields to the model.
+- **English and Chinese UI.**
 
-So `pi-host/` bundles those two packages (pinned 1.4.0) plus a ~90-line adapter (`src/host.ts`) with esbuild
-into `app/src/main/assets/pi/host.js`. `PiEngine.kt` loads it in a WebView that is never shown, served from
-`https://appassets.androidplatform.net` by `WebViewAssetLoader`. That WebView is used only to run JavaScript.
-- Kotlin → Pi: `evaluateJavascript("PiHost.configure|prompt|abort(json)")`
-- Pi → Kotlin: `PiBridge.postMessage(json)` through `WebViewCompat.addWebMessageListener`, accepted only from the app's own origin
+## Install
 
-Every model request is built by Pi's `openai-responses` adapter (the official `openai` JS SDK inside pi-ai);
-Kotlin only carries the bytes (see Networking).
+No release yet. Build from source (below), or download the debug APK from the latest CI run's artifacts.
+Then open WeiAssist, sign in, and to let it operate apps, turn it on under **Settings → Accessibility**.
 
 ## Build
-    cd pi-host && npm install --ignore-scripts && npm run build   # → app/src/main/assets/pi/
-    ./gradlew installDebug
 
-## Signing in (both methods are Pi's own)
-The welcome screen lists the auth methods Pi's `openai` provider declares, and `models.login()` runs them:
-- **ChatGPT subscription**: Pi's `openaiChatGPTOAuth` ("Sign in with ChatGPT"). This is PKCE with dynamic client
-  registration; the app introduces itself as 小维助手 and the token is used directly against api.openai.com.
-  - Chrome opens as a Custom Tab, and the redirect goes to `http://127.0.0.1:1455/auth/callback`.
-  - That port is a loopback socket in Kotlin (`LoopbackServer`) behind a `node:http` shim, and Pi's own handler checks state and answers.
-  - Pi's "paste the redirect URL" fallback is shown as "Chrome 没跳回来？".
-  - The flow is embedded with `registerBunOAuthFlows`, Pi's public export for bundled builds.
-- **API key**: Pi's `envApiKeyAuth` asks for a secret. API usage is billed separately from ChatGPT and needs
-  billing set up at platform.openai.com.
-- Pi's credential store is mirrored to Kotlin after every write (login, token refresh, logout) and kept
-  AES-GCM encrypted with an Android Keystore key (`SecureStore`). Pi refreshes ChatGPT tokens itself.
+Requirements: Android SDK (platform 37), Node per [`.nvmrc`](.nvmrc) with npm, and a JDK (Gradle provisions its own).
 
-## Networking: native fetch
-`globalThis.fetch` inside the WebView is replaced by `native-fetch.ts`, which hands each request to Kotlin
-(`NativeHttp`, HttpURLConnection) and streams the body back. This is needed because browsers enforce CORS,
-and OpenAI's error responses (401, 429…) carry no CORS headers, so the WebView reported every error as
-"Connection error". Node, Pi's home runtime, has no CORS either.
+```bash
+./gradlew assembleDebug     # also bundles Pi (pi-host/) into the app
+cd pi-host && npm test      # end-to-end tests of the bundled agent
+./gradlew testDebugUnitTest lint
+```
 
-## Test without spending tokens
-    node tools/mock-openai.mjs 8787      # logs every request Pi sends
-    adb reverse tcp:8787 tcp:8787
-then sign in (any API key works) and turn on "开发用：发到本地模拟服务器" (debug builds).
+How it fits together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Contributing: [CONTRIBUTING.md](CONTRIBUTING.md).
 
-## Models and thinking levels
-Both pickers are filled from Pi at runtime:
-- **Models:** `models.getModels("openai")`. With a ChatGPT sign-in, this is narrowed to Pi's `OPENAI_CODEX_MODELS` catalog, the models OpenAI offers to ChatGPT accounts. Others fail with `model_not_found … not supported when using Codex with a ChatGPT account`.
-- **Default model:** Pi CLI's default for the provider (`gpt-6.1-sol`).
-- **Thinking levels:** `getSupportedThinkingLevels(model)`. The chosen level goes into the Agent's `thinkingLevel` through `clampThinkingLevel`.
+## Privacy
 
-## Phones that freeze background apps (realme/ColorOS and others)
-`OplusHansManager` freezes the app about 30 s after Chrome takes the screen, even with a foreground service, a visible notification or the battery-optimization exemption. Chrome's callback then waits in the socket queue, and is answered when the app comes back. The sign-in screen and notification therefore tell the user: after Allow, tap ✕ (or the notification). The loopback server ignores clients that have hung up, and credentials are saved synchronously, before anything else can kill the process.
+WeiAssist has no servers. When you give it a task, the text you type and the relevant screen
+contents go to the AI provider you signed in with, and nowhere else. Password fields are never sent.
+Your sign-in is stored only on your phone. See [SECURITY.md](SECURITY.md).
+
+## License
+
+[Apache License 2.0](LICENSE). Bundled third-party software and its licenses are listed in [NOTICE](NOTICE).
+Pi is MIT-licensed by Mario Zechner. "ChatGPT" and "OpenAI" are trademarks of OpenAI; WeiAssist is
+not affiliated with OpenAI.
+
+---
+
+## 中文简介
+
+**小维助手**是一个开源的安卓 AI 助手：你说一句“给 Aurora 发封邮件说你好”，它就打开邮件应用、填好内容，并在点“发送”之前先问你。
+
+- 用 **ChatGPT 订阅**或 **OpenAI API key** 登录，凭据只保存在手机上（系统密钥库加密）
+- 模型和思考程度可选，列表来自 Pi
+- 通过你亲手开启的无障碍服务操作其他应用；发送、付款、删除前一定先问你
+- 任务在后台继续执行，通知栏随时可以“停止”，完成后用通知告诉你结果
+- 不会操作小维助手自己，你在看它时自动暂停；密码框内容从不发给模型
+- 界面支持中文和英文
+
+底层的智能体框架是 [Pi](https://github.com/earendil-works/pi)，我们只用它公开的接口，不改它的代码，方便跟着上游升级。
+构建方法见上文，参与开发请看 [CONTRIBUTING.md](CONTRIBUTING.md)。

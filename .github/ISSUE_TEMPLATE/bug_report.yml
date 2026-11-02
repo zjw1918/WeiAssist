@@ -1,0 +1,38 @@
+name: Bug report
+description: Something doesn't work as it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you asked WeiAssist to do, what you expected, and what it did instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. …\n2. …"
+  - type: input
+    id: device
+    attributes:
+      label: Phone and Android version
+      placeholder: e.g. Pixel 9, Android 16 / realme RMX2121, Android 12
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: WeiAssist version or commit
+  - type: input
+    id: model
+    attributes:
+      label: Sign-in and model
+      placeholder: e.g. ChatGPT subscription, gpt-6.1-sol, thinking medium
+  - type: textarea
+    id: trace
+    attributes:
+      label: Pi events (optional)
+      description: Copy the "Pi events" list from the app. Check it contains nothing private before posting.
+      render: text
