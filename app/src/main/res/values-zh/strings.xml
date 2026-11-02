@@ -214,4 +214,5 @@
     <string name="attach_unsupported">无法附加 %1$s：只能读取图片、PDF 和文本文件。</string>
     <string name="attach_too_large">%1$s 太大了（最大 30 MB）。</string>
     <string name="attach_failed">附件添加失败：%1$s</string>
+    <string name="step_screen">屏幕 %1$d 项</string>
 </resources>

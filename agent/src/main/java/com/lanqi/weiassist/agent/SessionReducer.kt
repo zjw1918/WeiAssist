@@ -32,11 +32,15 @@ object SessionReducer {
         }
         "tool_end" -> {
             val ok = !m.optBoolean("isError")
-            val out = m.optString("output").lineSequence().firstOrNull().orEmpty().take(80)
+            val output = m.optString("output")
+            val out = output.lineSequence().firstOrNull().orEmpty().take(80)
             // The open step of this tool is the last Step without a result.
             val i = s.items.indexOfLast { it is ChatItem.Step && it.ok == null && it.tool == m.optString("tool") }
-            val items = if (i < 0) s.items else s.items.toMutableList().also { it[i] = (it[i] as ChatItem.Step).copy(ok = ok, result = out) }
-            val app = Regex("^app: (\\S+)").find(m.optString("output"))?.groupValues?.get(1)
+            val items = if (i < 0) s.items else s.items.toMutableList().also {
+                it[i] = (it[i] as ChatItem.Step).copy(ok = ok, result = out, screen = m.optInt("screen"))
+            }
+            // The screen's app line: at the start of read_screen, after "Screen now:" for an action.
+            val app = APP_LINE.find(output)?.groupValues?.get(1)
             s.copy(items = items, summary = if (app != null) s.summary.copy(app = app) else s.summary).trace("  ${if (ok) "✓" else "✗"} $out")
         }
         "configured" -> s.trace("configured · ${m.optString("model")} · thinking=${m.optString("thinkingLevel")} → ${m.optString("baseUrl")} · auth=${m.optString("auth")} · history=${m.optInt("messages")}")
@@ -105,6 +109,8 @@ object SessionReducer {
         "wait_for" -> a?.optJSONArray("ids")?.let { ids -> (0 until ids.length()).joinToString(", ") { ids.getString(it) } }.orEmpty()
         else -> ""
     }
+
+    private val APP_LINE = Regex("""^app: (\S+)""", RegexOption.MULTILINE)
 
     /** The list shows the text, or the attached files' names for a message without text. */
     private fun previewOf(text: String, attachments: List<Attachment>) = text.ifBlank { attachments.joinToString(", ") { it.name } }

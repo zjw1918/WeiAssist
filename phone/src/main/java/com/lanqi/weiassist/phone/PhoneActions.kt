@@ -53,7 +53,7 @@ class PhoneActions(private val context: Context) {
         val d = t.displayId
         // After an action that may open a window, bring back any task the session's apps opened on the
         // phone's own screen (see reclaim), then wait for this display to settle.
-        suspend fun String.settled(maxMs: Long = 3_000) = also { svc.awaitIdle(d, maxMs = maxMs); svc.awaitContent(d) }.let { r ->
+        suspend fun String.settled(maxMs: Long = 3_000) = also { svc.awaitIdle(d, maxMs = maxMs); svc.awaitWindow(d); svc.awaitContent(d) }.let { r ->
             if (action in LAUNCHING && t.apps.isNotEmpty()) reclaim(t)?.let { "$r\n$it" } ?: r else r
         }
         return when (action) {

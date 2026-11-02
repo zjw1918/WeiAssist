@@ -77,7 +77,7 @@ class SessionStore(root: File) {
             is ChatItem.Assistant -> JSONObject().put("k", "assistant").put("text", i.text)
             is ChatItem.Error -> JSONObject().put("k", "error").put("text", i.text)
             is ChatItem.Step -> JSONObject().put("k", "step").put("tool", i.tool).put("detail", i.detail)
-                .put("ok", i.ok ?: JSONObject.NULL).put("result", i.result)
+                .put("ok", i.ok ?: JSONObject.NULL).put("result", i.result).also { if (i.screen > 0) it.put("screen", i.screen) }
         }
 
         fun itemFrom(o: JSONObject): ChatItem? = when (o.optString("k")) {
@@ -88,7 +88,9 @@ class SessionStore(root: File) {
             }, Attachment.listFrom(o.optJSONArray("attachments")))
             "assistant" -> ChatItem.Assistant(o.getString("text"))
             "error" -> ChatItem.Error(o.getString("text"))
-            "step" -> ChatItem.Step(o.getString("tool"), o.optString("detail"), if (o.isNull("ok")) null else o.getBoolean("ok"), o.optString("result"))
+            "step" -> ChatItem.Step(o.getString("tool"), o.optString("detail"), if (o.isNull("ok")) null else o.getBoolean("ok"),
+                // Only the first line is shown (a few builds kept whole screens here).
+                o.optString("result").lineSequence().first().take(80), o.optInt("screen"))
             else -> null
         }
     }

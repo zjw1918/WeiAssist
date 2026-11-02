@@ -78,6 +78,16 @@ class AgentAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * After an action settled: while [display] has no readable app window (one activity gone, the next not
+     * drawn yet: events go quiet in between), wait for one, at most [maxMs]. Else the screen read with the
+     * action's result is empty and the model spends a step reading it again.
+     */
+    suspend fun awaitWindow(display: Int, maxMs: Long = 2_000) {
+        val start = android.os.SystemClock.uptimeMillis()
+        while (rootOf(display) == null && android.os.SystemClock.uptimeMillis() - start < maxMs) kotlinx.coroutines.delay(100)
+    }
+
+    /**
      * After an action settled: while a large WebView on [display] is still empty (an email body, a web
      * page loading after the native screen went quiet), wait for its content, at most [maxMs].
      */

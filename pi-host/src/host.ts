@@ -335,7 +335,10 @@ function forward(session: string, event: AgentEvent) {
 		case "tool_execution_end": {
 			const r = (event as any).result;
 			const out = (r?.content ?? []).filter((c: any) => c.type === "text").map((c: any) => c.text).join("");
-			send({ type: "tool_end", tool: event.toolName, isError: !!(event as any).isError, output: out.slice(0, 300) });
+			// The page shows the first line; `screen` counts the elements of a screen in the result (actions
+			// return the screen they leave), so a step can say it read one without the app keeping it.
+			const screen = /^app: /m.test(out) ? (out.match(/^\[\d+\]/gm)?.length ?? 0) : 0;
+			send({ type: "tool_end", tool: event.toolName, isError: !!(event as any).isError, output: out.slice(0, 300), screen });
 			break;
 		}
 		case "turn_end":

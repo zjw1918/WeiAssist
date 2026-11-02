@@ -460,7 +460,8 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
                         modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.small).padding(10.dp),
                     )
                 }
-                items(session.items.size) { i -> ChatRow(session.items[i]) }
+                // Keyed by session too: state kept per row (an expanded step) stays with its session.
+                items(session.items.size, key = { i -> "${session.id}:$i" }) { i -> ChatRow(session.items[i]) }
                 if (session.streaming.isNotEmpty()) item { ChatRow(ChatItem.Assistant(session.streaming)) }
             }
             Column(
@@ -541,16 +542,28 @@ private fun ChatRow(item: ChatItem) {
             item.text, color = c.onErrorContainer, style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.fillMaxWidth().background(c.errorContainer, MaterialTheme.shapes.small).padding(horizontal = 12.dp, vertical = 8.dp),
         )
-        is ChatItem.Step -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 2.dp)) {
-            when (item.ok) {
-                null -> Box(Modifier.size(14.dp), contentAlignment = Alignment.Center) { Box(Modifier.size(6.dp).background(c.outline, CircleShape)) }
-                true -> AppIcon(R.drawable.ic_check_circle, null, Modifier.size(14.dp), tint = c.outline)
-                false -> AppIcon(R.drawable.ic_cancel, null, Modifier.size(14.dp), tint = c.error)
-            }
-            Text(
-                "  ${item.tool} ${item.detail}", fontFamily = FontFamily.Monospace, fontSize = 12.sp,
-                color = if (item.ok == false) c.error else c.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            )
+        is ChatItem.Step -> StepRow(item)
+    }
+}
+
+/** One tool step: its name and argument, and whether it read the screen (actions return the screen they leave). */
+@Composable
+private fun StepRow(item: ChatItem.Step) {
+    val c = MaterialTheme.colorScheme
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 2.dp)) {
+        when (item.ok) {
+            null -> Box(Modifier.size(14.dp), contentAlignment = Alignment.Center) { Box(Modifier.size(6.dp).background(c.outline, CircleShape)) }
+            true -> AppIcon(R.drawable.ic_check_circle, null, Modifier.size(14.dp), tint = c.outline)
+            false -> AppIcon(R.drawable.ic_cancel, null, Modifier.size(14.dp), tint = c.error)
         }
+        Text(
+            "  ${item.tool} ${item.detail}", fontFamily = FontFamily.Monospace, fontSize = 12.sp,
+            color = if (item.ok == false) c.error else c.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f, fill = false),
+        )
+        if (item.screen > 0) Text(
+            "  · " + stringResource(R.string.step_screen, item.screen),
+            style = MaterialTheme.typography.labelSmall, color = c.primary, maxLines = 1,
+        )
     }
 }

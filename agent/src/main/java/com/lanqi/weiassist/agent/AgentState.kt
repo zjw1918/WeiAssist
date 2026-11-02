@@ -73,8 +73,12 @@ sealed interface ChatItem {
     /** [delivery]: a message typed while the session works waits for Pi to take it (Pi's steering). */
     data class User(val text: String, val delivery: Delivery = Delivery.Sent, val attachments: List<Attachment> = emptyList()) : ChatItem
     data class Assistant(val text: String) : ChatItem
-    /** A tool the agent used: [ok] is null while it runs. */
-    data class Step(val tool: String, val detail: String, val ok: Boolean? = null, val result: String = "") : ChatItem
+    /**
+     * A tool the agent used: [ok] is null while it runs; [result] is the first line of what it returned.
+     * [screen] counts the elements of the screen the model got with it (actions return the screen they
+     * leave, read_screen is one), 0 if none: the page shows that a step read the screen without keeping it.
+     */
+    data class Step(val tool: String, val detail: String, val ok: Boolean? = null, val result: String = "", val screen: Int = 0) : ChatItem
     data class Error(val text: String) : ChatItem
 }
 

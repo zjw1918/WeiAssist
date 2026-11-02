@@ -52,6 +52,17 @@ class SessionReducerTest {
         assertEquals("com.taobao.taobao", s.summary.app)
     }
 
+    @Test fun `an action's step keeps the first line and the size of the screen it returned`() {
+        var s = reduce(running, msg("tool_start", "tool" to "tap", "args" to JSONObject().put("id", 3)))
+        val output = "tapped [3]\n\nScreen now:\napp: com.google.android.gm  screen: 720x1600\n[1] ScrollView @360,800"
+        s = reduce(s, msg("tool_end", "tool" to "tap", "isError" to false, "output" to output, "screen" to 2))
+        val step = s.items.last() as ChatItem.Step
+        assertEquals("tapped [3]", step.result)
+        assertEquals(2, step.screen)
+        assertEquals("com.google.android.gm", s.summary.app)
+        assertEquals(step, SessionStore.itemFrom(SessionStore.itemJson(step)))
+    }
+
     @Test fun `errors end the task, are made friendly and shown`() {
         val s = SessionReducer.reduce(running, msg("error", "message" to "401"), now = 5, friendly = { "friendly:$it" })
         assertFalse(s.busy)
