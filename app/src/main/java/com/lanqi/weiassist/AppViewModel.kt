@@ -117,7 +117,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun debugCrashRuntime() { if (BuildConfig.DEBUG) withAgent { debugCrashRuntime() } }
 
     // ---- sessions ---------------------------------------------------------------------------------
-    fun open(id: String?) { openId.value = id; reply = "" }
+    fun open(id: String?) {
+        openId.value = id
+        reply = ""
+        controller.value?.sessions?.view(id) // leaving an idle phone session closes its apps
+    }
 
     /** Start the typed task in a new session and open it. */
     fun startTask() {

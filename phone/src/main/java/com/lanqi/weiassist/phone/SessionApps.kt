@@ -3,7 +3,7 @@ package com.lanqi.weiassist.phone
 import android.util.Log
 
 /**
- * When a session's task ends, close what it opened on its display, so apps don't stay alive in the
+ * When a session gives its display up, close what it opened there, so apps don't stay alive in the
  * background (using memory, or frozen by the system and slowing the phone):
  * - its windows (root tasks on its display) are removed;
  * - then each app is killed, unless it was running before the session opened it (the user's, e.g. a chat

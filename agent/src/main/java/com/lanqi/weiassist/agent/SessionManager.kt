@@ -57,6 +57,10 @@ class SessionManager(
     /** Bumped per session when the user stops it, so a gate waiting in a paused session gives up. */
     private val stops = HashMap<String, Int>()
     private val queue = ArrayDeque<String>()
+    /** The session whose page the user has open ([view]). */
+    private var viewing: String? = null
+    /** Sessions the user left while they worked: their apps close as soon as the task ends. */
+    private val leftWhileBusy = HashSet<String>()
     /**
      * Sessions whose task Pi has been given (PiHost.prompt called) and not yet ended: only these can be
      * steered. Calls to Pi run in order, so a steer after the prompt always finds Pi's run.
@@ -87,6 +91,19 @@ class SessionManager(
         val n = (watchers[id] ?: 1) - 1
         if (n <= 0) watchers.remove(id) else watchers[id] = n
         evictIfUnused(id)
+    }
+
+    /**
+     * The user opened session [id]'s page, or went back to the list (null). Leaving an idle phone session
+     * closes its apps and gives its display up (a later message opens the app afresh); leaving a working
+     * one does so when its task ends. Only navigation counts: the app going to the background doesn't.
+     */
+    fun view(id: String?) {
+        val left = viewing
+        viewing = id
+        if (id != null) leftWhileBusy -= id
+        if (left == null || left == id) return
+        if (summary(left)?.status?.active == true) leftWhileBusy += left else releaseScreen(left, now = true)
     }
 
     private suspend fun loadLive(id: String): MutableStateFlow<SessionState>? {
@@ -213,7 +230,7 @@ class SessionManager(
         queue.remove(id)
         if (s.status != SessionStatus.Queued) scope.launch { pi.abort(id) }
         update(id) { SessionReducer.stopped(it, System.currentTimeMillis()) }
-        releaseScreen(id, now = false) // kept a while: the user may correct the task and go on
+        endScreen(id) // kept a while if the user is on its page: they may correct the task and go on
     }
 
     fun stopAll() = live.values.map { it.value }.filter { it.busy }.forEach { stop(it.id) }
@@ -244,7 +261,7 @@ class SessionManager(
         stop(id)
         onEnded(id, true)
         screens.release(id)
-        live.remove(id); watchers.remove(id); paused.remove(id); stops.remove(id); configured.remove(id)
+        live.remove(id); watchers.remove(id); leftWhileBusy.remove(id); paused.remove(id); stops.remove(id); configured.remove(id)
         pendingWrites.remove(id)?.cancel()
         _summaries.update { l -> l.filterNot { it.id == id } }
         scope.launch { pi.dispose(id) }
@@ -304,10 +321,13 @@ class SessionManager(
 
     private fun finished(id: String) {
         prompted -= id
-        releaseScreen(id, now = false)
+        endScreen(id)
         _finished.tryEmit(id)
         evictIfUnused(id)
     }
+
+    /** The task ended: the screen is kept a while for a follow-up, unless the user already left the session's page. */
+    private fun endScreen(id: String) = releaseScreen(id, now = leftWhileBusy.remove(id))
 
     /**
      * The session's task ended ([now] = false: its screen may be kept for a follow-up) or it was stopped

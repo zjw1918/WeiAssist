@@ -36,15 +36,17 @@ class MainScreenPool : ScreenPool {
 }
 
 /**
- * Virtual displays from the shell helper, at most [max] at once. A display stays with its session for
- * [keepIdleMs] after a task ends (a follow-up message finds the app as it was), unless another session
- * needs the room. Falls back to [fallback] (the phone's own screen) while the helper isn't running.
+ * Virtual displays from the shell helper, at most [max] at once. A display stays with its session, its
+ * apps open as the task left them, for [keepIdleMs] after a task ends: a follow-up message carries on
+ * where it was. The session's apps are closed when the display is given up: after that time, when
+ * another session needs the room, or when the session is deleted.
+ * Falls back to [fallback] (the phone's own screen) while the helper isn't running.
  */
 class DisplayScreenPool(
     private val shell: ShellBackend,
     private val fallback: ScreenPool = MainScreenPool(),
     private val max: Int = 3,
-    private val keepIdleMs: Long = 3 * 60_000,
+    private val keepIdleMs: Long = 10 * 60_000,
 ) : ScreenPool {
     private class Lease(val target: Target.Virtual, var idleSince: Long? = null)
 
@@ -57,6 +59,8 @@ class DisplayScreenPool(
     /** Whether a session is working now (set by the owner; see [guard]). */
     var isActive: (String) -> Boolean = { true }
     private val leases = LinkedHashMap<String, Lease>()
+    /** Gives up idle displays on time, even when nothing else happens meanwhile. */
+    private val timer = android.os.Handler(android.os.Looper.getMainLooper())
     /** Closing apps and releasing displays: binder calls and `am`, off the caller's thread, in order. */
     private val closer = java.util.concurrent.Executors.newSingleThreadExecutor()
 
@@ -91,10 +95,10 @@ class DisplayScreenPool(
     @Synchronized override fun idle(session: String) {
         leases[session]?.let { l ->
             l.idleSince = SystemClock.uptimeMillis()
-            // Nothing happens on it until the next task: stop its apps drawing (the last picture stays),
-            // then close them, so they don't stay alive in the background.
+            // Nothing happens on it until the next task: stop its apps drawing (the last picture stays).
+            // They stay open for a follow-up; release() closes them when the display is given up.
             setActive(l.target.displayId, false)
-            closer.execute { SessionApps.close(l.target) { synchronized(this) { leases[session] === l && l.idleSince != null } } }
+            timer.postDelayed(::sweep, keepIdleMs + 1_000)
         }
         fallback.idle(session)
         sweep()
