@@ -2,7 +2,12 @@
 
 Status of WeiAssist (小维助手). Updated as work lands. For the long-term plan see [ROADMAP.md](ROADMAP.md).
 
-_Last updated: 2026-11-01_
+_Last updated: 2026-11-02_
+
+**Where things stand:** multiple concurrent sessions with saved history; a built-in shell backend (no
+computer, Shizuku or root needed after one pairing); a virtual display per phone session; live previews;
+and a supervisor session that manages the others in words, ready for voice. All on `main`, verified on the
+realme (Android 12) with the mock and the real model.
 
 ## Done
 
@@ -19,12 +24,13 @@ _Last updated: 2026-11-01_
   - Stop in the notification;
   - a result notification when the app isn't visible;
   - tasks survive closing the app.
-- **Modules:** `:pi-runtime` (generic `registerHostCall`) · `:phone` · `:agent` · `:app`; package `com.lanqi.weiassist`.
+- **Modules:** `:pi-runtime` (generic `registerHostCall`) · `:phone` · `:shell` · `:agent` · `:app`; package `com.lanqi.weiassist`.
 - **Build:** Gradle builds the Pi bundle (`buildPiHost<Variant>`); no generated files are committed.
 - **i18n:** English (default) and Chinese, with per-app language on Android 13+.
-- **Tests:**
-  - 16 JVM tests (`AgentReducer`);
-  - 11 end-to-end tests of the shipped bundle (`pi-host/test`) over the real bridge protocol, with a mock provider and scripted tool calls.
+- **Tests** (as of 2026-11-02):
+  - 36 JVM tests: `AgentReducer` 11, `SessionReducer` 12, `SessionText` 5, `DisplayTasks` 3, adb crypto and framing 5;
+  - 19 end-to-end tests of the shipped bundle (`pi-host/test`) over the real bridge protocol, with a mock provider
+    and scripted tool calls (sessions, restore, pause gate, supervisor tools).
 - **Project files:** CI workflow, README (en and zh), ARCHITECTURE, CONTRIBUTING, Code of Conduct, SECURITY, Apache-2.0 and NOTICE.
 
 ### Agent capabilities
@@ -115,19 +121,31 @@ _Last updated: 2026-11-01_
   scripted task at its third step; after a renderer crash the next message carried the whole conversation.
 - Sessions (real model): "打开设置，告诉我安卓版本号" and a chat question at the same time; both answered.
 
-## Next: multi-session, steps 2–5
+## Multi-session work: done (2026-11-01 – 11-02)
 
-- [x] **2. Built-in shell backend:** pairing, adb over TLS, shell helper with Binder link. Not yet: tested across a reboot.
-- [x] **3. A virtual display per phone session:** create/launch/input through the helper; read screens per display through accessibility.
-- [x] **4. Live previews:** in the session page and the list; adaptive frame rate; nothing sent when hidden; idle displays asleep.
-- [x] **5. Supervisor session:** manages the other sessions in words (create, message, wait, pause, resume, stop, delete); voice-ready.
+All five steps are merged into `main` (`e474abc` … `12b5668`):
+- [x] **1. Sessions:** concurrent sessions, saved history, recovery after process death and runtime crashes.
+- [x] **2. Built-in shell backend:** pairing, adb over TLS, shell helper with a Binder link.
+- [x] **3. A virtual display per phone session:** created, driven and read per display; same-app guard.
+- [x] **4. Live previews:** session page and list; adaptive frame rate; nothing sent when hidden; idle displays asleep.
+- [x] **5. Supervisor session:** manages the other sessions in words; voice through the phone's speech recognizer.
+
+Open points from this work:
+- [ ] **Reboot:** the shell backend is not yet tested across a reboot (Wireless debugging turns off then; on ColorOS
+  the user turns it on again, the helper then starts by itself).
+- [ ] **Helper memory:** about 89 MB PSS (an app_process outside zygote plus the system context); try a lighter context.
+- [ ] **Connect-port scan:** about 10 s the first time on ROMs that announce nothing (then cached); could stop at the
+  first adbd-like port sooner or scan likely ranges first.
+- [ ] **Same app in two sessions:** impossible (one process, single-task apps move between displays); the supervisor
+  is told to wait. A per-app queue could wait automatically instead of failing.
+- [ ] **Supervisor history:** it is one long conversation; add "new conversation" for it.
+- [ ] **Instrumented tests** for SessionManager, ScreenPool and the helper (today: JVM, pi-host and on-device runs).
 
 ## Next: real-world scenarios on the device
 
-Blocked on the user, because the app was reinstalled under the new package:
-- [ ] Sign in to WeiAssist again (ChatGPT).
-- [ ] Turn on WeiAssist under Settings → Accessibility.
-- [ ] Decide whether to install Bilibili / Xiaohongshu / Pinduoduo (not installed now).
+Ready: signed in (ChatGPT), Accessibility on, Wireless debugging paired (the shell backend runs).
+Still up to the user:
+- [ ] Decide whether to install Bilibili / Pinduoduo (Xiaohongshu is installed).
 - [ ] Be signed in to Taobao / JD for the shopping test.
 
 Scenarios to build, test and refine (installed apps first):
@@ -138,12 +156,14 @@ Scenarios to build, test and refine (installed apps first):
   - recommend one and add it to the cart;
   - ordering waits for the user's explicit approval (the confirmation card).
 - [ ] **Daily productivity, Gmail (and Outlook):** check new mail, summarise the important ones, extract action items, build a prioritised to-do list for the day.
+- [ ] **Parallel versions through the supervisor:** e.g. "compare this product on Taobao and JD at the same time".
 - [ ] For each scenario, log failures (wrong taps, missed content, loops, pop-ups) and fix them in tools, prompt or recovery logic.
 
 ## Known gaps and todo
 
 - [ ] **Readable confirmation card:** show the target app and a summary (recipient, item and price) instead of raw field lines.
-- [ ] **Chat-style home screen:** message history, markdown rendering, friendly step cards. The raw Pi trace goes in an "advanced" view.
+- [ ] **Markdown in answers:** the session page has chat history and step cards (and the raw Pi trace under ⋯), but
+  answers are shown as plain text.
 - [ ] **Ask-the-user tool**, for mid-task questions (preferences, choosing between options) without ending the task.
 - [ ] **Direct intents** where they beat UI automation: share, open URL, alarm, calendar.
 - [ ] **Per-app permissions** (allow / ask / never) and sensitive-screen detection (FLAG_SECURE, payment, OTP).
@@ -160,4 +180,16 @@ Scenarios to build, test and refine (installed apps first):
 - Debug: `--ez crashPi true` crashes Pi's renderer; `--ez killProcess true` ends the process (session recovery).
 - Never `am force-stop` the app on realme: that disables its accessibility service.
 - UI dumps of our own Compose screen can be stale; use screenshots to locate buttons.
-- Mock provider: `node tools/mock-openai.mjs` with `adb reverse tcp:8787 tcp:8787`, then the dev switch in the app.
+- Mock provider: `node tools/mock-openai.mjs` with `adb reverse tcp:8787 tcp:8787`, then the dev switch in the app
+  (or `--ez mock true`). Scripts for devices: `settings`, `douban`, `browse_settings`, `browse_gmail`, `supervise`,
+  `supervise_phone` (a message containing `[[script:NAME]]`).
+- Debug: `--es supervise '…'` says it to the supervisor; `--ez shellStart true` starts the shell helper through
+  Wireless debugging.
+- The shell helper logs to `/data/local/tmp/weiassist_shell.log`; displays show in `dumpsys display` as `weiassist-<session>`.
+- `uiautomator dump` unbinds the app's accessibility service while it runs: an open confirmation card is then
+  answered "no". While a card is up, use screenshots and tap by coordinates.
+- The logcat buffer is 256 KB and floods on ColorOS: `adb logcat -G 8M`, and filter by pid.
+- Measuring: `top -b -n 2 -d 3` (the first block averages since process start); measure release builds (debug
+  Compose runs interpreted): `assembleRelease`, zipalign, sign with the debug keystore, install over debug.
+  The app is profileable: `simpleperf record --app com.lanqi.weiassist -e cpu-clock -g`; deobfuscate with
+  `app/build/outputs/mapping/release/mapping.txt`. UI frame rate: `dumpsys gfxinfo` "Total frames rendered".
