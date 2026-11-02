@@ -97,4 +97,8 @@
     <string name="shell_test">测试</string>
     <string name="live_screens">实时画面</string>
     <string name="live_screen_of">%1$s 的画面</string>
+    <string name="supervisor">总管</string>
+    <string name="supervisor_hint">告诉我要做什么：我会开启多个对话并行处理，可以暂停、停止它们，并在它们之间传递结果。</string>
+    <string name="supervisor_placeholder">例如「在淘宝和京东比较这款手机的价格」</string>
+    <string name="open">打开</string>
 </resources>

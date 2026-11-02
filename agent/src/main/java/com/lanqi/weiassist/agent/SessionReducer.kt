@@ -77,6 +77,12 @@ object SessionReducer {
         "scroll" -> a?.optString("direction").orEmpty()
         "press_key" -> a?.optString("key").orEmpty()
         "wait" -> "${a?.optInt("ms")} ms"
+        // the supervisor's tools
+        "create_session" -> a?.optString("title").orEmpty().ifBlank { a?.optString("task").orEmpty().take(40) }
+        "send_message" -> "${a?.optString("id")}: “${a?.optString("text").orEmpty().take(40)}”"
+        "get_session", "pause_session", "resume_session", "stop_session", "delete_session" -> a?.optString("id").orEmpty()
+        "rename_session" -> "${a?.optString("id")} → ${a?.optString("title")}"
+        "wait_for" -> a?.optJSONArray("ids")?.let { ids -> (0 until ids.length()).joinToString(", ") { ids.getString(it) } }.orEmpty()
         else -> ""
     }
 

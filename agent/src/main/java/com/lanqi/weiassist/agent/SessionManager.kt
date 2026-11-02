@@ -101,13 +101,24 @@ class SessionManager(
 
     fun summary(id: String) = _summaries.value.firstOrNull { it.id == id }
 
+    /** The supervisor session (created on first use). */
+    fun supervisor(title: String): String = _summaries.value.firstOrNull { it.supervisor }?.id ?: create(phone = false, title = title, supervisor = true)
+
+    /** A session as it is now, without keeping it in memory (read from disk if it isn't there). */
+    suspend fun snapshot(id: String): SessionState? {
+        live[id]?.let { return it.value }
+        val summary = summary(id) ?: return null
+        val items = withContext(io) { store.loadItems(id) }
+        return SessionState(summary, items.takeLast(SessionReducer.MAX_ITEMS))
+    }
+
     // ---- commands -------------------------------------------------------------------------------------
 
-    /** A new, empty session. [phone] = it may operate the phone. */
-    fun create(phone: Boolean, title: String = ""): String {
+    /** A new, empty session. [phone] = it may operate the phone; [supervisor] = it manages the others. */
+    fun create(phone: Boolean, title: String = "", supervisor: Boolean = false): String {
         val now = System.currentTimeMillis()
         val id = UUID.randomUUID().toString().substring(0, 8)
-        val summary = SessionSummary(id, title, phone, SessionStatus.Idle, now, now)
+        val summary = SessionSummary(id, title, phone && !supervisor, SessionStatus.Idle, now, now, supervisor = supervisor)
         live[id] = MutableStateFlow(SessionState(summary))
         publish(summary)
         scope.launch(io) { store.saveSummary(summary) }
@@ -141,11 +152,12 @@ class SessionManager(
         scope.launch {
             val (model, thinking, mock) = settings()
             val phone = s.summary.phone
-            val config = listOf(model, thinking, mock, phone).joinToString("|")
+            val tools = when { s.summary.supervisor -> "supervisor"; phone -> "phone"; else -> null }
+            val config = listOf(model, thinking, mock, tools).joinToString("|")
             if (configured[id] != config) {
                 // First use in this runtime: give Pi the saved conversation back.
                 val history = if (id !in configured) withContext(io) { store.loadTranscript(id) } else null
-                pi.configure(id, AgentController.PROVIDER, model, thinking, mock, tools = if (phone) "phone" else null, messages = history)
+                pi.configure(id, AgentController.PROVIDER, model, thinking, mock, tools = tools, messages = history)
                 configured[id] = config
             }
             pi.prompt(id, task)

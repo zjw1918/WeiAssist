@@ -38,6 +38,29 @@ export const SCRIPTS = {
 		[1, 2, 3, 4, 5, 6].flatMap((i) => [{ tool: "swipe", args: { direction: i % 3 ? "up" : "down" } }, { tool: "wait", args: { ms: 2500 } }]),
 		[{ text: "browsed Gmail" }],
 	),
+	// The supervisor: start a chat session, wait for it, pass something on, read it back.
+	supervise: [
+		{ tool: "list_sessions", args: {} },
+		{ tool: "create_session", args: { task: "Say hello in one word.", phone: false, title: "Hello helper" } },
+		{ tool: "wait_for", args: { ids: ["Hello helper"], timeout_seconds: 60 } },
+		{ tool: "send_message", args: { id: "Hello helper", text: "Now say goodbye in one word." } },
+		{ tool: "wait_for", args: { ids: ["Hello helper"], timeout_seconds: 60 } },
+		{ tool: "get_session", args: { id: "Hello helper" } },
+		{ text: "The helper said hello and goodbye." },
+	],
+	// Two phone sessions at once, coordinated by the supervisor.
+	supervise_phone: [
+		{ tool: "create_session", args: { task: "do it [[script:settings]]", phone: true, title: "Settings worker" } },
+		{ tool: "create_session", args: { task: "do it [[script:browse_gmail]]", phone: true, title: "Gmail worker" } },
+		{ tool: "list_sessions", args: {} },
+		{ tool: "pause_session", args: { id: "Gmail worker" } },
+		{ tool: "wait_for", args: { ids: ["Settings worker"], timeout_seconds: 120 } },
+		{ tool: "resume_session", args: { id: "Gmail worker" } },
+		{ tool: "wait_for", args: { ids: ["Gmail worker"], timeout_seconds: 120 } },
+		{ tool: "delete_session", args: { id: "Settings worker" } },
+		{ text: "Both workers finished." },
+	],
+	creates: Array.from({ length: 9 }, (_, i) => ({ tool: "create_session", args: { task: `t${i}`, phone: false } })).concat([{ text: "tried nine" }]),
 	douban: [
 		{ tool: "open_app", args: { app: "com.douban.frodo" } },
 		{ tool: "read_screen", args: {} },

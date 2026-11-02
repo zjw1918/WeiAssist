@@ -55,8 +55,12 @@ class MainActivity : ComponentActivity() {
     var debugPhone = true
     var debugMock: Boolean? = null
 
+    /** Debug builds: `--es supervise "…"` says it to the supervisor. */
+    val debugSupervise = androidx.compose.runtime.mutableStateOf<String?>(null)
+
     private fun readDebug(i: android.content.Intent) {
         if (!BuildConfig.DEBUG) return
+        i.getStringExtra("supervise")?.let { debugSupervise.value = it; debugMock = if (i.hasExtra("mock")) i.getBooleanExtra("mock", false) else null }
         val task = i.getStringExtra("task") ?: return
         debugRun = i.getBooleanExtra("run", false)
         debugPhone = i.getBooleanExtra("phone", true)
@@ -99,6 +103,12 @@ fun MainActivity.App(vm: AppViewModel = viewModel()) {
         vm.input = task; vm.phoneMode = debugPhone; debugTask.value = null
         debugMock?.let(vm::setMock) // `--ez mock true`: the local mock model
         if (debugRun) { debugRun = false; vm.startTask() }
+    }
+    LaunchedEffect(debugSupervise.value, s.screen) {
+        val text = debugSupervise.value ?: return@LaunchedEffect
+        if (s.screen != Screen.Connected) return@LaunchedEffect
+        debugMock?.let(vm::setMock); debugSupervise.value = null
+        vm.askSupervisor(text)
     }
     LaunchedEffect(openSession.value) { openSession.value?.let { vm.open(it); openSession.value = null } }
     // Pi asks for the sign-in page to be opened; show it in Chrome as a Custom Tab.

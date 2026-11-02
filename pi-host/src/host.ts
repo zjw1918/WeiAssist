@@ -24,6 +24,7 @@ import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { bridge, bridgeCall, settle } from "./bridge.ts";
 import { fetchEvents, nativeFetch } from "./native-fetch.ts";
 import { PhoneSession, phoneSystemPrompt, pruneOldScreens } from "./phone-tools.ts";
+import { SupervisorSession, supervisorSystemPrompt } from "./supervisor-tools.ts";
 import { dispatch } from "./shims/http.ts";
 
 declare const __PI_VERSION__: string;
@@ -144,12 +145,17 @@ async function startLogin(provider: string, type: "oauth" | "api_key") {
 // side in this one runtime (one WebView for all of them keeps memory flat). Every message to Kotlin
 // about a session carries its id.
 
-type Config = { session: string; provider: string; modelId: string; thinkingLevel?: string; baseUrl?: string; systemPrompt?: string; phone?: boolean; messages?: AgentMessage[] };
+/** tools: "phone" (operate the phone), "supervisor" (manage the other sessions), or none (chat). `phone: true` = "phone". */
+type Config = {
+	session: string; provider: string; modelId: string; thinkingLevel?: string; baseUrl?: string; systemPrompt?: string;
+	tools?: "phone" | "supervisor"; phone?: boolean; messages?: AgentMessage[];
+};
 
 interface Session {
 	id: string;
 	agent: Agent;
 	phone?: PhoneSession;
+	supervisor?: SupervisorSession;
 	running: boolean;
 }
 
@@ -233,7 +239,7 @@ function saveTranscript(id: string) {
 const beforeToolCall = (s: Session) => async (ctx: BeforeToolCallContext) => {
 	const go = await bridgeCall("gate", { session: s.id });
 	if (go === false) return { block: true, terminate: true, reason: "Stopped by the user." };
-	return s.phone?.confirmRiskyTap(ctx);
+	return (await s.supervisor?.limit(ctx)) ?? s.phone?.confirmRiskyTap(ctx);
 };
 
 async function configure(cfg: Config) {
@@ -245,23 +251,26 @@ async function configure(cfg: Config) {
 	const model: Model<any> = cfg.baseUrl ? { ...found, baseUrl: cfg.baseUrl } : found;
 	// Pi maps the level onto what this model supports (e.g. "max" → the highest it has).
 	const thinkingLevel = clampThinkingLevel(model, (cfg.thinkingLevel ?? "off") as any);
-	const phone = cfg.phone ? new PhoneSession(cfg.session) : undefined;
+	const tools = cfg.tools ?? (cfg.phone ? "phone" : undefined);
+	const phone = tools === "phone" ? new PhoneSession(cfg.session) : undefined;
+	const supervisor = tools === "supervisor" ? new SupervisorSession(cfg.session) : undefined;
 	// The conversation goes on across a change of model or tools; a saved one is restored as given.
 	// System messages are left out: Pi puts the current system prompt and tools in front (initialState).
 	const history = (cfg.messages ?? prev?.agent.state.messages ?? []).filter((m: any) => m.role !== "system");
-	const session: Session = { id: cfg.session, agent: undefined as unknown as Agent, phone, running: false };
+	const session: Session = { id: cfg.session, agent: undefined as unknown as Agent, phone, supervisor, running: false };
 	session.agent = new Agent({
 		initialState: {
 			messages: history,
-			systemPrompt: cfg.systemPrompt ?? (cfg.phone ? phoneSystemPrompt(agentName) : `You are ${agentName}, a helpful assistant on the user's Android phone. Reply in the user's language.`),
+			systemPrompt: cfg.systemPrompt ?? (phone ? phoneSystemPrompt(agentName) : supervisor ? supervisorSystemPrompt(agentName)
+				: `You are ${agentName}, a helpful assistant on the user's Android phone. Reply in the user's language.`),
 			model,
 			thinkingLevel: thinkingLevel as any,
-			tools: phone?.tools ?? [],
+			tools: phone?.tools ?? supervisor?.tools ?? [],
 		},
 		// Pi's hook: the pause gate, then risky taps wait for the user's OK.
 		beforeToolCall: beforeToolCall(session),
 		// Pi's hook to shape the context per model call: drop old screens (see pruneOldScreens).
-		transformContext: cfg.phone ? pruneOldScreens : undefined,
+		transformContext: phone ? pruneOldScreens : undefined,
 		// Pi resolves auth per request from the credential store (api key, or ChatGPT token refreshed as needed).
 		streamFn: models.streamSimple.bind(models),
 	});
@@ -276,6 +285,7 @@ async function prompt(id: string, text: string) {
 	if (s.running) throw new Error("this session is already working");
 	s.running = true;
 	s.phone?.reset();
+	s.supervisor?.reset();
 	try {
 		await s.agent.prompt(text);
 	} finally {

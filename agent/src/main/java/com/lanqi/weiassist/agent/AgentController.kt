@@ -57,6 +57,26 @@ class AgentController(context: Context) {
 
     init { screens.isActive = { id -> sessions.summary(id)?.status?.active == true } }
 
+    /**
+     * The commands that manage sessions (the supervisor's tools; later voice). Deleting asks the user on the
+     * overlay card, which shows over any app; without the accessibility service there is no asking: no deleting.
+     */
+    val commands = SessionCommands(
+        sessions,
+        confirm = { title, detail -> AgentAccessibilityService.instance?.confirm(title, detail) ?: false },
+        confirmDeleteTitle = { appContext.getString(R.string.confirm_delete_session, it) },
+    )
+
+    /**
+     * Say something to the supervisor (typed, or later spoken): the one entry point for managing sessions in
+     * words. Returns the supervisor's session id, or null if it is busy with the previous request.
+     */
+    suspend fun command(text: String): String? {
+        loaded.await()
+        val id = sessions.supervisor(appContext.getString(R.string.supervisor_title))
+        return if (sessions.send(id, text)) id else null
+    }
+
     /** Live pictures of the sessions' displays. */
     val previews = PreviewHub(appContext, shell)
     /** Each phone session's virtual display (while it has one). */
@@ -82,6 +102,12 @@ class AgentController(context: Context) {
                 !sessions.gate(id) -> "stopped by the user"
                 else -> phone.run(m, target) { sessions.isPaused(id) }
             }
+        }
+        pi.registerHostCall("supervisor") { m ->
+            val caller = m.optString("session")
+            // Only a supervisor session may manage the others.
+            if (sessions.summary(caller)?.supervisor != true) "Only the supervisor may manage sessions."
+            else commands.handle(caller, m.getString("action"), m.optJSONObject("args") ?: JSONObject())
         }
         pi.registerHostCall("confirm") { m ->
             val fields = m.optJSONArray("typed")

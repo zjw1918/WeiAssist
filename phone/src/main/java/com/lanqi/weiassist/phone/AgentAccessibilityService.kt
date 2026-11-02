@@ -29,7 +29,17 @@ class AgentAccessibilityService : AccessibilityService() {
     private val nodesByDisplay = java.util.concurrent.ConcurrentHashMap<Int, Map<Int, AccessibilityNodeInfo>>()
 
     override fun onServiceConnected() { instance = this; _running.value = true; android.util.Log.d("AgentA11y", "connected") }
+    /** Confirmation cards on screen now, with their answers. */
+    private val openCards = java.util.concurrent.ConcurrentHashMap<android.view.View, CompletableDeferred<Boolean>>()
+
     override fun onDestroy() {
+        // The service is going (turned off, or unbound by the system, e.g. while UI automation runs): a card
+        // nobody can answer any more counts as "no", or the task waiting for it would wait forever.
+        openCards.forEach { (card, answer) ->
+            runCatching { getSystemService(WindowManager::class.java).removeView(card) }
+            answer.complete(false)
+        }
+        openCards.clear()
         // The system may start a new instance before the old one is destroyed; only the current one clears.
         if (instance === this) { instance = null; _running.value = false }
         super.onDestroy()
@@ -298,7 +308,11 @@ class AgentAccessibilityService : AccessibilityService() {
             WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL, PixelFormat.TRANSLUCENT,
         ).apply { gravity = Gravity.BOTTOM }
         wm.addView(card, lp)
-        return try { answer.await() } finally { wm.removeView(card); delay(150) }
+        openCards[card] = answer
+        return try { answer.await() } finally {
+            if (openCards.remove(card) != null) runCatching { wm.removeView(card) }
+            delay(150)
+        }
     }
 
     companion object {

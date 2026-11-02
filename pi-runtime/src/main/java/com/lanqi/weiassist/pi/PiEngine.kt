@@ -169,7 +169,7 @@ class PiEngine(context: Context, private val agentName: String) {
     suspend fun cancelLogin() = call("cancelLogin", null)
     suspend fun logout(provider: String) = call("logout", JSONObject().put("provider", provider))
     /**
-     * Create or replace session [session]'s Pi Agent. [tools] names a tool set pi-host knows ("phone");
+     * Create or replace session [session]'s Pi Agent. [tools] names a tool set pi-host knows ("phone", "supervisor");
      * null = plain chat. [messages] restores a saved transcript (pi-host's `transcript` message); without
      * it, an existing session keeps its conversation.
      */
@@ -178,7 +178,8 @@ class PiEngine(context: Context, private val agentName: String) {
         tools: String? = null, systemPrompt: String? = null, messages: org.json.JSONArray? = null,
     ) {
         val cfg = JSONObject().put("session", session).put("provider", provider).put("modelId", modelId)
-            .put("thinkingLevel", thinkingLevel).put("phone", tools == "phone")
+            .put("thinkingLevel", thinkingLevel)
+        if (tools != null) cfg.put("tools", tools)
         if (systemPrompt != null) cfg.put("systemPrompt", systemPrompt)
         if (!baseUrl.isNullOrBlank()) cfg.put("baseUrl", baseUrl)
         if (messages != null) cfg.put("messages", messages)

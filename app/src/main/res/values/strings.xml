@@ -98,4 +98,8 @@
     <string name="shell_test">Test</string>
     <string name="live_screens">Live screens</string>
     <string name="live_screen_of">Screen of %1$s</string>
+    <string name="supervisor">Supervisor</string>
+    <string name="supervisor_hint">Tell me what to get done: I start sessions, run them side by side, pause or stop them, and pass results between them.</string>
+    <string name="supervisor_placeholder">e.g. “Compare this phone’s price on Taobao and JD”</string>
+    <string name="open">Open</string>
 </resources>

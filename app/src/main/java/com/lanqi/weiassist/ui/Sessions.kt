@@ -34,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -61,10 +62,13 @@ import com.lanqi.weiassist.agent.SessionSummary
 /** Home: start a task, see every session (running ones first), settings at the bottom. */
 @Composable
 fun SessionListScreen(vm: AppViewModel, s: AgentState) {
-    val sessions by vm.sessions.collectAsStateWithLifecycle()
+    val all by vm.sessions.collectAsStateWithLifecycle()
+    val supervisor = all.firstOrNull { it.supervisor }
+    val sessions = all.filterNot { it.supervisor }
     val busy = sessions.filter { it.status.active }
     val rest = sessions.filterNot { it.status.active }
     LazyColumn(Modifier.fillMaxSize().imePadding(), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        item { SupervisorCard(vm, supervisor) }
         item { NewTaskCard(vm) }
         item { LiveStrip(vm, sessions) }
         if (busy.size > 1) item {
@@ -78,6 +82,44 @@ fun SessionListScreen(vm: AppViewModel, s: AgentState) {
         items(rest, key = { it.id }) { SessionCard(it, vm) }
         if (sessions.isEmpty()) item { Text(stringResource(R.string.sessions_empty), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.outline) }
         item { SettingsCard(vm, s) }
+    }
+}
+
+/**
+ * The supervisor: tell it, in words, what to start, stop or combine; it manages the sessions below.
+ * Speech goes through the phone's own recognizer when there is one (voice is just words for it).
+ */
+@Composable
+private fun SupervisorCard(vm: AppViewModel, s: SessionSummary?) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val speech = remember {
+        android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+    }
+    val canSpeak = remember { speech.resolveActivity(ctx.packageManager) != null }
+    val listen = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { r ->
+        r.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { vm.askSupervisor(it) }
+    }
+    Card(Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.supervisor), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                if (s != null) {
+                    StatusChip(s.status)
+                    TextButton(onClick = { vm.open(s.id) }) { Text(stringResource(R.string.open)) }
+                }
+            }
+            Text(
+                s?.preview?.takeIf { it.isNotBlank() } ?: stringResource(R.string.supervisor_hint),
+                style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis,
+                color = if (s?.error == true) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onTertiaryContainer,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedTextField(vm.supervisorInput, { vm.supervisorInput = it }, placeholder = { Text(stringResource(R.string.supervisor_placeholder)) }, modifier = Modifier.weight(1f), maxLines = 3)
+                if (canSpeak) TextButton(onClick = { listen.launch(speech) }) { Text("🎤") }
+                Button(onClick = { vm.askSupervisor() }, enabled = vm.supervisorInput.isNotBlank() && s?.status?.active != true) { Text(stringResource(R.string.send)) }
+            }
+        }
     }
 }
 

@@ -81,6 +81,8 @@ data class SessionSummary(
     val error: Boolean = false,
     /** The app this session is operating, when known (from read_screen / open_app). */
     val app: String? = null,
+    /** The supervisor: the one session that manages the others (see SessionCommands). */
+    val supervisor: Boolean = false,
 )
 
 /** A whole session: kept in memory while it runs or is on screen, else only on disk. */

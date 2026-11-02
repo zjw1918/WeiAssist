@@ -91,6 +91,20 @@ _Last updated: 2026-11-01_
   packages: `app/proguard-rules.pro`); the status spinner's endless animation cost ~75% CPU (now a dot).
   The app is `profileable` from the shell, for simpleperf on release builds.
 
+### The supervisor (2026-11-02)
+- A supervisor session, pinned on the list, manages the others in words: create, message, wait for, pause,
+  resume, stop, delete (confirmed on screen), rename, read. One command entry point for typing and voice;
+  🎤 on the card uses the phone's speech recognizer.
+- **Verified on the realme (mock):** started a chat helper, waited, sent a follow-up, read its result (fenced);
+  ran a Settings and a Gmail worker on their own displays, paused Gmail while Settings finished (Gmail's
+  actions held until resume), deleted a worker after the on-screen OK (its display released).
+  **Real model:** "同时开两个手机任务：设置里查电池电量 / Gmail 最新一封邮件的标题……" → the supervisor wrote two
+  self-contained tasks (with "change nothing" instructions), ran them side by side, waited for both and
+  answered in one sentence.
+- **Fixed on the way:** a confirmation card whose accessibility service was unbound (UI automation does that)
+  waited forever; such cards now count as "no". `PiEngine.configure` now passes the tool set by name.
+- **Tests:** pi-host +2 (supervisor tools reach Kotlin; at most 8 sessions per request); JVM +5 (SessionText).
+
 ### Verified on a real device (realme RMX2121, Android 12)
 - ChatGPT subscription sign-in, then "你好" through Pi (`gpt-6.1-sol`).
 - Gmail: sent an email to two different addresses, each after the confirmation card.
@@ -106,7 +120,7 @@ _Last updated: 2026-11-01_
 - [x] **2. Built-in shell backend:** pairing, adb over TLS, shell helper with Binder link. Not yet: tested across a reboot.
 - [x] **3. A virtual display per phone session:** create/launch/input through the helper; read screens per display through accessibility.
 - [x] **4. Live previews:** in the session page and the list; adaptive frame rate; nothing sent when hidden; idle displays asleep.
-- [ ] **5. Supervisor session:** a session whose tools manage the others (create, start, pause, resume, stop, delete, message); voice-ready.
+- [x] **5. Supervisor session:** manages the other sessions in words (create, message, wait, pause, resume, stop, delete); voice-ready.
 
 ## Next: real-world scenarios on the device
 
@@ -133,7 +147,7 @@ Scenarios to build, test and refine (installed apps first):
 - [ ] **Ask-the-user tool**, for mid-task questions (preferences, choosing between options) without ending the task.
 - [ ] **Direct intents** where they beat UI automation: share, open URL, alarm, calendar.
 - [ ] **Per-app permissions** (allow / ask / never) and sensitive-screen detection (FLAG_SECURE, payment, OTP).
-- [ ] **Floating assistant bubble** and voice input.
+- [ ] **Floating assistant bubble** and a wake word (voice input already reaches the supervisor through the phone's speech recognizer).
 - [ ] **More providers:** register Pi's other providers (Anthropic, Google, DeepSeek, OpenRouter, local).
 - [ ] **Release workflow:** signed builds on tags. Not yet on GitHub: the user still has to pick the org and repo name.
 - [ ] **Instrumented tests** for PhoneActions on an emulator.

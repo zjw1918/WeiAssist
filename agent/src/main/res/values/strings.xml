@@ -25,4 +25,6 @@
         <item quantity="other">%1$d tasks running</item>
     </plurals>
     <string name="continue_task">The app was restarted while you were working on this task. Look at the screen again and continue where you left off.</string>
+    <string name="supervisor_title">Supervisor</string>
+    <string name="confirm_delete_session">Delete the session “%1$s”?</string>
 </resources>

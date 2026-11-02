@@ -24,4 +24,6 @@
         <item quantity="other">%1$d 个任务进行中</item>
     </plurals>
     <string name="continue_task">刚才执行这个任务时应用重启了。请重新查看屏幕，从中断的地方继续。</string>
+    <string name="supervisor_title">总管</string>
+    <string name="confirm_delete_session">删除对话「%1$s」？</string>
 </resources>

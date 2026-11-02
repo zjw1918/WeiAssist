@@ -285,3 +285,33 @@ test("transcripts drop screenshots and old screens", async () => {
 	assert.match(screens[0], /omitted/);
 	assert.match(screens[3], /TextView/);
 });
+
+// ---- the supervisor ---------------------------------------------------------------------------------
+
+test("the supervisor's tools reach Kotlin with the session and their arguments, and the answers come back", async () => {
+	const calls = [];
+	const host = await startHost({
+		credentials: apiKeyCredentials,
+		hostCalls: { supervisor: (m) => { calls.push(m); return m.action === "create" ? "started session s9" : `ok ${m.action}`; } },
+	});
+	await configure(host, "sup", { tools: "supervisor" });
+	host.call("prompt", { session: "sup", text: "go [[script:supervise]]" });
+	await host.waitFor("idle", (m) => m.session === "sup", 15_000);
+	assert.deepEqual(calls.map((c) => c.action), ["list", "create", "wait", "send", "wait", "get"]);
+	assert.ok(calls.every((c) => c.session === "sup"));
+	assert.deepEqual(calls[1].args, { task: "Say hello in one word.", phone: false, title: "Hello helper" });
+	assert.deepEqual(calls[2].args, { ids: ["Hello helper"], timeout: 60 });
+	assert.equal(host.messages.find((m) => m.type === "tool_end" && m.tool === "create_session").output, "started session s9");
+	assert.ok(!host.messages.some((m) => m.type === "tool_start" && m.tool === "read_screen"), "no phone tools for the supervisor");
+});
+
+test("one request can start at most eight sessions", async () => {
+	let creates = 0;
+	const host = await startHost({ credentials: apiKeyCredentials, hostCalls: { supervisor: () => `started ${++creates}` } });
+	await configure(host, "sup", { tools: "supervisor" });
+	host.call("prompt", { session: "sup", text: "go [[script:creates]]" });
+	await host.waitFor("idle", (m) => m.session === "sup", 15_000);
+	assert.equal(creates, 8);
+	const blocked = host.messages.filter((m) => m.type === "tool_end" && m.tool === "create_session" && m.isError);
+	assert.equal(blocked.length, 1);
+});

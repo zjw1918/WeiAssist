@@ -138,6 +138,17 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun stopAll() = withAgent { stopAll() }
 
+    // ---- the supervisor ---------------------------------------------------------------------------
+    /** What is being typed (or was spoken) for the supervisor. */
+    var supervisorInput by mutableStateOf("")
+
+    /** Tell the supervisor [text] (typed or spoken). Stays on the list, where the sessions it starts appear. */
+    fun askSupervisor(text: String = supervisorInput) {
+        val c = controller.value ?: return
+        val t = text.trim().ifEmpty { return }
+        viewModelScope.launch { if (c.command(t) != null) supervisorInput = "" }
+    }
+
     // A running task keeps the service started (foreground); unbinding only drops this screen's link.
     override fun onCleared() = getApplication<Application>().unbindService(connection)
 
