@@ -34,8 +34,10 @@ interface IShellService {
     boolean swipe(int displayId, float x1, float y1, float x2, float y2, long durationMs);
     /** A key (KeyEvent.KEYCODE_*) pressed and released on the display. */
     boolean key(int displayId, int keyCode);
-    /** Which apps are on which display: the display and activity lines of `dumpsys activity activities`. */
+    /** Which tasks and apps are on which display: the relevant lines of `dumpsys activity activities`. */
     String activities();
+    /** Move a root task to another display (an app that opened a task of its own on the phone's screen). */
+    boolean moveTask(int taskId, int displayId);
 
     // ---- live previews --------------------------------------------------------------------------------
 

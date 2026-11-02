@@ -14,7 +14,14 @@ sealed interface Target {
     data class Virtual(
         override val displayId: Int, val width: Int, val height: Int, val io: DisplayIo,
         val guard: (pkg: String, tasks: DisplayTasks) -> String? = { _, _ -> null },
-    ) : Target
+    ) : Target {
+        /** Apps this session opened on its display. */
+        val apps: MutableSet<String> = java.util.Collections.synchronizedSet(HashSet())
+        /** Tasks this session brought to its display once: theirs from then on, wherever Android puts them. */
+        val ownTasks: MutableSet<Int> = java.util.Collections.synchronizedSet(HashSet())
+        /** Tasks that were on the phone's screen before the session opened anything (the user's; never moved). */
+        val usersTasks: MutableSet<Int> = java.util.Collections.synchronizedSet(HashSet())
+    }
 }
 
 /** Input, launching and screenshots on a virtual display (implemented over the shell helper). */
@@ -28,4 +35,6 @@ interface DisplayIo {
     fun startActivity(component: String): String
     /** Which apps are on which display now, or null if unknown. */
     fun tasks(): DisplayTasks?
+    /** Move a task to this display. */
+    fun moveTask(taskId: Int): Boolean
 }

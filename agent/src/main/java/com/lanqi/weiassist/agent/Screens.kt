@@ -138,6 +138,7 @@ class DisplayScreenPool(
         override fun screenshot(maxWidth: Int, quality: Int): ByteArray = call(ByteArray(0)) { h.screenshot(display, maxWidth, quality) }
         override fun startActivity(component: String): String = call("Error: the shell helper is gone") { h.startActivity(display, component) }
         override fun tasks(): DisplayTasks? = call(null) { DisplayTasks.parse(h.activities()) }
+        override fun moveTask(taskId: Int): Boolean = call(false) { h.moveTask(taskId, display) }
     }
 
     companion object {

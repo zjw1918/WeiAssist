@@ -79,7 +79,15 @@ class ShellServer private constructor(
     override fun key(displayId: Int, keyCode: Int) = displays.has(displayId) && displays.key(displayId, keyCode)
 
     override fun activities(): String =
-        exec("dumpsys activity activities | grep -E '^Display #|mResumedActivity:|\\* Hist #'", 5_000).getString("out").orEmpty()
+        exec("dumpsys activity activities | grep -E '^Display #|^  \\* Task\\{|\\* Hist +#|mResumedActivity:|topResumedActivity=|launchedFromPackage='", 5_000)
+            .getString("out").orEmpty()
+
+    override fun moveTask(taskId: Int, displayId: Int): Boolean {
+        require(displays.has(displayId)) { "no display $displayId" }
+        val r = exec("am display move-stack $taskId $displayId", 5_000)
+        log("task $taskId → display $displayId: ${r.getInt("code")} ${r.getString("out").orEmpty().trim()}")
+        return r.getInt("code") == 0
+    }
 
     override fun watch(displayId: Int, listener: IFrameListener, maxFps: Int) { log("watch display $displayId at $maxFps fps"); displays.watch(displayId, listener, maxFps) }
     override fun unwatch(displayId: Int, listener: IFrameListener) { log("unwatch display $displayId"); displays.unwatch(displayId, listener) }

@@ -50,7 +50,11 @@ class PhoneActions(private val context: Context) {
     /** The same actions on a session's own virtual display: reading and node actions through accessibility, input through the shell helper. */
     private suspend fun actVirtual(svc: AgentAccessibilityService, t: Target.Virtual, action: String, a: JSONObject): String {
         val d = t.displayId
-        suspend fun String.settled(maxMs: Long = 3_000) = also { svc.awaitIdle(d, maxMs = maxMs) }
+        // After an action that may open a window, bring back any task the session's apps opened on the
+        // phone's own screen (see reclaim), then wait for this display to settle.
+        suspend fun String.settled(maxMs: Long = 3_000) = also { svc.awaitIdle(d, maxMs = maxMs) }.let { r ->
+            if (action in LAUNCHING && t.apps.isNotEmpty()) reclaim(t)?.let { "$r\n$it" } ?: r else r
+        }
         return when (action) {
             "read_screen" -> svc.readScreen(d, t.width, t.height)
             "tap" -> svc.tap(a.getInt("id"), d) { x, y -> t.io.tap(x, y, 60) }.settled()
@@ -86,14 +90,51 @@ class PhoneActions(private val context: Context) {
                     "away from them. Tell the user, and ask them to switch away from $label (or to let you wait)."
             }
         }
+        // The user's own tasks on the phone's screen, as they are now: never moved, unless our launch brings
+        // one of them to the front of the user's screen (a single-task app reuses its task): see reclaim.
+        before?.tasks?.filter { it.display == 0 }?.forEach { t.usersTasks += it.id }
+        val hiddenBefore = before?.tasks?.filter { it.display == 0 && it.pkg == pkg && !it.visible }?.map { it.id }?.toSet().orEmpty()
+        t.apps += pkg
         val out = t.io.startActivity(component)
         if ("Error" in out) return "could not open $label: ${out.lineSequence().lastOrNull { it.isNotBlank() }.orEmpty()}"
-        Thread.sleep(400) // the task is placed on its display asynchronously
-        val after = t.io.tasks()
+        // Many apps start with a splash activity that opens the real one as a new task, which Android puts
+        // on the phone's screen: watch for it a moment and bring it here.
+        var after: DisplayTasks? = null
+        for (i in 0 until 8) {
+            Thread.sleep(400)
+            reclaim(t, surfaced = hiddenBefore)
+            after = t.io.tasks()
+            if (after == null || (t.displayId in after.displaysOf(pkg) && i >= 2)) break
+        }
         if (after != null && t.displayId !in after.displaysOf(pkg)) {
             return "$label opened, but on another screen (it can have only one window, which is in use there). Use another app or wait."
         }
         return "opened $label ($pkg); call read_screen to see it"
+    }
+
+    /**
+     * Tasks the session's apps opened on the phone's own screen by themselves (launched by the app, not by
+     * the user's launcher, and not there before the session), and background tasks our launch brought to the
+     * front of the user's screen ([surfaced]), are moved to the session's display.
+     * Returns a note for the model when it moved something.
+     */
+    private fun reclaim(t: Target.Virtual, surfaced: Set<Int> = emptySet()): String? {
+        val tasks = t.io.tasks() ?: return null
+        val escaped = tasks.tasks.filter { task ->
+            task.display == 0 && task.pkg in t.apps && (
+                // already this session's (Android may move a task back when the app re-launches its activity)
+                task.id in t.ownTasks ||
+                // opened by the app itself after the session started
+                (task.id !in t.usersTasks && (task.launchedFrom == task.pkg || task.launchedFrom == "com.android.shell")) ||
+                    // or a background task of the user's that our launch just brought to the front of their screen
+                    (task.id in surfaced && task.visible)
+                )
+        }
+        if (escaped.isEmpty()) return null
+        val moved = escaped.filter { t.io.moveTask(it.id) }
+        moved.forEach { t.ownTasks += it.id }
+        android.util.Log.i(TAG, "brought back to display ${t.displayId}: ${escaped.joinToString { "${it.pkg} #${it.id}" }} (moved ${moved.size})")
+        return if (moved.isNotEmpty()) "(the app opened a new window; it was brought to this task's screen)" else null
     }
 
     private fun singleTask(component: String): Boolean = runCatching {
@@ -160,5 +201,9 @@ class PhoneActions(private val context: Context) {
 
     fun isEnabled() = AgentAccessibilityService.instance != null
 
-    private companion object { const val TAG = "PhoneActions" }
+    private companion object {
+        const val TAG = "PhoneActions"
+        /** Actions after which an app may have opened a new window. */
+        val LAUNCHING = setOf("tap", "tap_at", "long_press", "type_text", "press_key", "open_app")
+    }
 }
