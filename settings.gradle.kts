@@ -22,5 +22,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "PhoneAgent"
-include(":app")
+rootProject.name = "WeiAssist"
+include(":app", ":agent", ":phone", ":pi-runtime")

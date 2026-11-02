@@ -1,0 +1,4 @@
+<resources>
+    <string name="accessibility_label">小维助手</string>
+    <string name="accessibility_description">让小维助手替你操作手机：读取当前屏幕上的内容，并按你的指令点击、输入、滑动。只在你交给它任务时工作；发送、付款、删除这类操作会先问你。</string>
+</resources>

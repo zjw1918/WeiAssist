@@ -17,4 +17,4 @@ local.properties
 
 # Pi host build
 pi-host/node_modules/
-app/build/
+build/

@@ -19,5 +19,6 @@ export function settle(id: string, ok: boolean, value: any) {
 	const p = pending.get(id);
 	if (!p) return;
 	pending.delete(id);
-	ok ? p.resolve(value) : p.reject(value);
+	// Kotlin rejects with { message, code? }: make it a real Error, keeping fields like `code`.
+	ok ? p.resolve(value) : p.reject(Object.assign(new Error(value?.message ?? String(value)), value));
 }

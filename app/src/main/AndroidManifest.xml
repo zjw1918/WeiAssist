@@ -1,21 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <!-- Android 14+: the agent's foreground service type. See AgentService and docs/ARCHITECTURE.md. -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
-    <!-- Android 13+: show the "working" notification with its Stop button. -->
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
-    <!-- open_app: see which apps can be launched (Android 11+ package visibility). -->
-    <queries>
-        <intent>
-            <action android:name="android.intent.action.MAIN" />
-            <category android:name="android.intent.category.LAUNCHER" />
-        </intent>
-    </queries>
-
     <application
         android:allowBackup="false"
         android:label="@string/app_name"
@@ -31,33 +16,13 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- "返回小维助手" link on the sign-in success page (see LoopbackServer). -->
+            <!-- "Back to WeiAssist" link on the sign-in success page (see LoopbackServer). -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="phoneagent" android:host="signed-in" />
+                <data android:scheme="weiassist" android:host="signed-in" />
             </intent-filter>
         </activity>
-        <service
-            android:name=".agent.AgentService"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="On-device AI assistant carrying out a task the user started (operating other apps through its accessibility service, or waiting for the user to finish signing in to the AI provider in the browser). The user can stop it from the notification." />
-        </service>
-        <service
-            android:name=".phone.AgentAccessibilityService"
-            android:exported="false"
-            android:label="小维助手"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
-            <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_config" />
-        </service>
     </application>
 </manifest>

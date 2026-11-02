@@ -2,7 +2,7 @@
 import { build } from "esbuild";
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 
-const out = "../app/src/main/assets/pi";
+const out = "../pi-runtime/src/main/assets/pi";
 const pi = JSON.parse(readFileSync("node_modules/@earendil-works/pi-agent-core/package.json", "utf8")).version;
 mkdirSync(out, { recursive: true });
 const result = await build({

@@ -4,13 +4,13 @@ plugins {
 }
 
 android {
-    namespace = "com.lanqi.phoneagent"
+    namespace = "com.lanqi.weiassist"
     compileSdk {
         version = release(37)
     }
 
     defaultConfig {
-        applicationId = "com.lanqi.phoneagent"
+        applicationId = "com.lanqi.weiassist"
         minSdk = 26
         targetSdk = 37
         versionCode = 1
@@ -47,8 +47,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
-    implementation(libs.androidx.lifecycle.process)
-    implementation(libs.androidx.webkit)
+    implementation(project(":agent"))
     implementation(libs.androidx.browser)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }

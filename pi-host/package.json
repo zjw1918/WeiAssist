@@ -1,5 +1,5 @@
 {
-  "name": "phoneagent-pi-host",
+  "name": "weiassist-pi-host",
   "private": true,
   "type": "module",
   "scripts": {
