@@ -82,7 +82,7 @@
     <string name="settings_summary">%1$s · %2$s</string>
     <string name="delete">Delete</string>
     <string name="delete_title">Delete this conversation?</string>
-    <string name="delete_text">Its messages are removed from this phone. A running task is stopped first.</string>
+    <string name="delete_text">Its messages are removed from this phone. A running task is stopped first. Its files in Termux (~/sessions/…) are kept.</string>
     <string name="reply_hint">Message</string>
     <string name="shell_title">Shell backend (virtual displays)</string>
     <string name="shell_why">Lets each phone task run in its own virtual display, so several can work at once and you can watch them. Set up once with Wireless debugging (Developer options).</string>

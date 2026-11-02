@@ -58,7 +58,7 @@ class AgentController(context: Context) {
 
     init {
         screens.isActive = { id -> sessions.summary(id)?.status?.active == true }
-        // Stop ends the session's Termux jobs too; Delete also removes its folder there.
+        // Stop and Delete end the session's Termux jobs too; its files there are kept.
         sessions.onEnded = { id, deleted -> scope.launch { termux.cleanUp(id, deleted) } }
     }
 

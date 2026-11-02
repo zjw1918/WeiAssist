@@ -174,8 +174,9 @@ Chat and phone sessions can now run Linux commands in Termux with a `bash` tool 
 ### Termux, phase 2 (2026-11-02)
 - **Per-session tmux:** every command runs with `TMUX_TMPDIR=~/sessions/<id>/.tmux`, so a session's jobs are its own
   and can be found and ended with it.
-- **Clean-up:** Stop ends the session's tmux jobs and running commands; Delete also removes `~/sessions/<id>`
-  (`SessionManager.onEnded` → `Termux.cleanUp`; only for sessions that used bash).
+- **Clean-up:** Stop and Delete end the session's tmux jobs and running commands (`SessionManager.onEnded` →
+  `Termux.cleanUp`; only for sessions that used bash). Files in `~/sessions/<id>` are never deleted, not even
+  with the session: coding projects may go on for months (the delete dialog says so).
 - **Staying awake:** the app holds a partial wake lock while a command runs; Termux's own wake lock
   (`termux-wake-lock`) is held while any session has tmux jobs, and dropped when none has.
 - **Settings → Linux commands (Termux):** shows what is missing with the button that fixes it (download, Google
@@ -185,7 +186,7 @@ Chat and phone sessions can now run Linux commands in Termux with a `bash` tool 
 - **Verified on the Xiaomi:** Settings check all ✓. Chat task "write a Go HTTP service with a unit test, run it in
   tmux on 8080, keep it running": `pkg install golang`, `go test`, build, tmux, curl, in ~70 s; the server answered
   from the Mac through `adb forward` after the task ended, with Termux's wake lock held; deleting the session
-  stopped the server and released the wake lock. Old session previews now show without Markdown markers.
+  stopped the server and released the wake lock (that build also removed the folder; since then files are kept). Old session previews now show without Markdown markers.
 
 ### Verified on a real device (realme RMX2121, Android 12)
 - ChatGPT subscription sign-in, then "你好" through Pi (`gpt-6.1-sol`).

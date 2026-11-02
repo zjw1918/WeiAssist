@@ -108,23 +108,23 @@ class Termux(context: Context) {
     }
 
     /**
-     * The session was stopped ([delete] false) or deleted: end its tmux jobs and running commands; when deleted,
-     * also remove its folder. Then Termux's wake lock is dropped if no session has jobs left.
+     * The session was stopped or [deleted]: end its tmux jobs and running commands. Its files in ~/sessions/<id> are
+     * always kept: they may be a project the user works on for months, and deleting a conversation must not wipe it.
+     * Then Termux's wake lock is dropped if no session has jobs left.
      */
-    suspend fun cleanUp(session: String, delete: Boolean) {
+    suspend fun cleanUp(session: String, deleted: Boolean) {
         if (!used(session) || setupProblem() != null) return
         val script = PRELUDE + """
             d="${'$'}{HOME}/sessions/${'$'}{1}"
             if [ -d "${'$'}{d}" ]; then
               TMUX_TMPDIR="${'$'}{d}/.tmux" tmux kill-server 2> /dev/null
               for p in "${'$'}{d}"/.bash-*.pid; do [ -f "${'$'}{p}" ] && kill -TERM "${'$'}(cat "${'$'}{p}")" 2> /dev/null; done
-              [ "${'$'}{2}" = delete ] && rm -rf "${'$'}{d}"
             fi
             sync_lock > /dev/null 2>&1
             exit 0
         """.trimIndent()
-        execute(arrayOf("-c", script, "bash", safe(session), if (delete) "delete" else "stop"), 30)
-        if (delete) markUsed(session, false)
+        execute(arrayOf("-c", script, "bash", safe(session)), 30)
+        if (deleted) markUsed(session, false)
     }
 
     /** For Settings: can commands run, and are the basic tools there? Null text = Termux not usable (see [setupProblem]). */
