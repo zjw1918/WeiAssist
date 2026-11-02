@@ -39,7 +39,8 @@ class PhoneActions(private val context: Context) {
         }
         val a = m.optJSONObject("args") ?: JSONObject()
         val action = m.getString("action")
-        return kotlinx.coroutines.withTimeoutOrNull(15_000) {
+        // open_app may wait for a slow app to start (see openOnDisplay), then for its screen to settle.
+        return kotlinx.coroutines.withTimeoutOrNull(if (action == "open_app") 30_000 else 15_000) {
             when (target) {
                 Target.Main -> act(svc, action, a)
                 is Target.Virtual -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { actVirtual(svc, target, action, a) }
@@ -67,7 +68,7 @@ class PhoneActions(private val context: Context) {
                 "back" -> (if (t.io.key(android.view.KeyEvent.KEYCODE_BACK)) "pressed back" else "could not press back").settled()
                 else -> "This task runs on a screen of its own, without a home screen or recent apps: use open_app to switch apps."
             }
-            "open_app" -> openOnDisplay(t, a.getString("app")).settled(maxMs = 5_000)
+            "open_app" -> openOnDisplay(svc, t, a.getString("app")).settled(maxMs = 5_000)
             "screenshot" -> t.io.screenshot(720, 70).let { if (it.isEmpty()) "error: no picture of this screen yet; try again" else android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
             "label_at" -> svc.labelAt(a.getInt("x"), a.getInt("y"), d)
             else -> "unknown action"
@@ -79,7 +80,7 @@ class PhoneActions(private val context: Context) {
      * launching one that is elsewhere moves it here. So: never take an app another running task is using,
      * nor a single-task app the user has open in front of them; and check that it really came here.
      */
-    private fun openOnDisplay(t: Target.Virtual, app: String): String {
+    private suspend fun openOnDisplay(svc: AgentAccessibilityService, t: Target.Virtual, app: String): String {
         val (label, component) = resolveApp(app).getOrElse { return it.message.orEmpty() }
         val pkg = component.substringBefore('/')
         val before = t.io.tasks()
@@ -97,18 +98,32 @@ class PhoneActions(private val context: Context) {
         t.apps += pkg
         val out = t.io.startActivity(component)
         if ("Error" in out) return "could not open $label: ${out.lineSequence().lastOrNull { it.isNotBlank() }.orEmpty()}"
-        // Many apps start with a splash activity that opens the real one as a new task, which Android puts
-        // on the phone's screen: watch for it a moment and bring it here.
+        // Wait until the app is on this display and shows a window we can read: a cold start can take many
+        // seconds, and before that the model would find an empty screen. Meanwhile, on an untrusted display
+        // (Android 12), an app's splash may open its main page as a new task on the phone's screen: bring it here.
+        val start = android.os.SystemClock.uptimeMillis()
         var after: DisplayTasks? = null
-        for (i in 0 until 8) {
-            Thread.sleep(400)
+        var shown = false
+        var i = 0
+        while (true) {
+            kotlinx.coroutines.delay(400)
             reclaim(t, surfaced = hiddenBefore)
             after = t.io.tasks()
-            if (after == null || (t.displayId in after.displaysOf(pkg) && i >= 2)) break
+            val here = after == null || t.displayId in after.displaysOf(pkg)
+            shown = pkg in svc.appWindowPackages(t.displayId)
+            val waited = android.os.SystemClock.uptimeMillis() - start
+            // (At least ~1.2 s on the untrusted fallback, where the splash's new task shows up a moment later.)
+            if (here && shown && (i >= 2 || trusted(t.displayId))) break
+            if (!here && waited >= OPEN_ELSEWHERE_MS) break // it went to another screen (single-task, in use there)
+            if (waited >= OPEN_WAIT_MS) break
+            i++
         }
+        val ms = android.os.SystemClock.uptimeMillis() - start
+        android.util.Log.i(TAG, "open_app $pkg on display ${t.displayId}: shown=$shown after ${ms} ms")
         if (after != null && t.displayId !in after.displaysOf(pkg)) {
             return "$label opened, but on another screen (it can have only one window, which is in use there). Use another app or wait."
         }
+        if (!shown) return "opened $label ($pkg), but it is still starting (nothing to read after ${ms / 1000} s); wait a few seconds, then call read_screen"
         return "opened $label ($pkg); call read_screen to see it"
     }
 
@@ -136,6 +151,10 @@ class PhoneActions(private val context: Context) {
         android.util.Log.i(TAG, "brought back to display ${t.displayId}: ${escaped.joinToString { "${it.pkg} #${it.id}" }} (moved ${moved.size})")
         return if (moved.isNotEmpty()) "(the app opened a new window; it was brought to this task's screen)" else null
     }
+
+    /** Whether [displayId] is trusted (Display.FLAG_TRUSTED, hidden): there, apps' own launches stay on it. */
+    private fun trusted(displayId: Int): Boolean =
+        (context.getSystemService(android.hardware.display.DisplayManager::class.java)?.getDisplay(displayId)?.flags ?: 0) and FLAG_TRUSTED != 0
 
     private fun singleTask(component: String): Boolean = runCatching {
         val info = context.packageManager.getActivityInfo(android.content.ComponentName.unflattenFromString(component)!!, 0)
@@ -205,5 +224,9 @@ class PhoneActions(private val context: Context) {
         const val TAG = "PhoneActions"
         /** Actions after which an app may have opened a new window. */
         val LAUNCHING = setOf("tap", "tap_at", "long_press", "type_text", "press_key", "open_app")
+        /** How long open_app waits for a starting app to show a window, and for it to arrive on the display at all. */
+        const val OPEN_WAIT_MS = 15_000L
+        const val OPEN_ELSEWHERE_MS = 3_000L
+        const val FLAG_TRUSTED = 1 shl 7
     }
 }

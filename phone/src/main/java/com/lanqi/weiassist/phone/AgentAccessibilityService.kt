@@ -85,6 +85,14 @@ class AgentAccessibilityService : AccessibilityService() {
         // Top first; a dialog is its own application window above the activity.
         return windows.firstOrNull { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION && it.root != null }?.root
     }
+    /** Packages with an application window on [display] whose content can be read (top first). */
+    fun appWindowPackages(display: Int): List<String> {
+        if (android.os.Build.VERSION.SDK_INT < 30) return emptyList()
+        val windows = windowsOnAllDisplays.get(display) ?: return emptyList()
+        return windows.filter { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION }
+            .mapNotNull { it.root?.packageName?.toString() }
+    }
+
     override fun onInterrupt() {}
 
     fun ownAppInFront() = rootInActiveWindow?.packageName == packageName
