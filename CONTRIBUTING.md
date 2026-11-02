@@ -35,7 +35,7 @@ The mock provider ([tools/mock-openai.mjs](tools/mock-openai.mjs)) records reque
 ## Making changes
 
 - **A new phone tool:**
-  1. Add an `AgentTool` in [pi-host/src/phone-tools.ts](pi-host/src/phone-tools.ts) (TypeBox schema, `executionMode: "sequential"`, honour `signal`).
+  1. Add an `AgentTool` in [pi-host/src/phone-tools.ts](pi-host/src/phone-tools.ts) (`@earendil-works/pi-schema` builders, `executionMode: "sequential"`, honour `signal`).
   2. Handle its action in [PhoneActions](phone/src/main/java/com/lanqi/weiassist/phone/PhoneActions.kt).
   3. Add a scripted-tool test.
 - **A new provider:** Pi already has it. Register Pi's provider in `host.ts`, and the UI picks up its auth methods and models.

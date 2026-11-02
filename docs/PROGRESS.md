@@ -6,13 +6,15 @@ _Last updated: 2026-11-02_
 
 **Where things stand:** multiple concurrent sessions with saved history; a built-in shell backend (no
 computer, Shizuku or root needed after one pairing); a virtual display per phone session; live previews;
-and a supervisor session that manages the others in words, ready for voice. All on `main`, verified on the
-realme (Android 12) with the mock and the real model.
+and a supervisor session that manages the others in words, ready for voice. Verified on the realme
+(Android 12) and a Xiaomi (HyperOS, Android 16) with the mock and the real model. Apps now stay on their
+session's display (trusted displays on Android 13+); Pi 1.5.0 with GPT-6.1 Terra as the default model
+(branch `fix/apps-stay-on-session-display`).
 
 ## Done
 
 ### Foundation
-- **Pi on Android:** `pi-agent-core` and `pi-ai` 1.4.0 run in a hidden WebView, using Pi's public exports only.
+- **Pi on Android:** `pi-agent-core` and `pi-ai` 1.5.0 (tool schemas with `pi-schema`) run in a hidden WebView, using Pi's public exports only.
   - native fetch (no CORS);
   - loopback `node:http` for OAuth;
   - Keystore-encrypted credential store;
@@ -20,6 +22,7 @@ realme (Android 12) with the mock and the real model.
 - **Sign-in:** ChatGPT subscription (Pi's "Sign in with ChatGPT") or OpenAI API key, through Pi's `models.login`.
   On realme/ColorOS, the user taps ✕ in Chrome to return; the frozen app then answers the queued callback.
 - **Model and thinking-level pickers:** filled from Pi (`OPENAI_CODEX_MODELS` filter for ChatGPT accounts, `getSupportedThinkingLevels`).
+  Default: `gpt-6.1-terra` at medium thinking (new installs, and when the saved model isn't offered).
 - **AgentService:** a foreground service (`specialUse`) while a task or sign-in runs.
   - Stop in the notification;
   - a result notification when the app isn't visible;
@@ -28,7 +31,7 @@ realme (Android 12) with the mock and the real model.
 - **Build:** Gradle builds the Pi bundle (`buildPiHost<Variant>`); no generated files are committed.
 - **i18n:** English (default) and Chinese, with per-app language on Android 13+.
 - **Tests** (as of 2026-11-02):
-  - 36 JVM tests: `AgentReducer` 11, `SessionReducer` 12, `SessionText` 5, `DisplayTasks` 3, adb crypto and framing 5;
+  - 38 JVM tests: `AgentReducer` 11, `SessionReducer` 12, `SessionText` 5, `DisplayTasks` 5, adb crypto and framing 5;
   - 19 end-to-end tests of the shipped bundle (`pi-host/test`) over the real bridge protocol, with a mock provider
     and scripted tool calls (sessions, restore, pause gate, supervisor tools).
 - **Project files:** CI workflow, README (en and zh), ARCHITECTURE, CONTRIBUTING, Code of Conduct, SECURITY, Apache-2.0 and NOTICE.
@@ -111,6 +114,27 @@ realme (Android 12) with the mock and the real model.
   waited forever; such cards now count as "no". `PiEngine.configure` now passes the tool set by name.
 - **Tests:** pi-host +2 (supervisor tools reach Kotlin; at most 8 sessions per request); JVM +5 (SessionText).
 
+### Apps stay on their session's display (2026-11-02)
+- **The issue:** on the Xiaomi, apps whose splash screen opens the main page (Taobao, Pinduoduo) jumped to the
+  phone's own screen. Cause, in AOSP's `ActivityTaskSupervisor.isCallerAllowedToLaunchOnDisplay`: on an
+  *untrusted* display, an app's own launches are refused unless the activity sets `allowEmbedded` (few do), and
+  Android moves the task to display 0. Our first `am start` only passes because shell holds `INTERNAL_SYSTEM_WINDOW`.
+- **The fix:** shell may add trusted displays from Android 13 (`ADD_TRUSTED_DISPLAY`), so the helper creates them
+  `TRUSTED | TOUCH_FEEDBACK_DISABLED`, plus `OWN_FOCUS | STEAL_TOP_FOCUS_DISABLED` on 14+ so taps never take focus
+  from the user's screen (scrcpy's `--new-display` does the same). Refused, or on Android 12: untrusted, as before.
+- **Fallback (Android 12):** `PhoneActions.reclaim` moves tasks the session's apps opened on the phone's screen
+  back to the session's display (`am display move-stack`), after actions that may open a window and for a moment
+  after `open_app`; the user's own tasks are never moved. `DisplayTasks` now reads root tasks (id, display,
+  visibility, launchedFrom) and the Android 14–16 dump format.
+- **Verified on the Xiaomi (Android 16):**
+  - before: Taobao's task went to display 0 for ~0.2 s until reclaim brought it back;
+  - after: Taobao stayed on its display through open, tap, type and search; no reclaim needed;
+  - three sessions at once through the supervisor (Taobao, JD, Pinduoduo: "搜索蓝牙耳机，第一个商品的名字和价格"):
+    each app stayed on its own display (24/25/26), the main screen kept focus in all 60 samples, all three
+    answered (¥881.46 / ¥190.64 / ¥51.8) in ~23 s, ~46 s and ~25 s, and the supervisor summed them up.
+- **Pi 1.5.0:** `gpt-6.1-terra` needs it. Pi 1.5 dropped TypeBox's `Type`; the tools use `pi-schema` builders,
+  whose `obj()` is closed (unknown tool arguments are rejected).
+
 ### Verified on a real device (realme RMX2121, Android 12)
 - ChatGPT subscription sign-in, then "你好" through Pi (`gpt-6.1-sol`).
 - Gmail: sent an email to two different addresses, each after the confirmation card.
@@ -140,13 +164,19 @@ Open points from this work:
   is told to wait. A per-app queue could wait automatically instead of failing.
 - [ ] **Supervisor history:** it is one long conversation; add "new conversation" for it.
 - [ ] **Instrumented tests** for SessionManager, ScreenPool and the helper (today: JVM, pi-host and on-device runs).
+- [ ] **Slow cold starts:** JD's first two `read_screen`s after `open_app` found no window (JD still starting);
+  `open_app` could wait until the app shows a window on the display.
+- [ ] **Reclaim gaps (Android 12 fallback only):** nothing is reclaimed on `read_screen`, `screenshot`, `scroll` or
+  `swipe`, and the open_app watch stops after ~1.2 s, so a long splash ad can leave a window on the phone's screen;
+  root tasks shown with `I=` (no affinity) aren't parsed; tasks are matched by affinity, not package.
+- [ ] **Trusted displays:** not yet checked with the phone locked, nor whether a keyboard appears on the session's display.
 
 ## Next: real-world scenarios on the device
 
 Ready: signed in (ChatGPT), Accessibility on, Wireless debugging paired (the shell backend runs).
 Still up to the user:
-- [ ] Decide whether to install Bilibili / Pinduoduo (Xiaohongshu is installed).
-- [ ] Be signed in to Taobao / JD for the shopping test.
+- [ ] Decide whether to install Bilibili (Xiaohongshu is installed; Taobao, JD and Pinduoduo are on the Xiaomi).
+- [ ] Be signed in to Taobao / JD for the shopping test (searching works signed out).
 
 Scenarios to build, test and refine (installed apps first):
 - [ ] **Social browsing, Douban:** browse a topic, collect the top items with ratings, summarise.
@@ -156,14 +186,14 @@ Scenarios to build, test and refine (installed apps first):
   - recommend one and add it to the cart;
   - ordering waits for the user's explicit approval (the confirmation card).
 - [ ] **Daily productivity, Gmail (and Outlook):** check new mail, summarise the important ones, extract action items, build a prioritised to-do list for the day.
-- [ ] **Parallel versions through the supervisor:** e.g. "compare this product on Taobao and JD at the same time".
+- [x] **Parallel versions through the supervisor:** Taobao, JD and Pinduoduo searched at the same time (2026-11-02, Xiaomi).
 - [ ] For each scenario, log failures (wrong taps, missed content, loops, pop-ups) and fix them in tools, prompt or recovery logic.
 
 ## Known gaps and todo
 
 - [ ] **Readable confirmation card:** show the target app and a summary (recipient, item and price) instead of raw field lines.
 - [ ] **Markdown in answers:** the session page has chat history and step cards (and the raw Pi trace under ⋯), but
-  answers are shown as plain text.
+  answers are shown as plain text (the supervisor's tables show as raw `| … |`).
 - [ ] **Ask-the-user tool**, for mid-task questions (preferences, choosing between options) without ending the task.
 - [ ] **Direct intents** where they beat UI automation: share, open URL, alarm, calendar.
 - [ ] **Per-app permissions** (allow / ask / never) and sensitive-screen detection (FLAG_SECURE, payment, OTP).
@@ -185,6 +215,10 @@ Scenarios to build, test and refine (installed apps first):
   `supervise_phone` (a message containing `[[script:NAME]]`).
 - Debug: `--es supervise '…'` says it to the supervisor; `--ez shellStart true` starts the shell helper through
   Wireless debugging.
+- After installing a new build the helper exits ("app updated"); start it again with `--ez shellStart true`.
+- Quote the whole `am start` for `adb shell` when the task has spaces, or the task text is cut at the first space.
+- Devices: realme RMX2121 (Android 12, untrusted displays) and Xiaomi `60770a96` (HyperOS, Android 16, trusted).
+  Where tasks are: `dumpsys activity activities | grep -E '^Display #|^  \* Task\{'`; moves: `logcat -b events | grep wm_task_moved`.
 - The shell helper logs to `/data/local/tmp/weiassist_shell.log`; displays show in `dumpsys display` as `weiassist-<session>`.
 - `uiautomator dump` unbinds the app's accessibility service while it runs: an open confirmation card is then
   answered "no". While a card is up, use screenshots and tap by coordinates.

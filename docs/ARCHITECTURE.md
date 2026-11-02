@@ -115,8 +115,10 @@ run side by side. A session runs until its task ends or the user stops it; leavi
 ## A virtual display per phone session
 
 - **Created by the helper** (`DisplayHost`, as shell): 720×1600 at 320 dpi (a 360 dp phone layout at a third
-  of the pixels), public, untrusted (Android 12 gives shell no trusted displays), touchable, its apps closed
-  when it goes. It renders into an ImageReader in the helper that keeps only the newest frame (≤ 3 buffers).
+  of the pixels), public, touchable, its apps closed when it goes. **Trusted** on Android 13+ (with its own
+  focus on 14+), because on an untrusted display Android refuses an app's own launches and moves them to the
+  phone's screen; untrusted on Android 12, where shell can't add trusted displays and `PhoneActions.reclaim`
+  moves such tasks back (`am display move-stack`). It renders into an ImageReader in the helper that keeps only the newest frame (≤ 3 buffers).
 - **Driven per display:** reading the screen and node actions (click, set text, scroll) through the
   accessibility service, on the display's top app window; touches, swipes, keys, app launches and
   screenshots through the helper (`InputManager.injectInputEvent` with a display id, `am start --display`).
