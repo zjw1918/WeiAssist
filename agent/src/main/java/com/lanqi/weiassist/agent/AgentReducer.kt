@@ -8,6 +8,8 @@ sealed interface Effect {
     data class OpenBrowser(val url: String) : Effect
     /** Sign-in finished: say hello, to prove the connection works. */
     data object SignedIn : Effect
+    /** Pi's runtime was restarted (its WebView renderer died); [wasBusy] = a task was cut off. */
+    data class RuntimeRestarted(val wasBusy: Boolean) : Effect
 }
 
 /**
@@ -58,6 +60,7 @@ object AgentReducer {
         "configured" -> Result(s.withRun { trace("configured · ${m.optString("model")} · thinking=${m.optString("thinkingLevel")} → ${m.optString("baseUrl")} · auth=${m.optString("auth")}") })
         "error" -> Result(s.withRun { copy(busy = false, error = friendly(m.optString("message"))).trace("error · ${m.optString("message")}") })
         "idle" -> Result(s.withRun { copy(busy = false).trace("idle") })
+        "runtime_restarted" -> Result(s.withRun { copy(busy = false).trace("runtime restarted") }, Effect.RuntimeRestarted(s.run.busy))
         else -> Result(s.withRun { trace(m.optString("type")) })
     }
 

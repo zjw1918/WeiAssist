@@ -110,6 +110,12 @@ class AgentReducerTest {
         assertFalse(reduce(base.copy(run = RunState(busy = true)), msg("idle")).state.run.busy)
     }
 
+    @Test fun `a runtime restart ends a running task and says so`() {
+        val r = reduce(base.copy(run = RunState(busy = true)), msg("runtime_restarted"))
+        assertFalse(r.state.run.busy)
+        assertEquals(Effect.RuntimeRestarted(wasBusy = true), r.effect)
+    }
+
     @Test fun `the trace keeps only the latest lines`() {
         var s = base
         repeat(AgentReducer.MAX_TRACE + 50) { s = reduce(s, msg("turn_start")).state }

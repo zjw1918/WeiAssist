@@ -44,7 +44,7 @@ class PiEngine(context: Context, private val agentName: String) {
     /** App-provided handlers for requests from JS (`bridgeCall(type, …)` in pi-host), e.g. phone tools. */
     private val hostCalls = ConcurrentHashMap<String, suspend (JSONObject) -> Any?>()
     private val prefs = appContext.getSharedPreferences("pi", Context.MODE_PRIVATE)
-    private val ready = CompletableDeferred<JSONObject>()
+    private var ready = CompletableDeferred<JSONObject>()
     private val httpReplies = ConcurrentHashMap<String, CompletableDeferred<LoopbackServer.HttpReply>>()
     private val loopback = LoopbackServer(scope, appContext.getString(R.string.pi_back_to_app, agentName)) { port, method, url ->
         val id = UUID.randomUUID().toString()
@@ -55,11 +55,11 @@ class PiEngine(context: Context, private val agentName: String) {
         withTimeoutOrNull(10_000) { reply.await() }.also { httpReplies.remove(id) }
             ?: LoopbackServer.HttpReply(504, emptyMap(), "")
     }
-    private lateinit var webView: WebView
+    private var webView: WebView? = null
     // A main-thread Handler keeps chunks in order. (Not webView.post: a WebView that is never attached
     // to a window queues posted work forever.)
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
-    private val http = NativeHttp(scope) { fn, args -> main.post { webView.evaluateJavascript("PiHost.$fn($args)", null) } }
+    private val http = NativeHttp(scope) { fn, args -> main.post { webView?.evaluateJavascript("PiHost.$fn($args)", null) } }
 
     /** Stable per-install ID; Pi sends it to OpenAI as the agent host ID during ChatGPT sign-in. */
     private val deviceId: String
@@ -67,29 +67,53 @@ class PiEngine(context: Context, private val agentName: String) {
 
     @SuppressLint("SetJavaScriptEnabled")
     suspend fun start(): JSONObject = withContext(Dispatchers.Main) {
-        if (!::webView.isInitialized) {
+        if (webView == null) {
             check(WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER)) {
                 "This WebView is too old for Pi (no WebMessageListener)"
             }
             val assets = WebViewAssetLoader.Builder()
                 .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(appContext))
                 .build()
-            webView = WebView(appContext).apply {
+            val view = WebView(appContext).apply {
                 settings.javaScriptEnabled = true
                 settings.allowFileAccess = false
                 settings.allowContentAccess = false
                 webViewClient = object : WebViewClient() {
                     override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? =
                         assets.shouldInterceptRequest(request.url)
+
+                    // The renderer (where Pi runs) died: out of memory, or killed by the system. Without
+                    // this the whole app would crash. Drop the dead WebView and start a fresh Pi.
+                    override fun onRenderProcessGone(view: WebView, detail: android.webkit.RenderProcessGoneDetail): Boolean {
+                        Log.w(TAG, "Pi's renderer is gone (crashed=${detail.didCrash()}); restarting Pi")
+                        restart()
+                        return true
+                    }
                 }
             }
-            WebViewCompat.addWebMessageListener(webView, "PiBridge", setOf(ORIGIN)) {
+            webView = view
+            WebViewCompat.addWebMessageListener(view, "PiBridge", setOf(ORIGIN)) {
                 _: WebView, message: WebMessageCompat, _: Uri, _: Boolean, _: JavaScriptReplyProxy ->
                 onMessage(JSONObject(message.data ?: return@addWebMessageListener))
             }
-            webView.loadUrl("$ORIGIN/assets/pi/index.html")
+            view.loadUrl("$ORIGIN/assets/pi/index.html")
         }
         ready.await()
+    }
+
+    /** Debug builds only (via AgentController): crash Pi's renderer to exercise [restart]. */
+    fun debugCrashRenderer() { main.post { webView?.loadUrl("chrome://crash") } }
+
+    /** Replace a dead runtime: tell listeners (a running task has ended), then boot Pi again. */
+    private fun restart() {
+        webView?.let { (it.parent as? android.view.ViewGroup)?.removeView(it); it.destroy() }
+        webView = null
+        loopback.closeAll()
+        httpReplies.values.forEach { it.cancel() }
+        httpReplies.clear()
+        if (ready.isCompleted) ready = CompletableDeferred()
+        events.tryEmit(JSONObject().put("type", "runtime_restarted"))
+        scope.launch { runCatching { start() }.onFailure { Log.e(TAG, "Pi did not restart", it) } }
     }
 
     private fun onMessage(m: JSONObject) {
@@ -170,7 +194,7 @@ class PiEngine(context: Context, private val agentName: String) {
 
     private fun js(fn: String, arg: JSONObject?) {
         // JSONObject.quote turns the JSON into a safe JS string literal.
-        webView.evaluateJavascript("PiHost.$fn(${arg?.let { JSONObject.quote(it.toString()) } ?: ""})", null)
+        webView?.evaluateJavascript("PiHost.$fn(${arg?.let { JSONObject.quote(it.toString()) } ?: ""})", null)
     }
 
     /** Tool arguments for the log, without typed text (it may be private). */
@@ -178,7 +202,8 @@ class PiEngine(context: Context, private val agentName: String) {
 
     fun destroy() {
         loopback.closeAll()
-        if (::webView.isInitialized) webView.destroy()
+        webView?.destroy()
+        webView = null
     }
 
     companion object {

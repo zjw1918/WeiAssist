@@ -4,6 +4,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.core.net.toUri
 import androidx.compose.foundation.layout.Arrangement
@@ -49,6 +50,8 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         if (BuildConfig.DEBUG) intent.getStringExtra("task")?.let { debugTask.value = it }
+        // Debug builds: `--ez crashPi true` crashes Pi's renderer to test recovery.
+        if (BuildConfig.DEBUG && intent.getBooleanExtra("crashPi", false)) viewModels<AppViewModel>().value.debugCrashRuntime()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

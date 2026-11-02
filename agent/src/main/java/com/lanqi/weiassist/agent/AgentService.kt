@@ -146,8 +146,11 @@ class AgentService : Service() {
             .setContentIntent(open)
             .setAutoCancel(true)
             .build()
-        runCatching { androidx.core.app.NotificationManagerCompat.from(this).notify(NOTIFICATION_DONE, n) }
-            .onFailure { Log.w(TAG, "cannot post result (notifications off?)") }
+        val nm = androidx.core.app.NotificationManagerCompat.from(this)
+        val allowed = Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (allowed && nm.areNotificationsEnabled()) nm.notify(NOTIFICATION_DONE, n)
+        else Log.i(TAG, "result not shown: notifications are off for this app")
     }
 
     /** Notifications show plain text: drop the model's markdown emphasis and code marks. */

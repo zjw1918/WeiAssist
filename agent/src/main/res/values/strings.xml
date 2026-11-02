@@ -18,4 +18,5 @@
     <string name="first_hello">Hello</string>
     <string name="confirm_title">WeiAssist wants to tap “%1$s”</string>
     <string name="confirm_nothing_typed">(nothing was typed in this task)</string>
+    <string name="err_runtime_restarted">The assistant\'s engine had to restart, so this task stopped. Please try again.</string>
 </resources>

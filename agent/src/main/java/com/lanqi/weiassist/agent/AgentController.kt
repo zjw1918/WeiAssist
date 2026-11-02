@@ -69,6 +69,10 @@ class AgentController(context: Context) {
         when (effect) {
             is Effect.OpenBrowser -> _openInBrowser.tryEmit(effect.url)
             Effect.SignedIn -> send(appContext.getString(R.string.first_hello), phoneTools = false)
+            is Effect.RuntimeRestarted -> {
+                agentConfig = null // the new runtime has no Agent yet; the next message configures one
+                if (effect.wasBusy) _state.update { it.copy(run = it.run.copy(error = appContext.getString(R.string.err_runtime_restarted))) }
+            }
             null -> Unit
         }
     }
@@ -139,6 +143,9 @@ class AgentController(context: Context) {
         scope.launch { pi.abort() }
         _state.update { it.copy(run = it.run.copy(busy = false, trace = (it.run.trace + "stopped by user").takeLast(AgentReducer.MAX_TRACE))) }
     }
+
+    /** Debug builds only: simulate Pi's WebView renderer dying, to test recovery on a device. */
+    fun debugCrashRuntime() = pi.debugCrashRenderer()
 
     fun destroy() {
         pi.destroy()

@@ -66,6 +66,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun selectThinking(level: String) = withAgent { selectThinking(level) }
     fun newConversation() = withAgent { newConversation() }
     fun stop() = withAgent { stop() }
+    fun debugCrashRuntime() { if (BuildConfig.DEBUG) withAgent { debugCrashRuntime() } }
 
     fun send() = withAgent {
         prefs.edit().putBoolean("phoneMode", phoneMode).putString("input", input).apply()
