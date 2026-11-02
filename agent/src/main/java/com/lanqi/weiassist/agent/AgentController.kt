@@ -263,12 +263,22 @@ class AgentController(context: Context) {
     // ---- helpers ----------------------------------------------------------------------------------
     /** Turn the provider's error text into something a user can act on; keep the original for the trace. */
     private fun friendly(msg: String): String = when {
-        "Insufficient Balance" in msg || "402" in msg && _state.value.providerId == "deepseek" ->
-            appContext.getString(R.string.err_deepseek_balance) + "\n" + msg
-        "insufficient_quota" in msg || "429" in msg && "quota" in msg -> appContext.getString(R.string.err_quota) + "\n" + msg
+        outOfCredit(msg) -> with(_state.value) {
+            // OpenAI: people often expect a ChatGPT plan to cover the API, so say it doesn't.
+            if (providerId == "openai") appContext.getString(R.string.err_quota)
+            else appContext.getString(R.string.err_balance, provider?.name ?: providerId)
+        } + "\n" + msg
         "401" in msg || "invalid_api_key" in msg || "Incorrect API key" in msg -> appContext.getString(R.string.err_key) + "\n" + msg
         "model_not_found" in msg || "model" in msg && ("not found" in msg || "does not exist" in msg) ->
             appContext.getString(R.string.err_model, _state.value.modelId) + "\n" + msg
         else -> msg
+    }
+
+    /** The provider's account has no credit left: 402, or how OpenAI, DeepSeek and Anthropic word it. */
+    private fun outOfCredit(msg: String) = HTTP_402.containsMatchIn(msg) || "Insufficient Balance" in msg ||
+        "insufficient_quota" in msg || "credit balance is too low" in msg || "429" in msg && "quota" in msg
+
+    private companion object {
+        val HTTP_402 = Regex("""\b402\b""")
     }
 }

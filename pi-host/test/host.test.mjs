@@ -38,6 +38,17 @@ test("offers Pi's DeepSeek provider with its API-key sign-in and models", async 
 	assert.deepEqual(JSON.parse(host.state.credentials).deepseek, { type: "api_key", key: "sk-ds" });
 });
 
+test("offers more of Pi's providers, by API key only, each with a model that reads images", async () => {
+	const host = await startHost();
+	const status = await host.waitFor("status");
+	const ids = status.providers.map((p) => p.id);
+	for (const id of ["opencode", "opencode-go", "anthropic", "google", "openrouter", "xai", "moonshotai", "mistral"]) assert.ok(ids.includes(id), id);
+	for (const p of status.providers) {
+		if (p.id !== "openai") assert.deepEqual(p.methods.map((m) => m.type), ["api_key"], p.id);
+		assert.ok(p.models.some((m) => m.input?.includes("image")), `${p.id} has a model that reads images`);
+	}
+});
+
 test("API-key sign-in goes through Pi's own login and is mirrored to Kotlin", async () => {
 	const host = await startHost();
 	host.call("login", { provider: "openai", type: "api_key" });
@@ -77,6 +88,19 @@ test("a prompt goes through Pi's Agent and OpenAI adapter, via native fetch, and
 	assert.equal(body.model, "gpt-5.4-mini");
 	assert.match(JSON.stringify(body.input), /你好/);
 	assert.ok(host.fetches.some((f) => f.url === `${mock.url}/responses`), "the request went through the native-fetch bridge");
+});
+
+test("OpenCode requests carry the session's id, as OpenCode requires", async () => {
+	const host = await startHost({ credentials: JSON.stringify({ opencode: { type: "api_key", key: "sk-oc" } }) });
+	const before = mock.requests.length;
+	host.call("configure", { session: "oc1", provider: "opencode", modelId: "gpt-5.4-mini", thinkingLevel: "low", baseUrl: mock.url });
+	await host.waitFor("configured");
+	host.call("prompt", { session: "oc1", text: "你好" });
+	await host.waitFor("idle");
+	assert.equal(host.messages.find((m) => m.type === "assistant_end").errorMessage, undefined);
+	const req = mock.requests[before];
+	assert.equal(req.headers.authorization, "Bearer sk-oc");
+	assert.equal(req.headers["x-opencode-session"], "oc1");
 });
 
 test("ChatGPT sign-in starts Pi's OAuth flow on the loopback port and can be cancelled", async () => {

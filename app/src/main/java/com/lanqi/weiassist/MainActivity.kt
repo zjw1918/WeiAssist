@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -20,6 +21,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -30,6 +34,7 @@ import com.lanqi.weiassist.agent.Screen
 import com.lanqi.weiassist.ui.ApiKeySignIn
 import com.lanqi.weiassist.ui.AppTheme
 import com.lanqi.weiassist.ui.HomeScreen
+import com.lanqi.weiassist.ui.Tab
 import com.lanqi.weiassist.ui.SubscriptionSignIn
 import com.lanqi.weiassist.ui.WelcomeScreen
 
@@ -122,8 +127,10 @@ fun MainActivity.App(vm: AppViewModel = viewModel()) {
         }.filter { androidx.core.content.ContextCompat.checkSelfPermission(context, it) != android.content.pm.PackageManager.PERMISSION_GRANTED }
         if (wanted.isNotEmpty()) ask.launch(wanted.toTypedArray())
     }
+    // Above the sign-in screens, so cancelling a sign-in from the AI providers tab returns to that tab.
+    var homeTab by rememberSaveable { mutableStateOf(Tab.Sessions) }
     if (s.screen == Screen.Connected) {
-        HomeScreen(vm, s)
+        HomeScreen(vm, s, homeTab) { homeTab = it }
         return
     }
     Scaffold { inner ->
@@ -140,9 +147,13 @@ fun MainActivity.App(vm: AppViewModel = viewModel()) {
         ) {
             when (val screen = s.screen) {
                 Screen.Welcome -> WelcomeScreen(s.providers, s.piVersion, s.signIn.error, vm::signIn)
-                is Screen.SigningIn ->
+                is Screen.SigningIn -> {
+                    // Sign-in is a state, not a navigation destination: Back cancels it like the Cancel button,
+                    // returning to where it started, instead of closing the app.
+                    BackHandler { vm.cancelSignIn() }
                     if (screen.method.type == "oauth") SubscriptionSignIn(s.signIn.authUrl, s.signIn.progress, s.signIn.prompt, vm::reopenBrowser, vm::submitPrompt, vm::cancelSignIn)
-                    else ApiKeySignIn(screen.provider, s.signIn.prompt, s.signIn.progress, vm::submitPrompt, vm::cancelSignIn)
+                    else ApiKeySignIn(s.providers.firstOrNull { it.id == screen.provider }, s.signIn.prompt, s.signIn.progress, vm::submitPrompt, vm::cancelSignIn)
+                }
                 Screen.Starting, Screen.Connected -> Unit
             }
         }

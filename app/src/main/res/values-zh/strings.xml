@@ -20,7 +20,7 @@
     <string name="cancel">取消</string>
     <string name="default_input">你好</string>
     <string name="welcome_title">你好，我是小维助手</string>
-    <string name="welcome_body">先给我接上一个大模型。我用 Pi %1$s 和模型对话，目前可以接 OpenAI 和 DeepSeek。</string>
+    <string name="welcome_body">先给我接上一个大模型。我用 Pi %1$s 和模型对话，在下面选一家服务商。</string>
     <string name="method_sub_title">用 ChatGPT 订阅登录</string>
     <string name="method_sub_body">用你的 ChatGPT 账号登录，额度算在订阅里，不用另外充值。会打开 Chrome，登录并同意后回到这里。</string>
     <string name="method_key_title">用 OpenAI API key</string>
@@ -49,6 +49,13 @@
     <string name="key_title_deepseek">填入 DeepSeek API key</string>
     <string name="key_deepseek_step1">在 platform.deepseek.com 充值</string>
     <string name="key_deepseek_step2">在 API keys 页面创建新的 API key，复制以 sk- 开头的密钥</string>
+    <string name="method_key_generic_title">用 %1$s API key</string>
+    <string name="method_key_generic_body">按用量付费：在 %1$s 充值，再创建一个密钥。</string>
+    <string name="key_title_generic">填入 %1$s API key</string>
+    <string name="key_generic_step1">如果账户需要，先在 %1$s 充值或绑卡</string>
+    <string name="key_generic_step2">在 API keys 页面创建新的密钥并复制</string>
+    <string name="key_prefix_hint">%1$s 的密钥以 %2$s 开头</string>
+    <string name="method_opencode_go_body">用你的 OpenCode Go 订阅：在 opencode.ai 订阅后，在那里创建一个 API key。</string>
     <string name="provider_not_connected">未连接，点一下添加</string>
     <string name="provider_use">已通过 %1$s 连接，点一下切换使用</string>
     <string name="provider_in_use">使用中</string>

@@ -110,7 +110,7 @@ fun ProvidersTab(vm: AppViewModel, s: AgentState) {
             text = {
                 Column {
                     p.methods.sortedByDescending { it.subscription }.forEach { m ->
-                        TextButton(onClick = { connecting = null; vm.signIn(p.id, m) }) { Text(methodText(p.id, m).first) }
+                        TextButton(onClick = { connecting = null; vm.signIn(p.id, m) }) { Text(methodText(p, m).first) }
                     }
                 }
             },

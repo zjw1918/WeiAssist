@@ -35,11 +35,11 @@ enum class Tab(@StringRes val label: Int, @DrawableRes val icon: Int) {
 
 /**
  * The signed-in app: three tabs (Sessions, AI providers, Settings) on a bottom bar. An open session
- * takes the whole screen, as a chat does; Back returns to the list.
+ * takes the whole screen, as a chat does; Back returns to the list. The tab is the caller's, so it
+ * survives a sign-in started from the AI providers tab (which replaces this screen meanwhile).
  */
 @Composable
-fun HomeScreen(vm: AppViewModel, s: AgentState) {
-    var tab by rememberSaveable { mutableStateOf(Tab.Sessions) }
+fun HomeScreen(vm: AppViewModel, s: AgentState, tab: Tab, onTab: (Tab) -> Unit) {
     // Kept here so the list keeps its place while a session is open.
     val sessionList = rememberLazyListState()
     val openId by vm.openId.collectAsStateWithLifecycle()
@@ -48,7 +48,7 @@ fun HomeScreen(vm: AppViewModel, s: AgentState) {
         SessionScreen(vm, session)
         return
     }
-    BackHandler(enabled = tab != Tab.Sessions) { tab = Tab.Sessions }
+    BackHandler(enabled = tab != Tab.Sessions) { onTab(Tab.Sessions) }
     val sessions by vm.sessions.collectAsStateWithLifecycle()
     val running = sessions.count { it.status.active && !it.supervisor }
     Scaffold(
@@ -57,7 +57,7 @@ fun HomeScreen(vm: AppViewModel, s: AgentState) {
             NavigationBar {
                 Tab.entries.forEach { t ->
                     NavigationBarItem(
-                        selected = tab == t, onClick = { tab = t },
+                        selected = tab == t, onClick = { onTab(t) },
                         label = { Text(stringResource(t.label)) },
                         icon = {
                             BadgedBox(badge = { if (t == Tab.Sessions && running > 0) Badge { Text("$running") } }) {

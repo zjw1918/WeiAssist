@@ -17,6 +17,15 @@ import {
 } from "@earendil-works/pi-ai";
 import { openaiProvider } from "@earendil-works/pi-ai/providers/openai";
 import { deepseekProvider } from "@earendil-works/pi-ai/providers/deepseek";
+import { anthropicProvider } from "@earendil-works/pi-ai/providers/anthropic";
+import { googleProvider } from "@earendil-works/pi-ai/providers/google";
+import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
+import { xaiProvider } from "@earendil-works/pi-ai/providers/xai";
+import { moonshotaiProvider } from "@earendil-works/pi-ai/providers/moonshotai";
+import { moonshotaiCnProvider } from "@earendil-works/pi-ai/providers/moonshotai-cn";
+import { mistralProvider } from "@earendil-works/pi-ai/providers/mistral";
+import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
+import { opencodeGoProvider } from "@earendil-works/pi-ai/providers/opencode-go";
 // Pi's catalog of models OpenAI offers to ChatGPT accounts ("Codex with a ChatGPT account").
 import { OPENAI_CODEX_MODELS } from "@earendil-works/pi-ai/providers/openai-codex.models";
 // Pi's public entry point for embedding its OAuth flows in a bundle (what Pi's own standalone binary
@@ -67,8 +76,20 @@ class MirroredCredentialStore implements CredentialStore {
 
 const credentials = new MirroredCredentialStore();
 const models = createModels({ credentials });
-models.setProvider(openaiProvider());
-models.setProvider(deepseekProvider());
+// The providers offered here, in the order the app lists them. Adding one is a line here; the app
+// builds its sign-in screens from what status() reports (Pi's provider name and auth methods).
+// Each needs a model that reads images (phone tasks send screenshots), and nothing beyond a key or
+// a tested sign-in (not Bedrock, Vertex, Azure or Cloudflare, which need cloud accounts).
+for (const p of [
+	openaiProvider(), deepseekProvider(), opencodeProvider(), opencodeGoProvider(), anthropicProvider(), googleProvider(),
+	openrouterProvider(), xaiProvider(), moonshotaiProvider(), moonshotaiCnProvider(), mistralProvider(),
+]) models.setProvider(p);
+/**
+ * Providers whose OAuth sign-in is offered. Each flow must be tried in the WebView (callback server
+ * shim, Chrome hand-off) and the provider must allow a subscription to be used from this app;
+ * the others offer their API key only.
+ */
+const OAUTH_PROVIDERS = new Set(["openai"]);
 
 let deviceId = "";
 let agentName = "Pi";
@@ -85,7 +106,7 @@ async function status() {
 		name: p.name,
 		// The sign-in choices are Pi's own: its api-key method and its OAuth (subscription) method.
 		methods: [
-			p.auth.oauth && { type: "oauth", name: p.auth.oauth.name, label: p.auth.oauth.loginLabel, subscription: !!p.auth.oauth.isSubscription },
+			p.auth.oauth && OAUTH_PROVIDERS.has(p.id) && { type: "oauth", name: p.auth.oauth.name, label: p.auth.oauth.loginLabel, subscription: !!p.auth.oauth.isSubscription },
 			p.auth.apiKey && { type: "api_key", name: p.auth.apiKey.name },
 		].filter(Boolean),
 		credential: infos.find((i) => i.providerId === p.id)?.type ?? null,
@@ -131,6 +152,7 @@ const interaction = (signal: AbortSignal): AuthInteraction => ({
 });
 
 async function startLogin(provider: string, type: "oauth" | "api_key") {
+	if (type === "oauth" && !OAUTH_PROVIDERS.has(provider)) throw new Error(`OAuth sign-in to ${provider} is not offered here`);
 	login?.abort();
 	const controller = new AbortController();
 	login = controller;
@@ -273,6 +295,8 @@ async function configure(cfg: Config) {
 			// Chat and phone sessions get bash (Termux); the supervisor only manages sessions.
 			tools: supervisor ? supervisor.tools : [...(phone?.tools ?? []), bashTool(cfg.session)],
 		},
+		// Forwarded to providers for routing and prompt caching (OpenCode requires it as x-opencode-session).
+		sessionId: cfg.session,
 		// Pi's hook: the pause gate, then risky taps wait for the user's OK.
 		beforeToolCall: beforeToolCall(session),
 		// Pi's hook to shape the context per model call: drop old screens (see pruneOldScreens).

@@ -100,6 +100,15 @@ class AgentReducerTest {
         assertEquals("gpt-6-luna", reduce(base.copy(modelId = "nope"), status("oauth", model("gpt-6-luna", "low"))).state.modelId)
     }
 
+    @Test fun `a provider without a default starts with its first model that reads images`() {
+        val textOnly = JSONObject().put("id", "t").put("name", "t").put("thinkingLevels", JSONArray()).put("contextWindow", 1000).put("input", JSONArray(listOf("text")))
+        val other = JSONObject().put("id", "other").put("name", "Other").put("credential", "api_key")
+            .put("methods", JSONArray().put(JSONObject().put("type", "api_key").put("name", "Other API key")))
+            .put("models", JSONArray().put(textOnly).put(model("vision", "low")))
+        val s = reduce(base.copy(providerId = "other", modelId = ""), statusOf(other)).state
+        assertEquals("vision", s.modelId)
+    }
+
     @Test fun `thinking level moves to the nearest supported level at or above it`() {
         val s = reduce(base.copy(modelId = "m", thinkingLevel = "off"), status("oauth", model("m", "low", "medium", "high"))).state
         assertEquals("low", s.thinkingLevel)

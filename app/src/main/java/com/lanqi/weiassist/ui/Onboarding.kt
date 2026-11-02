@@ -48,7 +48,7 @@ fun WelcomeScreen(providers: List<ProviderInfo>, piVersion: String?, error: Stri
         providers.forEach { p ->
             // Subscription first: most people already pay for ChatGPT and have no API account.
             p.methods.sortedByDescending { it.subscription }.forEach { m ->
-                val (title, body) = methodText(p.id, m)
+                val (title, body) = methodText(p, m)
                 MethodCard(title, body, note = m.label ?: m.name, primary = m.subscription, onClick = { onPick(p.id, m) })
             }
         }
@@ -56,13 +56,48 @@ fun WelcomeScreen(providers: List<ProviderInfo>, piVersion: String?, error: Stri
     }
 }
 
+/**
+ * What the app knows about a provider beyond Pi's name and auth methods: where its API keys are made
+ * and how they start. Optional: a provider Pi offers that isn't listed still gets generic sign-in text.
+ * OpenAI and DeepSeek keep their own wording (billing there trips people up).
+ */
+private data class ProviderGuide(
+    val keysPage: String,
+    val keyPrefix: String? = null,
+    val cardTitle: Int? = null, val cardBody: Int? = null,
+    val keyTitle: Int? = null, val keySteps: List<Int>? = null,
+)
+
+private val GUIDES = mapOf(
+    "openai" to ProviderGuide("https://platform.openai.com/api-keys", "sk-",
+        R.string.method_key_title, R.string.method_key_body, R.string.key_title, listOf(R.string.key_step1, R.string.key_step2)),
+    "deepseek" to ProviderGuide("https://platform.deepseek.com/api_keys", "sk-",
+        R.string.method_deepseek_title, R.string.method_deepseek_body, R.string.key_title_deepseek, listOf(R.string.key_deepseek_step1, R.string.key_deepseek_step2)),
+    // Zen: pay per use. Go: a monthly subscription; both use an API key made at opencode.ai.
+    "opencode" to ProviderGuide("https://opencode.ai/auth"),
+    "opencode-go" to ProviderGuide("https://opencode.ai/auth", cardBody = R.string.method_opencode_go_body),
+    "anthropic" to ProviderGuide("https://console.anthropic.com/settings/keys", "sk-ant-"),
+    "google" to ProviderGuide("https://aistudio.google.com/apikey", "AIza"),
+    "openrouter" to ProviderGuide("https://openrouter.ai/settings/keys", "sk-or-"),
+    "xai" to ProviderGuide("https://console.x.ai", "xai-"),
+    "moonshotai" to ProviderGuide("https://platform.moonshot.ai/console/api-keys", "sk-"),
+    "moonshotai-cn" to ProviderGuide("https://platform.moonshot.cn/console/api-keys", "sk-"),
+    "mistral" to ProviderGuide("https://console.mistral.ai/api-keys"),
+)
+
+private fun siteOf(url: String) = runCatching { java.net.URI(url).host }.getOrNull() ?: url
+
 /** What a sign-in method is called in this app, and what it involves. */
 @Composable
-fun methodText(provider: String, m: AuthMethod): Pair<String, String> = when {
-    provider == "openai" && m.type == "oauth" -> stringResource(R.string.method_sub_title) to stringResource(R.string.method_sub_body)
-    provider == "openai" -> stringResource(R.string.method_key_title) to stringResource(R.string.method_key_body)
-    provider == "deepseek" -> stringResource(R.string.method_deepseek_title) to stringResource(R.string.method_deepseek_body)
-    else -> m.name to ""
+fun methodText(p: ProviderInfo, m: AuthMethod): Pair<String, String> {
+    val g = GUIDES[p.id]
+    return when {
+        // The only OAuth sign-in offered (Pi host's OAUTH_PROVIDERS); SubscriptionSignIn's text is about ChatGPT too.
+        p.id == "openai" && m.type == "oauth" -> stringResource(R.string.method_sub_title) to stringResource(R.string.method_sub_body)
+        m.type == "oauth" -> (m.label ?: m.name) to ""
+        else -> (g?.cardTitle?.let { stringResource(it) } ?: stringResource(R.string.method_key_generic_title, p.name)) to
+            (g?.cardBody?.let { stringResource(it) } ?: g?.let { stringResource(R.string.method_key_generic_body, siteOf(it.keysPage)) } ?: "")
+    }
 }
 
 @Composable
@@ -114,25 +149,29 @@ fun SubscriptionSignIn(
 
 /** Step 2b: API key. Pi's api-key method asks for a "secret"; we answer it with what the user pastes. */
 @Composable
-fun ApiKeySignIn(provider: String, prompt: PendingPrompt?, progress: String?, onSubmit: (String) -> Unit, onCancel: () -> Unit) {
+fun ApiKeySignIn(provider: ProviderInfo?, prompt: PendingPrompt?, progress: String?, onSubmit: (String) -> Unit, onCancel: () -> Unit) {
     var key by rememberSaveable { mutableStateOf("") }
     val uri = LocalUriHandler.current
-    val deepseek = provider == "deepseek"
-    // Both providers' keys start with sk-.
-    val keysPage = if (deepseek) "https://platform.deepseek.com/api_keys" else "https://platform.openai.com/api-keys"
+    val name = provider?.name ?: "…"
+    val g = GUIDES[provider?.id]
+    val prefix = g?.keyPrefix
+    val wrongPrefix = prefix != null && key.isNotBlank() && !key.trim().startsWith(prefix)
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text(stringResource(if (deepseek) R.string.key_title_deepseek else R.string.key_title), style = MaterialTheme.typography.headlineSmall)
-        Steps(listOf(
-            stringResource(if (deepseek) R.string.key_deepseek_step1 else R.string.key_step1),
-            stringResource(if (deepseek) R.string.key_deepseek_step2 else R.string.key_step2),
-            stringResource(R.string.key_step3),
-        ))
-        OutlinedButton(onClick = { uri.openUri(keysPage) }) { Text(stringResource(R.string.open_keys_page)) }
+        Text(g?.keyTitle?.let { stringResource(it) } ?: stringResource(R.string.key_title_generic, name), style = MaterialTheme.typography.headlineSmall)
+        Steps(
+            (g?.keySteps?.map { stringResource(it) } ?: listOf(
+                stringResource(R.string.key_generic_step1, g?.let { siteOf(it.keysPage) } ?: name),
+                stringResource(R.string.key_generic_step2),
+            )) + stringResource(R.string.key_step3),
+        )
+        g?.let { OutlinedButton(onClick = { uri.openUri(it.keysPage) }) { Text(stringResource(R.string.open_keys_page)) } }
         OutlinedTextField(
             key, { key = it }, singleLine = true, visualTransformation = PasswordVisualTransformation(),
-            label = { Text(prompt?.message ?: "API key") }, placeholder = { Text("sk-…") }, modifier = Modifier.fillMaxWidth(),
+            label = { Text(prompt?.message ?: "API key") }, placeholder = { Text((prefix ?: "") + "…") }, modifier = Modifier.fillMaxWidth(),
+            isError = wrongPrefix,
+            supportingText = if (wrongPrefix) { { Text(stringResource(R.string.key_prefix_hint, name, prefix!!)) } } else null,
         )
-        Button(onClick = { onSubmit(key) }, enabled = prompt != null && key.trim().startsWith("sk-")) { Text(stringResource(R.string.connect)) }
+        Button(onClick = { onSubmit(key.trim()) }, enabled = prompt != null && key.isNotBlank() && !wrongPrefix) { Text(stringResource(R.string.connect)) }
         progress?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
         TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
     }

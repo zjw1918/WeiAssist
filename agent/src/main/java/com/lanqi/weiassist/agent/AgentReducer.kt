@@ -20,10 +20,23 @@ sealed interface Effect {
 object AgentReducer {
     const val DEFAULT_PROVIDER = "openai"
     /**
-     * Each provider's model to start with (and fall back to when the saved one is not offered).
-     * DeepSeek: V4.1 Flash, the DeepSeek model that reads images (phone tasks send screenshots).
+     * Each provider's model to start with (and fall back to when the saved one is not offered):
+     * a capable model that reads images (phone tasks send screenshots), at a moderate price.
+     * A provider not listed starts with its first model that reads images.
      */
-    val DEFAULT_MODELS = mapOf("openai" to "gpt-6.1-terra", "deepseek" to "deepseek-flash")
+    val DEFAULT_MODELS = mapOf(
+        "openai" to "gpt-6.1-terra",
+        "deepseek" to "deepseek-flash",
+        "opencode" to "claude-sonnet-5-5",
+        "opencode-go" to "kimi-k3",
+        "anthropic" to "claude-sonnet-5-5",
+        "google" to "gemini-flash-latest",
+        "openrouter" to "~anthropic/claude-sonnet-latest",
+        "xai" to "grok-4.7",
+        "moonshotai" to "kimi-k3",
+        "moonshotai-cn" to "kimi-k3",
+        "mistral" to "mistral-medium-latest",
+    )
     /** Pi's ThinkingLevel values, lowest to highest. */
     val LEVEL_ORDER = listOf("off", "minimal", "low", "medium", "high", "xhigh", "max")
 
@@ -82,13 +95,13 @@ object AgentReducer {
 
     /**
      * Pi lists only the models this sign-in can use; keep the choice if it's still there,
-     * else take the provider's default, else the first one.
+     * else take the provider's default, else the first one that reads images, else the first one.
      */
     private fun pickModel(s: AgentState): AgentState {
         val ms = s.provider?.models.orEmpty()
         if (ms.isEmpty()) return s
         val id = if (ms.any { it.id == s.modelId }) s.modelId
-        else (ms.firstOrNull { it.id == DEFAULT_MODELS[s.providerId] } ?: ms.first()).id
+        else (ms.firstOrNull { it.id == DEFAULT_MODELS[s.providerId] } ?: ms.firstOrNull { it.images } ?: ms.first()).id
         return selectModel(s, id)
     }
 

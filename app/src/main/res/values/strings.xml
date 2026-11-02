@@ -20,7 +20,7 @@
     <string name="cancel">Cancel</string>
     <string name="default_input">Hello</string>
     <string name="welcome_title">Hi, I\'m WeiAssist</string>
-    <string name="welcome_body">First, connect me to an AI model. I talk to models through Pi %1$s: OpenAI and DeepSeek are set up here.</string>
+    <string name="welcome_body">First, connect me to an AI model. I talk to models through Pi %1$s: pick a provider below.</string>
     <string name="method_sub_title">Sign in with ChatGPT</string>
     <string name="method_sub_body">Use your ChatGPT account. Usage counts against your plan, with no extra payment. Chrome opens: sign in, allow, and come back here.</string>
     <string name="method_key_title">Use an OpenAI API key</string>
@@ -49,6 +49,13 @@
     <string name="key_title_deepseek">Enter your DeepSeek API key</string>
     <string name="key_deepseek_step1">Top up your balance at platform.deepseek.com.</string>
     <string name="key_deepseek_step2">On the API keys page, create a new API key and copy the key that starts with sk-.</string>
+    <string name="method_key_generic_title">Use a %1$s API key</string>
+    <string name="method_key_generic_body">Pay as you go: add credit at %1$s, then create a key.</string>
+    <string name="key_title_generic">Enter your %1$s API key</string>
+    <string name="key_generic_step1">Add credit or a payment method at %1$s, if your account needs it.</string>
+    <string name="key_generic_step2">On the API keys page, create a new key and copy it.</string>
+    <string name="key_prefix_hint">%1$s keys start with %2$s</string>
+    <string name="method_opencode_go_body">Uses your OpenCode Go subscription: subscribe at opencode.ai, then create an API key there.</string>
     <string name="provider_not_connected">Not connected. Tap to add.</string>
     <string name="provider_use">Connected with %1$s. Tap to use it.</string>
     <string name="provider_in_use">In use</string>

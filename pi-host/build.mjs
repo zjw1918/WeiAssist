@@ -18,7 +18,8 @@ const result = await build({
 	legalComments: "linked",
 	metafile: true,
 	// Pi's OAuth flows import node:http (callback server) and node:crypto (randomBytes); see src/shims.
-	alias: { "node:http": "./src/shims/http.ts", "node:crypto": "./src/shims/crypto.ts" },
+	// standardwebhooks: only for the Anthropic SDK's webhook verification, which the app never does.
+	alias: { "node:http": "./src/shims/http.ts", "node:crypto": "./src/shims/crypto.ts", standardwebhooks: "./src/shims/standardwebhooks.ts" },
 	define: { __PI_VERSION__: JSON.stringify(pi) },
 	outfile: `${out}/host.js`,
 });
