@@ -2,7 +2,7 @@
 
 Status of WeiAssist (小维助手). Updated as work lands. For the long-term plan see [ROADMAP.md](ROADMAP.md).
 
-_Last updated: 2026-11-02_
+_Last updated: 2026-11-03_
 
 **Where things stand:** multiple concurrent sessions with saved history; a built-in shell backend (no
 computer, Shizuku or root needed after one pairing); a virtual display per phone session; live previews;
@@ -254,7 +254,8 @@ Open points from this work:
   `swipe`, and the open_app watch stops after ~1.2 s, so a long splash ad can leave a window on the phone's screen;
   root tasks shown with `I=` (no affinity) aren't parsed; tasks are matched by affinity, not package.
 - [ ] **Trusted displays:** not yet checked with the phone locked, nor whether a keyboard appears on the session's display.
-- [ ] **HyperOS freezer:** GreezeManager froze session apps (`frozen uid=… reason=tobg`, again every 5 s, `check binder`)
+- [x] **HyperOS freezer:** fixed by closing a session's apps when its task ends (`d1fe7e5`, `54f4610`).
+  Was: GreezeManager froze session apps (`frozen uid=… reason=tobg`, again every 5 s, `check binder`)
   once WeiAssist left the foreground; an app that has drawn is skipped ("was show on screen"), one still on its splash
   stays frozen (Taobao: 80 s, `open_app` hit its 15 s limit, a JD tap timed out). Shell can't use `cmd greezer`.
   Background sessions will stall on HyperOS until this is solved (battery "no restrictions" per app? keep them "visible"?).
@@ -267,21 +268,21 @@ Open points from this work:
 
 ## Next: real-world scenarios on the device
 
-Ready: signed in (ChatGPT), Accessibility on, Wireless debugging paired (the shell backend runs).
-Still up to the user:
-- [ ] Decide whether to install Bilibili (Xiaohongshu is installed; Taobao, JD and Pinduoduo are on the Xiaomi).
-- [ ] Be signed in to Taobao / JD for the shopping test (searching works signed out).
+Passed on the Xiaomi: Douban, Bilibili, Xiaohongshu, and shopping on Taobao, JD and Pinduoduo (also in parallel
+through the supervisor).
 
-Scenarios to build, test and refine (installed apps first):
-- [ ] **Social browsing, Douban:** browse a topic, collect the top items with ratings, summarise.
-- [ ] **Social browsing, Bilibili / Xiaohongshu:** if installed. Navigate, scroll the feed, extract posts, do a user-directed action.
-- [ ] **Shopping assistant, Taobao + JD:**
-  - search a product and compare price, specs, reviews and seller;
-  - recommend one and add it to the cart;
-  - ordering waits for the user's explicit approval (the confirmation card).
-- [ ] **Daily productivity, Gmail (and Outlook):** check new mail, summarise the important ones, extract action items, build a prioritised to-do list for the day.
-- [x] **Parallel versions through the supervisor:** Taobao, JD and Pinduoduo searched at the same time (2026-11-02, Xiaomi).
+- [ ] **Daily productivity, NetEase Mail (网易邮箱大师, `com.netease.mail`):** open the latest 10 unread emails,
+  summarise them, and build a prioritised to-do list for the day.
+- [ ] Then Gmail / Outlook, the same task.
 - [ ] For each scenario, log failures (wrong taps, missed content, loops, pop-ups) and fix them in tools, prompt or recovery logic.
+
+### Main screen only (no virtual displays)
+Tested 2026-11-03 with `--ez mainOnly true` (YouTube: found the channel's subscriber count). Gaps:
+- [ ] HyperOS asks "小维助手 wants to open X, allow?" when the app launches another app itself; the model tapped
+  allow this time, but it may not always.
+- [ ] No preview and no hint in the UI that a session runs on the phone's own screen, or that it waits for it.
+- [ ] Mixed mode: a session that fell back to the main screen isn't seen by `guard()`, so a virtual-display session
+  can take its app.
 
 ## Known gaps and todo
 
@@ -298,7 +299,7 @@ Scenarios to build, test and refine (installed apps first):
 - [ ] **Direct intents** where they beat UI automation: share, open URL, alarm, calendar.
 - [ ] **Per-app permissions** (allow / ask / never) and sensitive-screen detection (FLAG_SECURE, payment, OTP).
 - [ ] **Floating assistant bubble** and a wake word (voice input already reaches the supervisor through the phone's speech recognizer).
-- [ ] **More providers:** register Pi's other providers (Anthropic, Google, DeepSeek, OpenRouter, local).
+- [ ] **More providers:** DeepSeek is in; still Anthropic, Google, OpenRouter, local.
 - [ ] **Release workflow:** signed builds on tags. Not yet on GitHub: the user still has to pick the org and repo name.
 - [ ] **Instrumented tests** for PhoneActions on an emulator.
 - [ ] **Repo folder:** the local folder is still `PhoneAgent`; rename it if wanted.
@@ -306,7 +307,8 @@ Scenarios to build, test and refine (installed apps first):
 ## Working notes
 
 - Set a task on the device (debug build): `adb shell "am start -n com.lanqi.weiassist/.MainActivity --es task '…'"`.
-  Add `--ez run true` to start it in a new session, `--ez phone false` for a chat, `--ez mock true` for the mock model.
+  Add `--ez run true` to start it in a new session, `--ez phone false` for a chat, `--ez mock true` for the mock model,
+  `--ez mainOnly true|false` to run phone sessions on the phone's own screen (until the process restarts).
 - Debug: `--ez crashPi true` crashes Pi's renderer; `--ez killProcess true` ends the process (session recovery).
 - Never `am force-stop` the app on realme: that disables its accessibility service.
 - UI dumps of our own Compose screen can be stale; use screenshots to locate buttons.

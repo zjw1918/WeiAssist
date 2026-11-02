@@ -33,7 +33,7 @@ Status legend: ✅ done · 🔨 next · ⬜ planned. Current status and todo: [P
 - 🔨 **Instrumented tests:** PhoneActions against a small test app on an emulator in CI.
 - ✅ **CI (GitHub Actions):** pi-host tests, lint, unit tests and the debug APK on every PR.
 - ⬜ **Release workflow:** signed release builds on tags.
-- 🔨 **Conversation history:** persist Pi's transcript (Agent messages) in Room, so a restart doesn't lose the conversation. Resume a past chat.
+- ✅ **Conversation history:** sessions with saved transcripts; a restart doesn't lose them.
 - ⬜ **Structured logging:** a ring buffer with an in-app "copy diagnostics" option. Secrets and typed text are always redacted.
 - ⬜ **Settings screen:** provider, model, thinking level, language, safety options.
 
@@ -46,8 +46,8 @@ Status legend: ✅ done · 🔨 next · ⬜ planned. Current status and todo: [P
 - ⬜ **Direct actions before UI automation:** intents for share, open URL, dial (with confirm), alarm/timer and calendar insert; contacts lookup with permission. Faster and more reliable than tapping.
 - ⬜ **Robustness:** wait for UI idle instead of fixed waits, verify each action's effect, recover from dialogs/keyboards/permission prompts, retry with backoff.
 - ⬜ **Skills:** per-app hints ("in Gmail, the Send button is the paper-plane") as small Markdown files, in the spirit of Pi's skills.
-- ⬜ **All of Pi's providers:** Anthropic, Google, DeepSeek, OpenRouter, local OpenAI-compatible servers. The UI is already provider-shaped.
-- ⬜ **Long tasks:** a visible step list; the user can steer mid-task (Pi's `steer`/follow-up queue).
+- 🔨 **All of Pi's providers:** ChatGPT, OpenAI API and DeepSeek are in; Anthropic, Google, OpenRouter and local OpenAI-compatible servers to come.
+- ✅ **Long tasks:** a visible step list; the user can steer mid-task (Pi's `steer`/follow-up queue).
 
 ## 3. Experience
 
