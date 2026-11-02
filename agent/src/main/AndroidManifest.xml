@@ -9,6 +9,8 @@
 
     <!-- The bash tool runs commands in Termux (Termux.kt); granted by the user, see Termux.SETUP. -->
     <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
+    <!-- Keep the CPU awake while a bash command runs (builds, tests with the screen off). -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <queries>
         <package android:name="com.termux" />
     </queries>

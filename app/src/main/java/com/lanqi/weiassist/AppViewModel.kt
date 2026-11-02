@@ -101,6 +101,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         .map { it || enabledInSettings }
         .stateIn(viewModelScope, SharingStarted.Eagerly, enabledInSettings)
 
+    /** The bash tool's Termux bridge, for its Settings section. */
+    val termux get() = controller.value?.termux
+
     private fun withAgent(f: AgentController.() -> Unit) { controller.value?.f() }
 
     fun signIn(method: AuthMethod) = withAgent { signIn(method) }

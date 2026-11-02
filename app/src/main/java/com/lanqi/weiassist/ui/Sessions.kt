@@ -112,7 +112,8 @@ private fun SupervisorCard(vm: AppViewModel, s: SessionSummary?) {
                 }
             }
             Text(
-                s?.preview?.takeIf { it.isNotBlank() } ?: stringResource(R.string.supervisor_hint),
+                s?.preview?.takeIf { it.isNotBlank() }?.let { remember(it) { com.lanqi.weiassist.agent.Markdown.plain(it).replace('\n', ' ') } }
+                    ?: stringResource(R.string.supervisor_hint),
                 style = MaterialTheme.typography.bodyMedium, maxLines = 4, overflow = TextOverflow.Ellipsis,
                 color = if (s?.error == true) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onTertiaryContainer,
             )
@@ -194,8 +195,9 @@ private fun SessionCard(s: SessionSummary, vm: AppViewModel) {
                 Text(s.title.ifBlank { stringResource(R.string.untitled) }, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 StatusChip(s.status)
             }
+            // Previews saved before answers were rendered as Markdown still have its markers.
             if (s.preview.isNotBlank()) Text(
-                s.preview, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                remember(s.preview) { com.lanqi.weiassist.agent.Markdown.plain(s.preview).replace('\n', ' ') }, style = MaterialTheme.typography.bodySmall, maxLines = 2, overflow = TextOverflow.Ellipsis,
                 color = if (s.error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -266,6 +268,8 @@ private fun SettingsCard(vm: AppViewModel, s: AgentState) {
                 Text(stringResource(R.string.pi_runtime_info, s.piVersion.orEmpty()), style = MaterialTheme.typography.bodySmall)
                 androidx.compose.material3.HorizontalDivider()
                 ShellSection()
+                androidx.compose.material3.HorizontalDivider()
+                TermuxSection(vm.termux)
                 androidx.compose.material3.HorizontalDivider()
                 if (BuildConfig.DEBUG) Row(verticalAlignment = Alignment.CenterVertically) {
                     Switch(checked = vm.useMock, onCheckedChange = vm::setMock)

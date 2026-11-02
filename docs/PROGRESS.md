@@ -33,7 +33,7 @@ Chat and phone sessions can now run Linux commands in Termux with a `bash` tool 
 - **Tests** (as of 2026-11-02):
   - 46 JVM tests: `AgentReducer` 11, `SessionReducer` 12, `SessionText` 5, `Markdown` 8, `DisplayTasks` 5, adb crypto and framing 5;
   - 19 end-to-end tests of the shipped bundle (`pi-host/test`) over the real bridge protocol, with a mock provider
-    and scripted tool calls (sessions, restore, pause gate, supervisor tools).
+    and scripted tool calls (sessions, restore, pause gate, supervisor tools, bash). Now 22.
 - **Project files:** CI workflow, README (en and zh), ARCHITECTURE, CONTRIBUTING, Code of Conduct, SECURITY, Apache-2.0 and NOTICE.
 
 ### Agent capabilities
@@ -171,6 +171,22 @@ Chat and phone sessions can now run Linux commands in Termux with a `bash` tool 
   build 0.118.3); `pkg install curl` alone left curl linked against an old openssl (fixed with `apt full-upgrade`);
   Termux sends `*_original_length` as strings.
 
+### Termux, phase 2 (2026-11-02)
+- **Per-session tmux:** every command runs with `TMUX_TMPDIR=~/sessions/<id>/.tmux`, so a session's jobs are its own
+  and can be found and ended with it.
+- **Clean-up:** Stop ends the session's tmux jobs and running commands; Delete also removes `~/sessions/<id>`
+  (`SessionManager.onEnded` → `Termux.cleanUp`; only for sessions that used bash).
+- **Staying awake:** the app holds a partial wake lock while a command runs; Termux's own wake lock
+  (`termux-wake-lock`) is held while any session has tmux jobs, and dropped when none has.
+- **Settings → Linux commands (Termux):** shows what is missing with the button that fixes it (download, Google
+  Play build, Allow), a Check (bash, curl, tmux, network), and a link to Termux's app settings for autostart/battery.
+- **Tests:** 3 pi-host tests (command, session and output across the bridge; Stop kills the command; no bash for
+  the supervisor): 22 in all.
+- **Verified on the Xiaomi:** Settings check all ✓. Chat task "write a Go HTTP service with a unit test, run it in
+  tmux on 8080, keep it running": `pkg install golang`, `go test`, build, tmux, curl, in ~70 s; the server answered
+  from the Mac through `adb forward` after the task ended, with Termux's wake lock held; deleting the session
+  stopped the server and released the wake lock. Old session previews now show without Markdown markers.
+
 ### Verified on a real device (realme RMX2121, Android 12)
 - ChatGPT subscription sign-in, then "你好" through Pi (`gpt-6.1-sol`).
 - Gmail: sent an email to two different addresses, each after the confirmation card.
@@ -239,13 +255,9 @@ Scenarios to build, test and refine (installed apps first):
 
 ## Known gaps and todo
 
-- [ ] **Termux, phase 2:**
-  - a Termux status row in Settings (installed, GitHub/F-Droid build, permission, `allow-external-apps`, curl works);
-  - `termux-wake-lock` while a long job runs, and a note to allow Termux autostart / no battery restrictions on HyperOS;
-  - list and stop a session's `tmux` jobs when the session is stopped or deleted, and remove `~/sessions/<id>` on delete;
-  - try a Go server task end to end (build, run in tmux, test with curl);
-  - pi-host test for the `bash` tool over the bridge.
-
+- [ ] **Termux, later:** ask Termux to keep its own wake lock only while jobs run (today it is re-checked after each
+  command and clean-up, so a job that ends by itself keeps the lock until the next one); a way to stop a finished
+  session's jobs from the UI (now: ask the agent, or delete the session).
 - [ ] **Readable confirmation card:** show the target app and a summary (recipient, item and price) instead of raw field lines.
 - [x] **Markdown in answers** (2026-11-02): a small built-in renderer, no new dependency. `agent/Markdown.kt` parses
   (headings, lists with nesting, tables with alignment, code blocks, quotes, rules; bold, italic, strike, code,

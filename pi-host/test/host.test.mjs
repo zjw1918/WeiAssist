@@ -315,3 +315,57 @@ test("one request can start at most eight sessions", async () => {
 	const blocked = host.messages.filter((m) => m.type === "tool_end" && m.tool === "create_session" && m.isError);
 	assert.equal(blocked.length, 1);
 });
+
+// ---- bash (Termux, served by Kotlin's "bash" host call) ------------------------------------------
+
+test("a chat session runs bash in Termux; the command and the session reach Kotlin, the output reaches the model", async () => {
+	const calls = [];
+	const host = await startHost({
+		credentials: apiKeyCredentials,
+		hostCalls: { bash: (m) => { calls.push(m); return "exit code 0\n--- stdout ---\nHangzhou: 🌧 +14°C"; } },
+	});
+	await configure(host, "c1"); // a chat: no phone tools, but bash
+	host.call("prompt", { session: "c1", text: "weather? [[script:bash]]" });
+	await host.waitFor("idle", (m) => m.session === "c1", 15_000);
+	assert.equal(calls.length, 1);
+	assert.equal(calls[0].session, "c1");
+	assert.equal(calls[0].command, "curl -s 'wttr.in/Hangzhou?format=3'");
+	assert.equal(calls[0].timeout, 30);
+	assert.match(calls[0].call, /^c\d+$/);
+	assert.match(calls[0].id, /^k\d+$/);
+	const end = host.messages.find((m) => m.type === "tool_end" && m.tool === "bash");
+	assert.equal(end.isError, false);
+	assert.match(end.output, /Hangzhou: 🌧/);
+	const lastRequest = mock.requests.at(-1);
+	assert.match(JSON.stringify(lastRequest), /Hangzhou: 🌧/, "the model saw the output");
+});
+
+test("Stop during a bash command asks Kotlin to kill that command", async () => {
+	let finish, running;
+	const started = new Promise((r) => { running = r; });
+	const kills = [];
+	const host = await startHost({
+		credentials: apiKeyCredentials,
+		hostCalls: {
+			bash: () => new Promise((r) => { finish = r; running(); }),
+			bash_kill: (m) => { kills.push(m); finish("killed (stopped)"); return null; },
+		},
+	});
+	await configure(host, "c2");
+	host.call("prompt", { session: "c2", text: "weather? [[script:bash]]" });
+	await started; // the command is running in Termux
+	host.call("abort", { session: "c2" });
+	await host.waitFor("idle", (m) => m.session === "c2", 15_000);
+	assert.equal(kills.length, 1);
+	assert.equal(kills[0].session, "c2");
+	assert.match(kills[0].call, /^c\d+$/);
+});
+
+test("the supervisor has no bash", async () => {
+	const host = await startHost({ credentials: apiKeyCredentials, hostCalls: { supervisor: () => "ok" } });
+	await configure(host, "sup2", { tools: "supervisor" });
+	host.call("prompt", { session: "sup2", text: "weather? [[script:bash]]" });
+	await host.waitFor("idle", (m) => m.session === "sup2", 15_000);
+	const end = host.messages.find((m) => m.type === "tool_end" && m.session === "sup2");
+	assert.equal(end.isError, true, "Pi rejects a tool the session doesn't have");
+});

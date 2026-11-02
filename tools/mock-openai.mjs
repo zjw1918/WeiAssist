@@ -38,6 +38,11 @@ export const SCRIPTS = {
 		[1, 2, 3, 4, 5, 6].flatMap((i) => [{ tool: "swipe", args: { direction: i % 3 ? "up" : "down" } }, { tool: "wait", args: { ms: 2500 } }]),
 		[{ text: "browsed Gmail" }],
 	),
+	// The bash tool (Termux): one command, then an answer.
+	bash: [
+		{ tool: "bash", args: { command: "curl -s 'wttr.in/Hangzhou?format=3'", timeout: 30 } },
+		{ text: "Hangzhou: rain." },
+	],
 	// The supervisor: start a chat session, wait for it, pass something on, read it back.
 	supervise: [
 		{ tool: "list_sessions", args: {} },

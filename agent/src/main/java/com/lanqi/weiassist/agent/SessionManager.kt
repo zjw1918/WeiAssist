@@ -164,11 +164,15 @@ class SessionManager(
         }
     }
 
+    /** Told when the user stops a session ([deleted] false) or deletes it: e.g. end its jobs in Termux. */
+    var onEnded: (id: String, deleted: Boolean) -> Unit = { _, _ -> }
+
     /** Stop the session's task (Pi's Agent.abort); a queued task is dropped. */
     fun stop(id: String) {
         val s = live[id]?.value ?: return
         if (!s.busy) return
         Log.d(TAG, "stop $id (${s.status})")
+        onEnded(id, false)
         stops[id] = (stops[id] ?: 0) + 1
         paused[id]?.value = false
         queue.remove(id)
@@ -203,6 +207,7 @@ class SessionManager(
     /** Remove the session for good: stop it, drop its Agent, delete its files. */
     fun delete(id: String) {
         stop(id)
+        onEnded(id, true)
         screens.release(id)
         live.remove(id); watchers.remove(id); paused.remove(id); stops.remove(id); configured.remove(id)
         pendingWrites.remove(id)?.cancel()

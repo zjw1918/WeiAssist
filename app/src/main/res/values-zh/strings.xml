@@ -104,4 +104,19 @@
     <string name="supervisor_hint">告诉我要做什么：我会开启多个对话并行处理，可以暂停、停止它们，并在它们之间传递结果。</string>
     <string name="supervisor_placeholder">例如「在淘宝和京东比较这款手机的价格」</string>
     <string name="open">打开</string>
+    <!-- Termux（bash 工具） -->
+    <string name="termux_title">Linux 命令（Termux）</string>
+    <string name="termux_why">让助手可以运行命令：上网查信息（天气、新闻）、处理数据、编写和测试代码。</string>
+    <string name="termux_missing">未安装 Termux。</string>
+    <string name="termux_play_build">这是 Termux 的 Google Play 版，不能替其他应用运行命令。请卸载后安装 GitHub 或 F-Droid 版。</string>
+    <string name="termux_no_permission">已安装 Termux。请允许本应用在其中运行命令。</string>
+    <string name="termux_installed">已安装 Termux，并已授权。</string>
+    <string name="termux_download">下载 Termux</string>
+    <string name="termux_allow">允许</string>
+    <string name="termux_check">检查</string>
+    <string name="termux_checking">检查中…</string>
+    <string name="termux_app_settings">Termux 应用设置</string>
+    <string name="termux_background">长时间任务（服务器、编译）：请在 Termux 的应用设置里允许自启动，并将省电策略设为无限制。</string>
+    <string name="termux_ready">可以使用</string>
+    <string name="termux_not_ready">尚未就绪</string>
 </resources>

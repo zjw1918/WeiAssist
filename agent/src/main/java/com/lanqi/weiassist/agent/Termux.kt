@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CompletableDeferred
@@ -47,21 +48,42 @@ class Termux(context: Context) {
 
     fun permitted() = ContextCompat.checkSelfPermission(app, PERMISSION) == PackageManager.PERMISSION_GRANTED
 
-    /** Run [command] with bash in session [session]'s folder, killed after [timeoutSec]. Returns what the model sees. */
+    /** Sessions that have used bash: only they have a folder and jobs to clean up. */
+    private val prefs = app.getSharedPreferences("termux", Context.MODE_PRIVATE)
+    private fun used(session: String) = session in prefs.getStringSet("used", emptySet())!!
+    private fun markUsed(session: String, on: Boolean) {
+        val set = prefs.getStringSet("used", emptySet())!!.toMutableSet()
+        if (if (on) set.add(session) else set.remove(session)) prefs.edit().putStringSet("used", set).apply()
+    }
+
+    /**
+     * Run [command] with bash in session [session]'s folder, killed after [timeoutSec]. Returns what the model sees.
+     * The session's tmux is its own (TMUX_TMPDIR in its folder), so its jobs can be found and stopped with it.
+     */
     suspend fun run(session: String, call: String, command: String, timeoutSec: Int): String {
         setupProblem()?.let { return it }
+        markUsed(session, true)
         // $1 = the command, $2 = session folder, $3 = call id, $4 = timeout. The command is an argument,
         // never spliced into the script, so it needs no quoting. timeout runs in the background so the
         // pidfile holds its pid: bash_kill sends it TERM, and timeout passes that on to the whole job.
-        val script = """
-            d="${'$'}HOME/sessions/${'$'}2"; mkdir -p "${'$'}d" && cd "${'$'}d" || exit 97
-            p="${'$'}d/.bash-${'$'}3.pid"
-            timeout -k 5 "${'$'}4" bash -c "${'$'}1" < /dev/null & echo ${'$'}! > "${'$'}p"
-            wait ${'$'}!; c=${'$'}?; rm -f "${'$'}p"; exit ${'$'}c
+        val script = PRELUDE + """
+            d="${'$'}{HOME}/sessions/${'$'}{2}"; mkdir -p "${'$'}{d}/.tmux" && cd "${'$'}{d}" || exit 97
+            export TMUX_TMPDIR="${'$'}{d}/.tmux"
+            p="${'$'}{d}/.bash-${'$'}{3}.pid"
+            timeout -k 5 "${'$'}{4}" bash -c "${'$'}{1}" < /dev/null & echo ${'$'}! > "${'$'}{p}"
+            wait ${'$'}!; c=${'$'}?; rm -f "${'$'}{p}"
+            sync_lock > /dev/null 2>&1
+            exit ${'$'}{c}
         """.trimIndent()
-        val r = execute(arrayOf("-c", script, "bash", command, safe(session), safe(call), timeoutSec.toString()), timeoutSec + 30L)
-            ?: return "No answer from Termux after ${timeoutSec + 30}s. Termux may be stopped by the system's battery saver: " +
-                "open Termux once, and allow it to run in the background (autostart, no battery restrictions)."
+        // The phone must not sleep mid-command (a build or test run with the screen off).
+        val awake = app.getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "weiassist:bash")
+        awake.acquire((timeoutSec + 30) * 1000L)
+        val r = try {
+            execute(arrayOf("-c", script, "bash", command, safe(session), safe(call), timeoutSec.toString()), timeoutSec + 30L)
+        } finally {
+            if (awake.isHeld) awake.release()
+        } ?: return "No answer from Termux after ${timeoutSec + 30}s. Termux may be stopped by the system's battery saver: " +
+            "open Termux once, and allow it to run in the background (autostart, no battery restrictions)."
         val err = r.getInt("err", RESULT_OK)
         if (err != RESULT_OK) return "Termux could not run the command: ${r.getString("errmsg").orEmpty()}\n$SETUP"
         val code = r.getInt("exitCode", -1)
@@ -85,7 +107,42 @@ class Termux(context: Context) {
         execute(arrayOf("-c", "f=\"\$HOME/sessions/$1/.bash-$2.pid\"; [ -f \"\$f\" ] && kill -TERM \"\$(cat \"\$f\")\"", "bash", safe(session), safe(call)), 20)
     }
 
-    private fun setupProblem(): String? = when {
+    /**
+     * The session was stopped ([delete] false) or deleted: end its tmux jobs and running commands; when deleted,
+     * also remove its folder. Then Termux's wake lock is dropped if no session has jobs left.
+     */
+    suspend fun cleanUp(session: String, delete: Boolean) {
+        if (!used(session) || setupProblem() != null) return
+        val script = PRELUDE + """
+            d="${'$'}{HOME}/sessions/${'$'}{1}"
+            if [ -d "${'$'}{d}" ]; then
+              TMUX_TMPDIR="${'$'}{d}/.tmux" tmux kill-server 2> /dev/null
+              for p in "${'$'}{d}"/.bash-*.pid; do [ -f "${'$'}{p}" ] && kill -TERM "${'$'}(cat "${'$'}{p}")" 2> /dev/null; done
+              [ "${'$'}{2}" = delete ] && rm -rf "${'$'}{d}"
+            fi
+            sync_lock > /dev/null 2>&1
+            exit 0
+        """.trimIndent()
+        execute(arrayOf("-c", script, "bash", safe(session), if (delete) "delete" else "stop"), 30)
+        if (delete) markUsed(session, false)
+    }
+
+    /** For Settings: can commands run, and are the basic tools there? Null text = Termux not usable (see [setupProblem]). */
+    suspend fun check(): Pair<Boolean, String> {
+        setupProblem()?.let { return false to it }
+        val script = """
+            echo "bash ${'$'}{BASH_VERSION%%(*}"
+            for t in curl tmux; do command -v "${'$'}{t}" > /dev/null && echo "${'$'}{t} ✓" || echo "${'$'}{t} ✗  (pkg install -y ${'$'}{t})"; done
+            curl -s -o /dev/null --max-time 8 -w "network ✓ (HTTP %{http_code})\n" https://wttr.in 2> /dev/null || echo "network ✗"
+        """.trimIndent()
+        val r = execute(arrayOf("-c", script), 30) ?: return false to "No answer from Termux. Open Termux once, and allow it to run in the background."
+        if (r.getInt("err", RESULT_OK) != RESULT_OK) return false to "${r.getString("errmsg").orEmpty()}\n\n$SETUP"
+        val out = (r.getString("stdout").orEmpty() + r.getString("stderr").orEmpty()).trim()
+        return !out.contains('✗') to out
+    }
+
+    /** Why bash can't run now (for the model and Settings), or null when it can. */
+    fun setupProblem(): String? = when {
         !installed() -> "Termux is not installed, so bash is not available. Tell the user: install Termux (from F-Droid or GitHub), then\n$SETUP"
         !runnable() -> "The installed Termux (probably its Google Play build) cannot run commands for other apps. " +
             "Tell the user: install Termux from F-Droid or GitHub (uninstall the Google Play one first; its files are lost), then\n$SETUP"
@@ -140,6 +197,22 @@ class Termux(context: Context) {
             2. Settings → Apps → this app → Permissions → Additional permissions → "Run commands in Termux environment" → Allow.
             3. For long jobs: allow Termux to autostart and run without battery restrictions.
         """.trimIndent()
+
+        /**
+         * Shell function: hold Termux's wake lock while any session has tmux jobs (servers, long builds), so
+         * they keep running with the screen off; drop it when none has. Run after each command and clean-up.
+         */
+        private val PRELUDE = """
+            sync_lock() {
+              f="${'$'}{HOME}/sessions/.wakelock"; live=
+              for s in "${'$'}{HOME}"/sessions/*/.tmux/tmux-*/default; do
+                [ -S "${'$'}{s}" ] && tmux -S "${'$'}{s}" has-session 2> /dev/null && { live=1; break; }
+              done
+              if [ -n "${'$'}{live}" ]; then termux-wake-lock; touch "${'$'}{f}"
+              elif [ -f "${'$'}{f}" ]; then termux-wake-unlock; rm -f "${'$'}{f}"; fi
+            }
+
+        """.trimIndent() + "\n"
 
         /** Termux sends the original lengths as strings. */
         private fun length(r: android.os.Bundle, key: String) = r.get(key)?.toString()?.toIntOrNull()

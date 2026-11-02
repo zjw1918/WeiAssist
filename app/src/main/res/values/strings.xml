@@ -105,4 +105,19 @@
     <string name="supervisor_hint">Tell me what to get done: I start sessions, run them side by side, pause or stop them, and pass results between them.</string>
     <string name="supervisor_placeholder">e.g. “Compare this phone’s price on Taobao and JD”</string>
     <string name="open">Open</string>
+    <!-- Termux (the bash tool) -->
+    <string name="termux_title">Linux commands (Termux)</string>
+    <string name="termux_why">Lets the assistant run commands: look things up on the web (weather, news), work with data, write and test code.</string>
+    <string name="termux_missing">Termux is not installed.</string>
+    <string name="termux_play_build">This is Termux\'s Google Play build, which can\'t run commands for other apps. Uninstall it, then install the GitHub or F-Droid build.</string>
+    <string name="termux_no_permission">Termux is installed. Allow this app to run commands in it.</string>
+    <string name="termux_installed">Termux is installed and allowed.</string>
+    <string name="termux_download">Download Termux</string>
+    <string name="termux_allow">Allow</string>
+    <string name="termux_check">Check</string>
+    <string name="termux_checking">Checking…</string>
+    <string name="termux_app_settings">Termux app settings</string>
+    <string name="termux_background">For long jobs (servers, builds), allow Termux to autostart and to run without battery restrictions in its app settings.</string>
+    <string name="termux_ready">Ready</string>
+    <string name="termux_not_ready">Not ready yet</string>
 </resources>

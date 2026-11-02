@@ -56,7 +56,11 @@ class AgentController(context: Context) {
         screens = screens,
     )
 
-    init { screens.isActive = { id -> sessions.summary(id)?.status?.active == true } }
+    init {
+        screens.isActive = { id -> sessions.summary(id)?.status?.active == true }
+        // Stop ends the session's Termux jobs too; Delete also removes its folder there.
+        sessions.onEnded = { id, deleted -> scope.launch { termux.cleanUp(id, deleted) } }
+    }
 
     /**
      * The commands that manage sessions (the supervisor's tools; later voice). Deleting asks the user on the
