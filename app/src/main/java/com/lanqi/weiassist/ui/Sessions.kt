@@ -362,7 +362,7 @@ private fun ChatRow(item: ChatItem) {
         is ChatItem.User -> Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
             Text(item.text, Modifier.widthIn(max = 300.dp).background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(14.dp)).padding(10.dp))
         }
-        is ChatItem.Assistant -> Text(item.text, Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(14.dp)).padding(10.dp))
+        is ChatItem.Assistant -> MarkdownText(item.text, Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(14.dp)).padding(10.dp))
         is ChatItem.Error -> Text(item.text, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         is ChatItem.Step -> Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp)) {
             Text(when (item.ok) { null -> "⋯"; true -> "✓"; false -> "✗" }, color = if (item.ok == false) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline, fontSize = 12.sp)

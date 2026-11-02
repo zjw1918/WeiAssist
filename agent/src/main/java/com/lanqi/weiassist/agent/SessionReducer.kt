@@ -18,7 +18,7 @@ object SessionReducer {
             val text = m.optString("text").ifEmpty { s.streaming }
             val err = if (m.optString("stopReason") == "error") friendly(m.optString("errorMessage")) else null
             var n = s.copy(streaming = "", error = err ?: s.error)
-            if (text.isNotBlank()) n = n.add(ChatItem.Assistant(text), now).preview(text, now)
+            if (text.isNotBlank()) n = n.add(ChatItem.Assistant(text), now).preview(Markdown.plain(text), now)
             if (err != null) n = n.add(ChatItem.Error(err), now).preview(err, now, error = true)
             n.trace("assistant_end · ${m.optString("provider")}/${m.optString("model")} · stop=${m.optString("stopReason")} · tokens=${m.optJSONObject("usage")?.optInt("totalTokens")}")
         }

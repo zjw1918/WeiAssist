@@ -31,7 +31,7 @@ Chat and phone sessions can now run Linux commands in Termux with a `bash` tool 
 - **Build:** Gradle builds the Pi bundle (`buildPiHost<Variant>`); no generated files are committed.
 - **i18n:** English (default) and Chinese, with per-app language on Android 13+.
 - **Tests** (as of 2026-11-02):
-  - 38 JVM tests: `AgentReducer` 11, `SessionReducer` 12, `SessionText` 5, `DisplayTasks` 5, adb crypto and framing 5;
+  - 46 JVM tests: `AgentReducer` 11, `SessionReducer` 12, `SessionText` 5, `Markdown` 8, `DisplayTasks` 5, adb crypto and framing 5;
   - 19 end-to-end tests of the shipped bundle (`pi-host/test`) over the real bridge protocol, with a mock provider
     and scripted tool calls (sessions, restore, pause gate, supervisor tools).
 - **Project files:** CI workflow, README (en and zh), ARCHITECTURE, CONTRIBUTING, Code of Conduct, SECURITY, Apache-2.0 and NOTICE.
@@ -247,8 +247,11 @@ Scenarios to build, test and refine (installed apps first):
   - pi-host test for the `bash` tool over the bridge.
 
 - [ ] **Readable confirmation card:** show the target app and a summary (recipient, item and price) instead of raw field lines.
-- [ ] **Markdown in answers:** the session page has chat history and step cards (and the raw Pi trace under ⋯), but
-  answers are shown as plain text (the supervisor's and the weather answer's tables show as raw `| … |`, `**` visible).
+- [x] **Markdown in answers** (2026-11-02): a small built-in renderer, no new dependency. `agent/Markdown.kt` parses
+  (headings, lists with nesting, tables with alignment, code blocks, quotes, rules; bold, italic, strike, code,
+  links and bare URLs; forgiving with half-streamed text; 8 JVM tests), `app/ui/Markdown.kt` draws it (tables
+  as a grid that scrolls sideways, selectable text, clickable links). Session cards, the supervisor card and
+  notifications show `Markdown.plain` instead of raw markers. Verified on the Xiaomi (weather table, demo answer).
 - [ ] **Ask-the-user tool**, for mid-task questions (preferences, choosing between options) without ending the task.
 - [ ] **Direct intents** where they beat UI automation: share, open URL, alarm, calendar.
 - [ ] **Per-app permissions** (allow / ask / never) and sensitive-screen detection (FLAG_SECURE, payment, OTP).

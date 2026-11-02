@@ -166,7 +166,7 @@ class AgentService : Service() {
     }
 
     /** Notifications show plain text: drop the model's markdown emphasis and code marks. */
-    private fun plain(md: String) = md.replace(Regex("(\\*\\*|__|`)"), "").replace(Regex("(?m)^#+\\s*"), "").trim()
+    private fun plain(md: String) = Markdown.plain(md).trim()
 
     private fun createChannel() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(
