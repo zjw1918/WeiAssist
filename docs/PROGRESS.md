@@ -38,7 +38,7 @@ session's display (trusted displays on Android 13+); Pi 1.5.0 with GPT-6.1 Terra
 
 ### Agent capabilities
 - **Tools:** `open_app`, `read_screen` (with element centres), `screenshot` (image for vision models), `tap`, `tap_at`, `long_press`, `type_text`, `scroll`, `swipe`, `press_key`, `wait`.
-- **Settling:** every action waits for the UI to settle.
+- **Settling:** every action waits for the UI to settle; on a session's display, `open_app` first waits for the app's window.
 - **Context:** Pi's `transformContext` keeps only the latest two screens per model call.
 - **Safety:**
   - taps on Send/Post/Reply/Pay/Buy/Order/Delete-like labels need the user's OK, on an overlay card worded in the user's language, including coordinate taps;
@@ -164,8 +164,10 @@ Open points from this work:
   is told to wait. A per-app queue could wait automatically instead of failing.
 - [ ] **Supervisor history:** it is one long conversation; add "new conversation" for it.
 - [ ] **Instrumented tests** for SessionManager, ScreenPool and the helper (today: JVM, pi-host and on-device runs).
-- [ ] **Slow cold starts:** JD's first two `read_screen`s after `open_app` found no window (JD still starting);
-  `open_app` could wait until the app shows a window on the display.
+- [x] **Slow cold starts:** JD's first two `read_screen`s after `open_app` found no window (JD still starting).
+  Now `open_app` waits until the app has a readable window on the display (at most 15 s; otherwise it tells the
+  model the app is still starting). Verified on the Xiaomi with the apps force-stopped: ready after 1.4–2.7 s,
+  alone and three at once, and every read after `open_app` had content. The 15 s limit itself is untested.
 - [ ] **Reclaim gaps (Android 12 fallback only):** nothing is reclaimed on `read_screen`, `screenshot`, `scroll` or
   `swipe`, and the open_app watch stops after ~1.2 s, so a long splash ad can leave a window on the phone's screen;
   root tasks shown with `I=` (no affinity) aren't parsed; tasks are matched by affinity, not package.
