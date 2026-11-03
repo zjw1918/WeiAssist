@@ -506,6 +506,20 @@ test("type_text can submit, and press_key has enter", async () => {
 	]);
 });
 
+test("a screenshot that comes back as a message (not a JPEG) reaches the model as text, not as an image", async () => {
+	const host = await startHost({
+		credentials: apiKeyCredentials,
+		hostCalls: { phone: () => "小维助手 (this assistant) is in front of the screen: this task hasn't opened an app yet." },
+	});
+	await configure(host, "s", { phone: true });
+	host.call("prompt", { session: "s", text: "look [[script:shot]]" });
+	await host.waitFor("idle", (m) => m.session === "s", 15_000);
+	const t = host.messages.filter((m) => m.type === "transcript" && m.session === "s").at(-1).messages;
+	const shot = t.find((m) => m.role === "toolResult" && m.toolName === "screenshot");
+	assert.ok(shot.content.every((c) => c.type === "text"), "no image part");
+	assert.match(shot.content[0].text, /hasn't opened an app/);
+});
+
 test("transcripts drop screenshots and old screens", async () => {
 	const host = await startHost({
 		credentials: apiKeyCredentials,

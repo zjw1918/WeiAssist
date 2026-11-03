@@ -127,6 +127,8 @@ class ShellBackend private constructor(context: Context) {
      * [state] = Stopped(hint) when it couldn't. Safe to call repeatedly.
      */
     suspend fun start(): IShellService? = startLock.withLock {
+        // Started on purpose (Start, pairing): from now on it comes back by itself again (see autoStart).
+        prefs.edit().remove(KEY_USER_STOPPED).apply()
         service?.let { return it }
         if (_state.value == ShellState.NotPaired || _state.value == ShellState.Unsupported) return null
         _state.value = ShellState.Starting
@@ -164,6 +166,8 @@ class ShellBackend private constructor(context: Context) {
     fun autoStart() {
         Log.d(TAG, "manual start (Android 8-10, or from a computer): ${manualCommand()}")
         if (_state.value !is ShellState.Stopped) return
+        // The user stopped it: phone tasks run on their own screen until they press Start again.
+        if (prefs.getBoolean(KEY_USER_STOPPED, false)) { Log.d(TAG, "not started: the user stopped it"); return }
         scope.launch {
             // A helper that survived the app's process attaches by itself within a moment.
             if (withTimeoutOrNull(2_500) { state.first { it is ShellState.Running } } != null) return@launch
@@ -179,8 +183,14 @@ class ShellBackend private constructor(context: Context) {
         scope.launch { start() }
     }
 
-    /** Stop the helper (it is started again by [start]). */
-    fun stop() { runCatching { service?.exit() } }
+    /**
+     * Stop the helper. It stays stopped, also across app restarts and reboots ([autoStart] leaves it), until
+     * [start]: stopping is how the user has phone tasks run on their own screen.
+     */
+    fun stop() {
+        prefs.edit().putBoolean(KEY_USER_STOPPED, true).apply()
+        runCatching { service?.exit() }
+    }
 
     /** Forget the pairing (the user can also revoke it in Wireless debugging). */
     fun unpair() {
@@ -276,6 +286,7 @@ class ShellBackend private constructor(context: Context) {
         private const val LOOPBACK = "127.0.0.1"
         private const val KEY_PAIRED = "paired"
         private const val KEY_PORT = "port"
+        private const val KEY_USER_STOPPED = "user_stopped"
         /** The helper's output, readable with `adb shell cat`, for diagnosis. */
         const val LOG = "/data/local/tmp/weiassist_shell.log"
 

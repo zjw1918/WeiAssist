@@ -18,6 +18,7 @@ export const SCRIPTS = {
 	tap: [{ tool: "tap", args: { id: 51 } }, { text: "tapped it" }],
 	send: [{ tool: "read_screen", args: {} }, { tool: "tap", args: { id: 2 } }, { text: "sent" }],
 	buy_at: [{ tool: "tap_at", args: { x: 900, y: 2200 } }, { text: "ordered" }],
+	shot: [{ tool: "screenshot", args: {} }, { text: "looked" }],
 	screens: [1, 2, 3, 4].map(() => ({ tool: "read_screen", args: {} })).concat([{ text: "read four screens" }]),
 	// A whole little task on the phone (used on a device: a session's own virtual display).
 	settings: [

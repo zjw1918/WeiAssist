@@ -182,7 +182,9 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		executionMode: "sequential",
 		execute: async (_id, _p, signal) => {
 			const data = await s.phone("screenshot", {}, signal);
-			if (data.startsWith("error:")) return text(data);
+			// Anything but a base64 JPEG ("/9j/…") is a message for the model (an error, paused, stopped, no app
+			// open yet): sent as an image it would make the provider reject the whole request.
+			if (!data.startsWith("/9j/")) return text(data);
 			return {
 				content: [
 					{ type: "text" as const, text: "Screenshot (720 px wide; for tap_at, scale x and y by screen width / 720)." },
