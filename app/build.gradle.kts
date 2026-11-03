@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -18,8 +20,22 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Release signing: keystore.properties (storeFile, storePassword, keyAlias, keyPassword) from the
+    // WEIASSIST_SIGNING environment variable, else ~/.android/weiassist-release/. Without it, release
+    // builds stay unsigned. The key never goes into this repository.
+    val signing = File(System.getenv("WEIASSIST_SIGNING")
+        ?: "${System.getProperty("user.home")}/.android/weiassist-release/keystore.properties")
+    val releaseSigning = if (signing.isFile) signingConfigs.create("release") {
+        val p = Properties().apply { signing.inputStream().use { load(it) } }
+        storeFile = file(p.getProperty("storeFile"))
+        storePassword = p.getProperty("storePassword")
+        keyAlias = p.getProperty("keyAlias")
+        keyPassword = p.getProperty("keyPassword")
+    } else null
+
     buildTypes {
         release {
+            releaseSigning?.let { signingConfig = it }
             proguardFiles("proguard-rules.pro")
             optimization {
                 enable = true

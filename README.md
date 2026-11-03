@@ -15,6 +15,7 @@ harness. Pi handles models, sign-in and the agent loop; WeiAssist gives it eyes 
 - **Sign in your way:** with your **ChatGPT subscription** (Pi's "Sign in with ChatGPT") or an **OpenAI API key**. Credentials stay on the phone, encrypted with the Android Keystore.
 - **Pick a model and thinking level:** the list comes from Pi, filtered to what your sign-in can use.
 - **Operate other apps:** read the screen, tap, type, scroll, press keys and open apps, through an accessibility service you turn on yourself.
+- **Run Linux commands (optional):** with [Termux](https://termux.dev) installed, it can look things up on the web, work with data, and write and run code. Setup: [docs/TERMUX.md](docs/TERMUX.md).
 - **Ask before anything irreversible:** Send, Pay and Delete need your OK on an on-screen card.
 - **Keep working in the background:** tasks run in a foreground service. Stop is always in the notification, and the result arrives as a notification.
 - **Stay out of your way:** it never touches WeiAssist itself, pauses while you look at it, and never sends password fields to the model.
@@ -24,6 +25,7 @@ harness. Pi handles models, sign-in and the agent loop; WeiAssist gives it eyes 
 
 No release yet. Build from source (below), or download the debug APK from the latest CI run's artifacts.
 Then open WeiAssist, sign in, and to let it operate apps, turn it on under **Settings → Accessibility**.
+Optional: to let it run Linux commands, set up Termux as described in [docs/TERMUX.md](docs/TERMUX.md).
 
 ## Build
 
@@ -34,6 +36,10 @@ Requirements: Android SDK (platform 37), Node per [`.nvmrc`](.nvmrc) with npm, a
 cd pi-host && npm test      # end-to-end tests of the bundled agent
 ./gradlew testDebugUnitTest lint
 ```
+
+`assembleRelease` signs the APK only when it finds a key: a `keystore.properties` file (`storeFile`, `storePassword`,
+`keyAlias`, `keyPassword`) at the path in `WEIASSIST_SIGNING`, or in `~/.android/weiassist-release/`. Without one the
+release APK is unsigned.
 
 How it fits together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Contributing: [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -58,6 +64,7 @@ not affiliated with OpenAI.
 - 用 **ChatGPT 订阅**或 **OpenAI API key** 登录，凭据只保存在手机上（系统密钥库加密）
 - 模型和思考程度可选，列表来自 Pi
 - 通过你亲手开启的无障碍服务操作其他应用；发送、付款、删除前一定先问你
+- 可选：安装 [Termux](https://termux.dev) 后可以运行 Linux 命令（上网查信息、处理数据、写代码），设置方法见 [docs/TERMUX.md](docs/TERMUX.md#中文termux-设置)
 - 任务在后台继续执行，通知栏随时可以“停止”，完成后用通知告诉你结果
 - 不会操作小维助手自己，你在看它时自动暂停；密码框内容从不发给模型
 - 界面支持中文和英文

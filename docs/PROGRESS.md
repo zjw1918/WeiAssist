@@ -382,7 +382,7 @@ Tested 2026-11-03 with `--ez mainOnly true` (YouTube: found the channel's subscr
   `adb shell input text`, switch to Gboard first (`ime set com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME`;
   Sogou turns letters into Chinese), then back to `com.sohu.inputmethod.sogou.xiaomi/.SogouIME`. Commands for
   the agent run in `~/sessions/<id>`.
-- Devices: realme RMX2121 (Android 12, untrusted displays) and Xiaomi `60770a96` (HyperOS, Android 16, trusted).
+- Devices: realme RMX2121 (Android 12, untrusted displays) and Xiaomi (HyperOS, Android 16, trusted).
   Where tasks are: `dumpsys activity activities | grep -E '^Display #|^  \* Task\{'`; moves: `logcat -b events | grep wm_task_moved`.
 - The shell helper logs to `/data/local/tmp/weiassist_shell.log`; displays show in `dumpsys display` as `weiassist-<session>`.
 - `uiautomator dump` unbinds the app's accessibility service while it runs: an open confirmation card is then
