@@ -14,13 +14,30 @@ class PhoneActions(private val context: Context) {
     fun cancelWaits() { generation.incrementAndGet() }
 
     /**
+     * Per session: the app in front of the phone's own screen after its last action in the current run (none
+     * yet: the run hasn't acted). Tells "the user came back to 小维助手 to look" (wait for them) from "the task
+     * never left 小维助手" (nothing to wait for: it has to open an app first).
+     */
+    private val lastFront = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /** A session's new run begins: what its earlier runs left in front says nothing about this one. */
+    fun runStarted(session: String) { lastFront.remove(session) }
+
+    /**
      * [paused]: the session was paused while this action waited (the user looking at the app); the
      * action then gives way, and Pi's gate holds the session before its next one.
      */
     suspend fun run(m: JSONObject, target: Target = Target.Main, paused: () -> Boolean = { false }): String {
         val action = m.getString("action")
         android.util.Log.d(TAG, "$action start (display ${target.displayId})")
-        return runAction(m, target, paused).also { android.util.Log.d(TAG, "$action → ${it.lineSequence().firstOrNull()?.take(60)}") }
+        return runAction(m, target, paused).also {
+            android.util.Log.d(TAG, "$action → ${it.lineSequence().firstOrNull()?.take(60)}")
+            if (target is Target.Main) {
+                val session = m.optString("session")
+                AgentAccessibilityService.instance?.rootInActiveWindow?.packageName?.toString()
+                    ?.let { pkg -> lastFront[session] = pkg } ?: lastFront.remove(session)
+            }
+        }
     }
 
     private suspend fun runAction(m: JSONObject, target: Target, paused: () -> Boolean): String {
@@ -33,11 +50,18 @@ class PhoneActions(private val context: Context) {
         // (open_app is exempt: it is how a task leaves 小维助手 in the first place.)
         val gen = generation.get()
         // (A session on a virtual display has a screen of its own: the user looking at the app is no reason to wait.)
+        val waitStart = android.os.SystemClock.elapsedRealtime()
+        var waitedForUser = false
         while (target is Target.Main && m.getString("action") !in setOf("open_app", "label_at") && svc.ownAppInFront()) {
+            // The task itself hasn't left 小维助手 yet (it just started, or open_app failed): waiting would never end.
+            val before = lastFront[m.optString("session")]
+            if (before == null || before == context.packageName) return NOT_LEFT_YET
+            if (!waitedForUser) { waitedForUser = true; android.util.Log.d("PhoneActions", "${m.getString("action")} waits: the app itself is in front") }
             if (generation.get() != gen) return "stopped by the user"
             if (paused()) return "paused by the user before this action; do it again when you continue"
             kotlinx.coroutines.delay(300)
         }
+        if (waitedForUser) android.util.Log.d("PhoneActions", "${m.getString("action")} waited ${android.os.SystemClock.elapsedRealtime() - waitStart} ms for the user to leave the app")
         val a = m.optJSONObject("args") ?: JSONObject()
         val action = m.getString("action")
         // open_app may wait for a slow app to start (see openOnDisplay), then for its screen to settle.
@@ -264,10 +288,32 @@ class PhoneActions(private val context: Context) {
         val hit = launchers.firstOrNull { it.activityInfo.packageName.lowercase() == q }
             ?: launchers.firstOrNull { it.loadLabel(pm).toString().lowercase() == q }
             ?: launchers.firstOrNull { it.loadLabel(pm).toString().lowercase().contains(q) }
-            ?: return Result.failure(IllegalArgumentException("No installed app matches \"$app\"."))
+            // The model often uses the English name ("Settings") on a phone in another language (设置).
+            ?: launchers.firstOrNull { englishLabel(it)?.lowercase() == q }
+            ?: launchers.firstOrNull { englishLabel(it)?.lowercase()?.contains(q) == true }
+            ?: return Result.failure(IllegalArgumentException(
+                "No installed app matches \"$app\". Use the app's name as this phone shows it (its language may differ), or its package name.",
+            ))
         val component = pm.getLaunchIntentForPackage(hit.activityInfo.packageName)?.component
             ?: return Result.failure(IllegalArgumentException("\"$app\" can't be launched."))
         return Result.success(hit.loadLabel(pm).toString() to component.flattenToShortString())
+    }
+
+    private val englishLabels = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /** An app's launcher label in English (empty if it has none), cached: loading another app's resources is slow. */
+    private fun englishLabel(ri: android.content.pm.ResolveInfo): String? {
+        val ai = ri.activityInfo
+        val key = "${ai.packageName}/${ai.name}"
+        return englishLabels.getOrPut(key) {
+            runCatching {
+                val id = if (ai.labelRes != 0) ai.labelRes else ai.applicationInfo.labelRes
+                if (id == 0) return@runCatching ""
+                val pkgContext = context.createPackageContext(ai.packageName, 0)
+                val conf = android.content.res.Configuration(pkgContext.resources.configuration).apply { setLocale(java.util.Locale.ENGLISH) }
+                pkgContext.createConfigurationContext(conf).resources.getString(id)
+            }.getOrDefault("")
+        }.ifEmpty { null }
     }
 
     private fun openApp(svc: AgentAccessibilityService, app: String): String {
@@ -287,6 +333,8 @@ class PhoneActions(private val context: Context) {
         private val typingLock = kotlinx.coroutines.sync.Mutex()
         private const val KEYBOARD_WAIT_MS = 2_000L
         private const val TAG = "PhoneActions"
+        private const val NOT_LEFT_YET = "小维助手 (this assistant) is in front of the screen: this task hasn't opened an app yet. " +
+            "Open the app you need with open_app first."
         private const val NO_ENTER = "could not press enter: no text field has focus. Tap the field first, or tap the app's own Go / Search button or a suggestion"
         /** Actions after which an app may have opened a new window. */
         private val LAUNCHING = setOf("tap", "tap_at", "long_press", "type_text", "press_key", "open_app")

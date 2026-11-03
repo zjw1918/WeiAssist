@@ -37,15 +37,21 @@ class NativeHttp(private val scope: CoroutineScope, private val toJs: (fn: Strin
                     m.optJSONObject("headers")?.let { h -> h.keys().forEach { setRequestProperty(it, h.getString(it)) } }
                 }
                 conns[id] = conn
+                // Phase timings (ms since start), to tell a slow connection (TCP/TLS) from a slow server.
+                val t0 = android.os.SystemClock.elapsedRealtime()
+                fun ms() = android.os.SystemClock.elapsedRealtime() - t0
                 val body = m.optString("body").takeIf { m.has("body") && !m.isNull("body") }
-                if (body != null) {
+                val bytes = body?.let { Base64.decode(it, Base64.NO_WRAP) }
+                if (bytes != null) {
                     conn.doOutput = true
-                    val bytes = Base64.decode(body, Base64.NO_WRAP)
                     conn.setFixedLengthStreamingMode(bytes.size)
-                    conn.outputStream.use { it.write(bytes) }
                 }
+                conn.connect()
+                val connected = ms()
+                if (bytes != null) conn.outputStream.use { it.write(bytes) }
+                val sent = ms()
                 val status = conn.responseCode
-                Log.d(TAG, "$status ${url.host}${url.path}")
+                Log.d(TAG, "$status ${url.host}${url.path} (connected ${connected} ms, sent ${sent} ms, headers ${ms()} ms)")
                 val headers = JSONObject()
                 conn.headerFields.forEach { (k, v) ->
                     // HttpURLConnection already un-gzipped the body, so drop the framing headers.
@@ -66,7 +72,7 @@ class NativeHttp(private val scope: CoroutineScope, private val toJs: (fn: Strin
                 Log.d(TAG, "end ${url.host}${url.path}")
                 toJs("fetchEnd", q(id))
             } catch (e: Exception) {
-                Log.w(TAG, "${url.host}${url.path} failed: ${e.javaClass.simpleName}")
+                Log.w(TAG, "${url.host}${url.path} failed: ${e.javaClass.simpleName}: ${e.message}")
                 if (e !is kotlinx.coroutines.CancellationException) toJs("fetchError", "${q(id)}, ${q(e.message ?: e.javaClass.simpleName)}")
             } finally {
                 conn?.disconnect()

@@ -177,7 +177,12 @@ class AgentController(context: Context) {
     // ---- Pi → state -------------------------------------------------------------------------------
     private fun onPi(m: JSONObject) {
         val session = m.optString("session")
-        if (session.isNotEmpty()) { sessions.onPi(session, m); return }
+        if (session.isNotEmpty()) {
+            // A new run: whether it has left 小维助手 yet starts over (see PhoneActions.runStarted).
+            if (m.optString("type") == "agent_start") phone.runStarted(session)
+            sessions.onPi(session, m)
+            return
+        }
         val before = _state.value
         val (next, effect) = AgentReducer.reduce(before, m)
         _state.value = next
