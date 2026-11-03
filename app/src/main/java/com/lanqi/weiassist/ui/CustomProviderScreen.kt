@@ -38,6 +38,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lanqi.weiassist.AppViewModel
 import com.lanqi.weiassist.R
 import com.lanqi.weiassist.agent.CustomModel
@@ -73,7 +74,8 @@ fun CustomProviderScreen(vm: AppViewModel, editing: CustomProvider?, onClose: ()
     var fetchError by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
 
-    val hasKey = editing != null && vm.state.value.providers.any { it.id == editing.id && it.credential != null }
+    val state by vm.state.collectAsStateWithLifecycle()
+    val hasKey = editing != null && state.providers.any { it.id == editing.id && it.credential != null }
     val trimmedUrl = url.trim()
     val urlOk = trimmedUrl.startsWith("https://") || trimmedUrl.startsWith("http://")
     val canSave = name.isNotBlank() && urlOk && selected.isNotEmpty() && (key.isNotBlank() || hasKey)
