@@ -2,9 +2,12 @@ name: Release
 
 # Push a version tag (git tag v0.2 && git push origin v0.2) to build a signed APK and publish it as a
 # GitHub Release. Tags with a hyphen (v0.2-beta1) become pre-releases.
+# Run it by hand (Actions → Release → Run workflow) for a dry run: it builds and checks a signed APK and
+# keeps it as a workflow artifact, without publishing anything.
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
 
 permissions:
   contents: write # create the release
@@ -38,6 +41,9 @@ jobs:
       - name: Version from the tag
         id: version
         run: |
+          if [ "${GITHUB_REF_TYPE}" != tag ]; then
+            echo "name=0.0.0-dryrun" >> "$GITHUB_OUTPUT"; echo "code=1" >> "$GITHUB_OUTPUT"; exit 0
+          fi
           tag="${GITHUB_REF_NAME}"; name="${tag#v}"
           # v1.2.3 -> 10203; v0.2 -> 200; a pre-release suffix (-beta1) doesn't change the code.
           IFS=. read -r major minor patch <<< "${name%%-*}"
@@ -72,18 +78,30 @@ jobs:
 
       - name: Check the signature
         run: |
+          set -o pipefail
+          ls -l app/build/outputs/apk/release/
           apk=app/build/outputs/apk/release/app-release.apk
           bt="${ANDROID_HOME}/build-tools/$(ls "${ANDROID_HOME}/build-tools" | sort -V | tail -1)"
-          cert=$("${bt}/apksigner" verify --print-certs "${apk}" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          "${bt}/apksigner" verify --verbose --print-certs "${apk}" 2> /dev/null | tee apksigner.txt
+          cert=$(grep -i -m1 'certificate SHA-256 digest' apksigner.txt | awk '{print $NF}' | tr -d ':' | tr 'A-F' 'a-f')
           [ "${cert}" = "${EXPECTED_CERT}" ] || { echo "::error::APK signed with ${cert:-nothing}, expected ${EXPECTED_CERT}"; exit 1; }
           cp "${apk}" "WeiAssist-${{ steps.version.outputs.name }}.apk"
           sha256sum "WeiAssist-${{ steps.version.outputs.name }}.apk" > "WeiAssist-${{ steps.version.outputs.name }}.apk.sha256"
+
+      - name: Keep the dry-run APK
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v7
+        with:
+          name: weiassist-release-dryrun
+          path: WeiAssist-*.apk*
+          retention-days: 3
 
       - name: Remove the key
         if: always()
         run: rm -rf "${RUNNER_TEMP}/signing"
 
       - name: Publish the release
+        if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
         run: >
