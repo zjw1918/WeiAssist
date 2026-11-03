@@ -32,7 +32,7 @@ Status legend: ✅ done · 🔨 next · ⬜ planned. Current status and todo: [P
   - end-to-end tests of the shipped Pi bundle over the real bridge protocol, with a mock provider and scripted tool calls.
 - 🔨 **Instrumented tests:** PhoneActions against a small test app on an emulator in CI.
 - ✅ **CI (GitHub Actions):** pi-host tests, lint, unit tests and the debug APK on every PR.
-- ⬜ **Release workflow:** signed release builds on tags.
+- ✅ **Release workflow:** signed APKs published to GitHub Releases on version tags.
 - ✅ **Conversation history:** sessions with saved transcripts; a restart doesn't lose them.
 - ⬜ **Structured logging:** a ring buffer with an in-app "copy diagnostics" option. Secrets and typed text are always redacted.
 - ⬜ **Settings screen:** provider, model, thinking level, language, safety options.
@@ -73,4 +73,4 @@ Status legend: ✅ done · 🔨 next · ⬜ planned. Current status and todo: [P
 - ✅ **ARCHITECTURE.md**, including the bridge protocol.
 - ⬜ **More docs:** "write a tool" and "add a provider" guides, a privacy policy.
 - ⬜ **Releases:** signed APKs on GitHub Releases, plus F-Droid. Google Play's accessibility-API policy needs checking before any Play listing.
-- ⬜ **Branding:** the name is set (WeiAssist / 小维助手, `com.lanqi.weiassist`); still needed are an icon and screenshots for the README.
+- ⬜ **Branding:** the name is set (WeiAssist / 小维助手, `com.lanqi.weiassist`); icon done (a blue tuna); still needed are screenshots for the README.

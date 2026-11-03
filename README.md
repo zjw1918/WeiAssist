@@ -1,32 +1,42 @@
 # WeiAssist · 小维助手
 
-**An open-source AI assistant that operates your Android phone for you.**
-Tell it what you want ("send an email to Aurora saying hello") and it opens the app, fills in the
-details and asks you before it presses Send.
+**An open-source AI assistant for Android, built on [Pi](https://github.com/earendil-works/pi).**
+Chat with the AI provider of your choice, hand it files and photos, let it run Linux commands for live
+information and coding, and keep several conversations going at once. No servers of ours in between:
+the app talks to your provider directly.
 
-WeiAssist is built on **[Pi](https://github.com/earendil-works/pi)**, the minimal, extensible agent
-harness. Pi handles models, sign-in and the agent loop; WeiAssist gives it eyes and hands on Android.
+Pi, the minimal, extensible agent harness, handles models, sign-in and the agent loop; WeiAssist brings it to
+the phone with a native app around it.
 
-> **Status: early development.** It works end to end on real devices, for example sending an email in
-> Gmail with a confirmation step. Expect rough edges. See the [roadmap](docs/ROADMAP.md).
+> **Status: early development.** It works on real devices (Android 12 to 16), but expect rough edges.
+> What's done and what's next: [PROGRESS.md](docs/PROGRESS.md) and the [roadmap](docs/ROADMAP.md).
 
-## What it can do today
+## Features
 
-- **Sign in your way:** with your **ChatGPT subscription** (Pi's "Sign in with ChatGPT") or an **OpenAI API key**. Credentials stay on the phone, encrypted with the Android Keystore.
-- **Pick a model and thinking level:** the list comes from Pi, filtered to what your sign-in can use.
-- **Operate other apps:** read the screen, tap, type, scroll, press keys and open apps, through an accessibility service you turn on yourself.
-- **Run Linux commands (optional):** with [Termux](https://termux.dev) installed, it can look things up on the web, work with data, and write and run code. Setup: [docs/TERMUX.md](docs/TERMUX.md).
-- **Ask before anything irreversible:** Send, Pay and Delete need your OK on an on-screen card.
-- **Keep working in the background:** tasks run in a foreground service. Stop is always in the notification, and the result arrives as a notification.
-- **Stay out of your way:** it never touches WeiAssist itself, pauses while you look at it, and never sends password fields to the model.
+- **Many AI providers:** OpenAI (sign in with your ChatGPT subscription, or an API key), Anthropic, Google,
+  DeepSeek, OpenRouter, xAI, Moonshot, Mistral and OpenCode, through Pi.
+- **Your own models:** add any OpenAI-compatible server, such as Ollama, vLLM, LM Studio or a relay. It fetches
+  the model list and detects each model's context size, which you can correct.
+- **Model and thinking level:** pick per provider, from what your sign-in can use.
+- **Attachments:** send photos, PDFs and text or code files with a message. Images open in a full-screen viewer.
+- **Linux commands (optional):** with [Termux](https://termux.dev) installed, the assistant can look things up on
+  the web, work with data, and write, build and run code, with long jobs kept running in `tmux`.
+  Setup: [docs/TERMUX.md](docs/TERMUX.md).
+- **Several conversations at once:** each runs on its own and keeps going in the background, with saved
+  history. Send a message while one is working and it reads it before its next step. A supervisor
+  conversation can start, check and stop the others for you, by typing or by voice.
+- **Phone tasks (optional):** if you turn on its accessibility service, it can also use apps on the phone for
+  a task, and asks you before anything like Send, Pay or Delete.
+- **Private by design:** sign-ins are stored only on the phone, encrypted with the Android Keystore. Password
+  fields are never sent to a model.
 - **English and Chinese UI.**
 
 ## Install
 
 Download the APK from [Releases](https://github.com/zjw1918/WeiAssist/releases/latest) and install it (allow installs
 from your browser or file manager when Android asks). You can also build from source (below).
-Then open WeiAssist, sign in, and to let it operate apps, turn it on under **Settings → Accessibility**.
-Optional: to let it run Linux commands, set up Termux as described in [docs/TERMUX.md](docs/TERMUX.md).
+Then open WeiAssist and connect it to an AI provider. Optional extras, both under **Settings**:
+Linux commands (set up Termux as described in [docs/TERMUX.md](docs/TERMUX.md)) and phone tasks (accessibility).
 
 ## Build
 
@@ -47,29 +57,13 @@ How it fits together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Contributing
 
 ## Privacy
 
-WeiAssist has no servers. When you give it a task, the text you type and the relevant screen
-contents go to the AI provider you signed in with, and nowhere else. Password fields are never sent.
-Your sign-in is stored only on your phone. See [SECURITY.md](SECURITY.md).
+WeiAssist has no servers. Your messages and attachments, the output of commands it runs, and, for phone
+tasks, the relevant screen contents go to the AI provider you chose, and nowhere else. Password fields are
+never sent. Your sign-ins are stored only on your phone. See [SECURITY.md](SECURITY.md).
 
 ## License
 
 [Apache License 2.0](LICENSE). Bundled third-party software and its licenses are listed in [NOTICE](NOTICE).
-Pi is MIT-licensed by Mario Zechner. "ChatGPT" and "OpenAI" are trademarks of OpenAI; WeiAssist is
-not affiliated with OpenAI.
+Pi is MIT-licensed by Mario Zechner. Product names such as ChatGPT, OpenAI, Claude and Gemini are trademarks of
+their owners; WeiAssist is not affiliated with any AI provider.
 
----
-
-## 中文简介
-
-**小维助手**是一个开源的安卓 AI 助手：你说一句“给 Aurora 发封邮件说你好”，它就打开邮件应用、填好内容，并在点“发送”之前先问你。
-
-- 用 **ChatGPT 订阅**或 **OpenAI API key** 登录，凭据只保存在手机上（系统密钥库加密）
-- 模型和思考程度可选，列表来自 Pi
-- 通过你亲手开启的无障碍服务操作其他应用；发送、付款、删除前一定先问你
-- 可选：安装 [Termux](https://termux.dev) 后可以运行 Linux 命令（上网查信息、处理数据、写代码），设置方法见 [docs/TERMUX.md](docs/TERMUX.md#中文termux-设置)
-- 任务在后台继续执行，通知栏随时可以“停止”，完成后用通知告诉你结果
-- 不会操作小维助手自己，你在看它时自动暂停；密码框内容从不发给模型
-- 界面支持中文和英文
-
-底层的智能体框架是 [Pi](https://github.com/earendil-works/pi)，我们只用它公开的接口，不改它的代码，方便跟着上游升级。
-构建方法见上文，参与开发请看 [CONTRIBUTING.md](CONTRIBUTING.md)。

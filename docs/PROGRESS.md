@@ -36,7 +36,7 @@ servers, and messages can carry images, PDFs and text files.
   - 46 JVM tests: `AgentReducer` 11, `SessionReducer` 12, `SessionText` 5, `Markdown` 8, `DisplayTasks` 5, adb crypto and framing 5;
   - 19 end-to-end tests of the shipped bundle (`pi-host/test`) over the real bridge protocol, with a mock provider
     and scripted tool calls (sessions, restore, pause gate, supervisor tools, bash). Now 22.
-- **Project files:** CI workflow, README (en and zh), ARCHITECTURE, CONTRIBUTING, Code of Conduct, SECURITY, Apache-2.0 and NOTICE.
+- **Project files:** CI workflow, README, ARCHITECTURE, CONTRIBUTING, Code of Conduct, SECURITY, Apache-2.0 and NOTICE.
 
 ### Agent capabilities
 - **Tools:** `bash` (Termux, see below), `open_app`, `read_screen` (with element centres), `screenshot` (image for vision models), `tap`, `tap_at`, `long_press`, `type_text`, `scroll`, `swipe`, `press_key`, `wait`.
