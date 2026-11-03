@@ -39,6 +39,13 @@ interface DisplayIo {
     fun tasks(): DisplayTasks?
     /** Move a task to this display. */
     fun moveTask(taskId: Int): Boolean
+    /**
+     * The display to type on for this one (Android 14+), or -1: an app moves there while the keyboard's
+     * connection puts text in (see PhoneActions.typeByKeyboard), then back with [moveTask].
+     */
+    fun typingDisplay(): Int
+    /** Move a task to [display] (this one's typing display). */
+    fun moveTaskTo(taskId: Int, display: Int): Boolean
     /** Remove a root task. */
     fun removeTask(taskId: Int): Boolean
     /** Kill an app's processes if they are all in the background. */

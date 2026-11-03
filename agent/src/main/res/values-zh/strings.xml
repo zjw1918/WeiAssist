@@ -18,6 +18,7 @@
     <string name="err_model">这个账号用不了模型 %1$s，在上面换一个试试。</string>
     <string name="first_hello">你好</string>
     <string name="confirm_title">小维助手要点「%1$s」</string>
+    <string name="confirm_title_blind">小维助手要点一个它看不清的位置（可能会发送已输入的内容）</string>
     <string name="confirm_nothing_typed">（这次没有输入内容）</string>
     <string name="err_runtime_restarted">小维助手的引擎刚刚重启，这个任务中断了，请再试一次。</string>
     <string name="notif_stop_all">全部停止</string>

@@ -3,6 +3,7 @@ package com.lanqi.weiassist.phone
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 
 /** Runs one Pi phone-tool request (see pi-host/src/phone-tools.ts) against the accessibility service. */
@@ -61,7 +62,8 @@ class PhoneActions(private val context: Context) {
             "tap" -> svc.tap(a.getInt("id"), d) { x, y -> t.io.tap(x, y, 60) }.settled()
             "tap_at" -> (if (t.io.tap(a.getInt("x").toFloat(), a.getInt("y").toFloat(), 60)) "tapped at ${a.getInt("x")},${a.getInt("y")}" else "tap failed").settled()
             "long_press" -> svc.centerOf(a.getInt("id"), d).let { (x, y) -> if (t.io.tap(x, y, 700)) "long-pressed [${a.getInt("id")}]" else "long press failed" }.settled()
-            "type_text" -> svc.typeText(a.getInt("id"), a.getString("text"), d).let { typed ->
+            "type_text" -> if (!a.has("id")) typeVirtual(svc, t, a.getString("text"), a.optBoolean("submit")).settled()
+            else svc.typeText(a.getInt("id"), a.getString("text"), d).let { typed ->
                 if (!a.optBoolean("submit") || !typed.startsWith("typed")) typed else "$typed; ${enterVirtual(svc, t, a.getInt("id"))}"
             }.settled()
             "scroll" -> svc.scroll(a.optInt("id", -1), a.getString("direction") == "forward", d).settled()
@@ -184,7 +186,7 @@ class PhoneActions(private val context: Context) {
             "tap" -> svc.tap(a.getInt("id")).settled(svc)
             "tap_at" -> svc.tapAt(a.getInt("x"), a.getInt("y")).settled(svc)
             "long_press" -> svc.longPress(a.getInt("id")).settled(svc)
-            "type_text" -> svc.typeText(a.getInt("id"), a.getString("text")).let { typed ->
+            "type_text" -> if (!a.has("id")) svc.typeIntoFocused(a.getString("text"), a.optBoolean("submit")).settled(svc) else svc.typeText(a.getInt("id"), a.getString("text")).let { typed ->
                 if (!a.optBoolean("submit") || !typed.startsWith("typed")) typed
                 else "$typed; " + if (svc.imeEnter(a.getInt("id"))) "pressed enter" else NO_ENTER
             }.settled(svc)
@@ -206,6 +208,47 @@ class PhoneActions(private val context: Context) {
         svc.imeEnter(id, t.displayId) -> "pressed enter"
         t.io.key(android.view.KeyEvent.KEYCODE_ENTER) -> "pressed enter"
         else -> NO_ENTER
+    }
+
+    /**
+     * Type without an element, for apps that hide their text fields (WeChat): paste [text] into the field the app
+     * has focused on the session's display (the one the model tapped), through the clipboard and a Paste key.
+     * It inserts at the cursor; nothing can confirm it landed, so the model checks with a screenshot.
+     */
+    private suspend fun typeVirtual(svc: AgentAccessibilityService, t: Target.Virtual, text: String, submit: Boolean): String {
+        if (!debugNoClipboard && svc.withClipboard(text) { t.io.key(android.view.KeyEvent.KEYCODE_PASTE) }) {
+            val typed = "pasted the text into the focused field (if this app hides its screen, check with a screenshot; " +
+                "if it isn't there, tap_at the field first and try again)"
+            return if (submit) "$typed; ${enterVirtual(svc, t, null)}" else typed
+        }
+        // No clipboard (some phones block it): type through the keyboard instead.
+        return typeByKeyboard(svc, t, text, submit)
+    }
+
+    /**
+     * Type into the focused field of the session's app through the keyboard's connection, for phones without a
+     * usable clipboard. The keyboard serves only the focused window of the top display, which a session display
+     * never becomes, so the app's task moves to the session's typing display (same size, so it isn't restarted;
+     * see DisplayHost.typingDisplay) just while the text goes in, then back. Meanwhile the user's own screen
+     * loses focus (their keyboard closes); if they take it back, the text isn't typed (onlyIn).
+     */
+    private suspend fun typeByKeyboard(svc: AgentAccessibilityService, t: Target.Virtual, text: String, submit: Boolean): String = typingLock.withLock {
+        val tasks = t.io.tasks() ?: return "could not type: can't see which app is on this screen"
+        val task = tasks.tasks.firstOrNull { it.display == t.displayId } ?: return "nothing on this screen to type into"
+        val pkg = tasks.resumed[t.displayId] ?: task.pkg
+        val typing = t.io.typingDisplay()
+        if (typing <= 0) return "could not type: no clipboard on this phone, and typing here needs Android 14"
+        if (!t.io.moveTaskTo(task.id, typing)) return "could not type: the app could not be moved to the typing screen"
+        val start = android.os.SystemClock.uptimeMillis()
+        try {
+            // The app's window takes the focus there and its focused field connects to the keyboard.
+            while (svc.inputPackage() != pkg && android.os.SystemClock.uptimeMillis() - start < KEYBOARD_WAIT_MS) kotlinx.coroutines.delay(50)
+            val r = svc.typeIntoFocused(text, submit, onlyIn = pkg)
+            android.util.Log.i(TAG, "typed by keyboard on display $typing for ${t.displayId} after ${android.os.SystemClock.uptimeMillis() - start} ms: $r")
+            return if (r.startsWith("typed")) "$r (check with a screenshot; if it isn't there, tap_at the field first and try again)" else r
+        } finally {
+            if (!t.io.moveTaskTo(task.id, t.displayId)) android.util.Log.w(TAG, "task ${task.id} not moved back to display ${t.displayId}")
+        }
     }
 
     /** Every action returns only once the screen has settled, so the next read sees the result. */
@@ -237,14 +280,19 @@ class PhoneActions(private val context: Context) {
 
     fun isEnabled() = AgentAccessibilityService.instance != null
 
-    private companion object {
-        const val TAG = "PhoneActions"
-        const val NO_ENTER = "could not press enter: no text field has focus. Tap the field first, or tap the app's own Go / Search button or a suggestion"
+    companion object {
+        /** Debug builds: act as if the clipboard were blocked (as on some phones), so typing goes by keyboard. */
+        @Volatile var debugNoClipboard = false
+        /** One keyboard: one session types at a time. */
+        private val typingLock = kotlinx.coroutines.sync.Mutex()
+        private const val KEYBOARD_WAIT_MS = 2_000L
+        private const val TAG = "PhoneActions"
+        private const val NO_ENTER = "could not press enter: no text field has focus. Tap the field first, or tap the app's own Go / Search button or a suggestion"
         /** Actions after which an app may have opened a new window. */
-        val LAUNCHING = setOf("tap", "tap_at", "long_press", "type_text", "press_key", "open_app")
+        private val LAUNCHING = setOf("tap", "tap_at", "long_press", "type_text", "press_key", "open_app")
         /** How long open_app waits for a starting app to show a window, and for it to arrive on the display at all. */
-        const val OPEN_WAIT_MS = 15_000L
-        const val OPEN_ELSEWHERE_MS = 3_000L
-        const val FLAG_TRUSTED = 1 shl 7
+        private const val OPEN_WAIT_MS = 15_000L
+        private const val OPEN_ELSEWHERE_MS = 3_000L
+        private const val FLAG_TRUSTED = 1 shl 7
     }
 }

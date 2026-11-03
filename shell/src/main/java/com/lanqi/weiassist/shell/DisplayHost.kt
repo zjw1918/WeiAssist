@@ -64,7 +64,26 @@ internal class DisplayHost(
         val lock = Any() // guards latest for screenshots taken on binder threads
     }
 
-    fun create(name: String, width: Int, height: Int, dpi: Int): Int {
+    /** Each session display's typing display (see [typingDisplay]), released with it. */
+    private val typingFor = java.util.concurrent.ConcurrentHashMap<Int, Int>()
+
+    /**
+     * A display to type on for session display [forId] (Android 14+), made on first use: the same size, so an
+     * app moved there isn't restarted, but allowed to take the top focus, which the keyboard needs (it serves
+     * only the focused window of the top display; a session display never takes it). Its keyboard shows on
+     * it, not on the phone's screen. The app moves there only while text goes in; see PhoneActions.typeByKeyboard.
+     */
+    fun typingDisplay(forId: Int): Int {
+        typingFor[forId]?.let { if (displays.containsKey(it)) return it }
+        check(Build.VERSION.SDK_INT >= 34) { "typing on a display of its own needs Android 14" }
+        val vd = displays[forId]?.display ?: throw IllegalArgumentException("no display $forId")
+        val m = android.util.DisplayMetrics().also { vd.display.getRealMetrics(it) }
+        val id = create("typing-$forId", m.widthPixels, m.heightPixels, m.densityDpi, typing = true)
+        typingFor[forId] = id
+        return id
+    }
+
+    fun create(name: String, width: Int, height: Int, dpi: Int, typing: Boolean = false): Int {
         // CPU-readable for screenshots, GPU-sampled for previews (the app draws the buffer as is).
         val reader = if (Build.VERSION.SDK_INT >= 29) ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, MAX_IMAGES,
             HardwareBuffer.USAGE_CPU_READ_OFTEN or HardwareBuffer.USAGE_GPU_SAMPLED_IMAGE)
@@ -79,6 +98,7 @@ internal class DisplayHost(
         // phone's screen instead (ActivityTaskSupervisor.isCallerAllowedToLaunchOnDisplay). With a focus of its
         // own (14+), so taps on it never take focus from the user's screen; and no vibration for our taps.
         val trusted = when {
+            typing -> base or FLAG_TRUSTED or FLAG_TOUCH_FEEDBACK_DISABLED or FLAG_OWN_FOCUS
             Build.VERSION.SDK_INT >= 34 -> base or FLAG_TRUSTED or FLAG_TOUCH_FEEDBACK_DISABLED or FLAG_OWN_FOCUS or FLAG_STEAL_TOP_FOCUS_DISABLED
             Build.VERSION.SDK_INT >= 33 -> base or FLAG_TRUSTED or FLAG_TOUCH_FEEDBACK_DISABLED
             else -> base // shell can't make trusted displays on Android 12
@@ -104,6 +124,7 @@ internal class DisplayHost(
     }
 
     fun release(id: Int) {
+        typingFor.remove(id)?.let(::release)
         val e = displays.remove(id) ?: return
         runOnHandler {
             e.watches.values.toList().forEach(::stopWatch)

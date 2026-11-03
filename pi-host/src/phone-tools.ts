@@ -26,6 +26,11 @@ export class PhoneSession {
 	private lastScreen = new Map<number, string>();
 	/** What the agent typed during this task, shown in the confirmation. */
 	private typed: string[] = [];
+	/**
+	 * Text was typed blind in this task (type_text without an id): the app hides its screen (WeChat), so a
+	 * tap_at there has no label to judge. From then on, such a tap or an Enter asks first.
+	 */
+	private blindTyped = false;
 	/** Phone actions in this task; a runaway loop is stopped at MAX_STEPS. */
 	private steps = 0;
 	readonly tools: AgentTool<any>[];
@@ -38,6 +43,7 @@ export class PhoneSession {
 	reset() {
 		this.lastScreen = new Map();
 		this.typed = [];
+		this.blindTyped = false;
 		this.steps = 0;
 	}
 
@@ -68,8 +74,9 @@ export class PhoneSession {
 		return text(`${result}${SCREEN_NOW}${await this.readScreen(signal)}`);
 	}
 
-	noteTyped(id: number, value: string) {
-		this.typed.push(`${fieldName(this.lastScreen.get(id))}: ${value}`);
+	noteTyped(id: number | undefined, value: string) {
+		this.typed.push(`${id === undefined ? "field" : fieldName(this.lastScreen.get(id))}: ${value}`);
+		if (id === undefined) this.blindTyped = true;
 	}
 
 	/**
@@ -82,14 +89,28 @@ export class PhoneSession {
 		if (toolCall.name !== "note" && ++this.steps > MAX_STEPS) {
 			return { block: true, terminate: true, reason: `Step limit (${MAX_STEPS}) reached. Stop and report what you have done and found so far.` };
 		}
+		const a = args as any;
 		let label = "";
-		if (toolCall.name === "tap") label = labelOf(this.lastScreen.get((args as any).id) ?? "");
-		else if (toolCall.name === "tap_at") label = await this.phone("label_at", { x: (args as any).x, y: (args as any).y });
-		else return undefined;
-		if (!riskyLabel(label)) return undefined;
-		// Kotlin words the card in the user's language; we pass the button label and what was typed.
-		const ok = await bridgeCall("confirm", { session: this.session, label, typed: this.typed });
-		return ok ? undefined : { block: true, reason: "The user declined this action. Stop and tell the user.", terminate: true };
+		let blind = false;
+		let typed = this.typed;
+		if (toolCall.name === "tap") label = labelOf(this.lastScreen.get(a.id) ?? "");
+		else if (toolCall.name === "tap_at") {
+			label = await this.phone("label_at", { x: a.x, y: a.y });
+			blind = this.blindTyped && !label.trim();
+		} else if (toolCall.name === "press_key" && a.key === "enter" && this.blindTyped) {
+			blind = true;
+		} else if (toolCall.name === "type_text" && a.submit === true && (a.id === undefined || this.blindTyped)) {
+			// Typing and pressing Enter in one call: the text isn't noted yet (execute does that), so add it to the card.
+			typed = [...this.typed, `${a.id === undefined ? "field" : fieldName(this.lastScreen.get(a.id))}: ${a.text}`];
+			blind = true;
+		} else return undefined;
+		if (!blind && !riskyLabel(label)) return undefined;
+		// Kotlin words the card in the user's language; we pass the button label (none when the app hides it) and what was typed.
+		const ok = await bridgeCall("confirm", { session: this.session, label, blind, typed });
+		if (!ok) return { block: true, reason: "The user declined this action. Stop and tell the user.", terminate: true };
+		// blindTyped stays set: nothing can tell whether the allowed tap hit Send (a moved button, a miss), so
+		// every unreadable tap after blind typing asks until the task ends.
+		return undefined;
 	};
 }
 
@@ -176,8 +197,10 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		label: "Type text",
 		description:
 			"Replace the text of an editable element (from the latest read_screen) with the given text. " +
-			"submit: true then presses Enter, as the keyboard's Enter / Go / Search key does: e.g. to open a URL typed into a browser's address bar, or to search.",
-		parameters: obj({ id: int(), text: str(), submit: opt(bool({ description: "Press Enter after typing" })) }),
+			"submit: true then presses Enter, as the keyboard's Enter / Go / Search key does: e.g. to open a URL typed into a browser's address bar, or to search. " +
+			"Some apps (WeChat) hide their screen, so read_screen lists no field: then tap_at the field (find it in a screenshot) and call " +
+			"type_text without id; it puts the text (any language) at the cursor of the focused field. Check with a screenshot, then tap_at the app's Send button.",
+		parameters: obj({ id: opt(int()), text: str(), submit: opt(bool({ description: "Press Enter after typing" })) }),
 		executionMode: "sequential",
 		execute: async (_id, p: any, signal) => {
 			s.noteTyped(p.id, p.text);

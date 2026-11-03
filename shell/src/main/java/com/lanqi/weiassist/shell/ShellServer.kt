@@ -90,6 +90,17 @@ class ShellServer private constructor(
         return r.getInt("code") == 0
     }
 
+    override fun typingDisplay(displayId: Int): Int {
+        require(displays.has(displayId)) { "no display $displayId" }
+        val id = displays.typingDisplay(displayId)
+        // Its keyboard on it (DISPLAY_IME_POLICY_LOCAL), never on the phone's screen. Hidden API, as shell.
+        val wm = Class.forName("android.view.IWindowManager\$Stub").getMethod("asInterface", IBinder::class.java)
+            .invoke(null, Class.forName("android.os.ServiceManager").getMethod("getService", String::class.java).invoke(null, "window"))
+        wm.javaClass.getMethod("setDisplayImePolicy", Int::class.javaPrimitiveType, Int::class.javaPrimitiveType).invoke(wm, id, 0)
+        log("typing display $id for display $displayId")
+        return id
+    }
+
     override fun removeTask(taskId: Int): Boolean {
         val r = exec("am stack remove $taskId", 5_000)
         log("task $taskId removed: ${r.getInt("code")} ${r.getString("out").orEmpty().trim()}")

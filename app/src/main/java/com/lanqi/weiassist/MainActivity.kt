@@ -58,6 +58,8 @@ class MainActivity : ComponentActivity() {
         if (!BuildConfig.DEBUG) return
         i.getStringExtra("supervise")?.let { debugSupervise.value = it; debugMock = if (i.hasExtra("mock")) i.getBooleanExtra("mock", false) else null }
         if (i.hasExtra("mainOnly")) debugMainOnly = i.getBooleanExtra("mainOnly", false)
+        // `--ez noClipboard true|false`: act as if the clipboard were blocked, as on some phones (typing by keyboard).
+        if (i.hasExtra("noClipboard")) com.lanqi.weiassist.phone.PhoneActions.debugNoClipboard = i.getBooleanExtra("noClipboard", false)
         val task = i.getStringExtra("task") ?: return
         debugRun = i.getBooleanExtra("run", false)
         debugPhone = i.getBooleanExtra("phone", true)

@@ -38,6 +38,12 @@ interface IShellService {
     String activities();
     /** Move a root task to another display (an app that opened a task of its own on the phone's screen). */
     boolean moveTask(int taskId, int displayId);
+    /**
+     * The display to type on for session display [displayId] (Android 14+; made on first use, released with
+     * it): the keyboard serves only the top display's focused window, which a session display never is, so an
+     * app moves there (moveTask) while text goes in, then back. Its keyboard shows on it, not on the phone's screen.
+     */
+    int typingDisplay(int displayId);
     /** Remove a root task (a session's app window, when its task ended). */
     boolean removeTask(int taskId);
     /** Kill an app's processes, if they are all in the background (`am kill`: never one the user sees or hears). */

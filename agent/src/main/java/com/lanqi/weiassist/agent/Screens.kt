@@ -155,6 +155,8 @@ class DisplayScreenPool(
         override fun startActivity(component: String): String = call("Error: the shell helper is gone") { h.startActivity(display, component) }
         override fun tasks(): DisplayTasks? = call(null) { DisplayTasks.parse(h.activities()) }
         override fun moveTask(taskId: Int): Boolean = call(false) { h.moveTask(taskId, display) }
+        override fun typingDisplay(): Int = try { h.typingDisplay(display) } catch (e: Exception) { Log.w(TAG, "no typing display: $e"); -1 }
+        override fun moveTaskTo(taskId: Int, display: Int): Boolean = call(false) { h.moveTask(taskId, display) }
         override fun removeTask(taskId: Int): Boolean = call(false) { h.removeTask(taskId) }
         override fun killApp(pkg: String): Boolean = call(false) { h.killApp(pkg) }
         override fun isRunning(pkg: String): Boolean = call(true) { h.isRunning(pkg) } // unknown: keep it alive

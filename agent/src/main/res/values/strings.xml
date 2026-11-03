@@ -18,6 +18,7 @@
     <string name="err_model">This account can\'t use the model %1$s. Pick another one above.</string>
     <string name="first_hello">Hello</string>
     <string name="confirm_title">WeiAssist wants to tap “%1$s”</string>
+    <string name="confirm_title_blind">WeiAssist wants to tap a spot this app hides from it (it may send what was typed)</string>
     <string name="confirm_nothing_typed">(nothing was typed in this task)</string>
     <string name="err_runtime_restarted">The assistant\'s engine had to restart, so this task stopped. Please try again.</string>
     <string name="notif_stop_all">Stop all</string>

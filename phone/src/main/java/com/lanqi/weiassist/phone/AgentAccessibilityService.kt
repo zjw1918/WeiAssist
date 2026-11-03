@@ -233,6 +233,59 @@ class AgentAccessibilityService : AccessibilityService() {
     }
 
     /**
+     * Type into the field that has input focus on the phone's own screen through the keyboard's connection, as
+     * a keyboard does (Android 13+, flagInputMethodEditor): no element needed, so it works in apps that hide
+     * their fields (WeChat), and any language. Inserts at the cursor; [submit] then sends the field's action.
+     * The keyboard serves the focused window of the top display: the phone's own screen, or a session's
+     * typing display while an app is moved there. [onlyIn]: type only if that app's field has the connection
+     * (the user may have taken the focus back meanwhile, and their field must never get the agent's text).
+     */
+    fun typeIntoFocused(value: String, submit: Boolean, onlyIn: String? = null): String {
+        if (android.os.Build.VERSION.SDK_INT < 33) return "typing without an element needs Android 13"
+        val im = inputMethod ?: return "typing without an element is not available: turn the assistant off and on in Settings → Accessibility"
+        val ic = im.currentInputConnection
+        val info = im.currentInputEditorInfo
+        if (ic == null || info == null || info.inputType == android.text.InputType.TYPE_NULL) return "no text field has focus: tap the field first, then type"
+        if (info.packageName == packageName) return OWN_APP
+        if (onlyIn != null && info.packageName != onlyIn) return "not typed: the keyboard is with another app (${info.packageName}), not $onlyIn"
+        ic.commitText(value, 1, null)
+        val typed = "typed at the cursor of the focused field (${info.packageName})"
+        if (!submit) return typed
+        val action = info.imeOptions and android.view.inputmethod.EditorInfo.IME_MASK_ACTION
+        if (action != android.view.inputmethod.EditorInfo.IME_ACTION_NONE && action != android.view.inputmethod.EditorInfo.IME_ACTION_UNSPECIFIED &&
+            info.imeOptions and android.view.inputmethod.EditorInfo.IME_FLAG_NO_ENTER_ACTION == 0) {
+            ic.performEditorAction(action)
+        } else {
+            val now = android.os.SystemClock.uptimeMillis()
+            ic.sendKeyEvent(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_DOWN, android.view.KeyEvent.KEYCODE_ENTER, 0))
+            ic.sendKeyEvent(android.view.KeyEvent(now, now, android.view.KeyEvent.ACTION_UP, android.view.KeyEvent.KEYCODE_ENTER, 0))
+        }
+        return "$typed; pressed enter"
+    }
+
+    /** The app whose text field the keyboard's connection serves now (Android 13+), if any. */
+    fun inputPackage(): String? =
+        if (android.os.Build.VERSION.SDK_INT < 33) null
+        else inputMethod?.takeIf { it.currentInputConnection != null }?.currentInputEditorInfo?.packageName
+
+    /**
+     * Run [paste] (which pastes into the focused field) with [value] on the clipboard, for apps that hide their
+     * text fields from accessibility (WeChat). Afterwards the user's clip comes back if Android let us read it
+     * (only while 小维助手 is in front), else the clipboard is cleared, so the agent's text doesn't linger there.
+     */
+    fun withClipboard(value: String, paste: () -> Boolean): Boolean {
+        val cm = getSystemService(android.content.ClipboardManager::class.java) ?: return false
+        val previous = runCatching { cm.primaryClip }.getOrNull()
+        val clip = android.content.ClipData.newPlainText("WeiAssist", value)
+        // Marked sensitive: the system's "copied" preview doesn't show the text.
+        clip.description.extras = android.os.PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
+        if (runCatching { cm.setPrimaryClip(clip) }.isFailure) return false
+        return try { paste() } finally {
+            runCatching { if (previous != null) cm.setPrimaryClip(previous) else if (android.os.Build.VERSION.SDK_INT >= 28) cm.clearPrimaryClip() }
+        }
+    }
+
+    /**
      * Submit a text field, like the keyboard's Enter / Go / Search key (Android 11+): element [id], or the
      * focused text field when [id] is null. False if there is none or the app ignored it.
      */
@@ -373,7 +426,9 @@ class AgentAccessibilityService : AccessibilityService() {
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL, PixelFormat.TRANSLUCENT,
+            // Not focusable: taking focus would close the app's keyboard and move its Send button, so the
+            // tap the user allows would land somewhere else. Its buttons still take touches.
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT,
         ).apply { gravity = Gravity.BOTTOM }
         wm.addView(card, lp)
         openCards[card] = answer

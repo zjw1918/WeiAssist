@@ -136,7 +136,8 @@ class AgentController(context: Context) {
             val detail = if (fields == null || fields.length() == 0) appContext.getString(R.string.confirm_nothing_typed)
             else (0 until fields.length()).joinToString("\n") { fields.getString(it) }
             val title = sessions.summary(m.optString("session"))?.title.orEmpty()
-            val head = appContext.getString(R.string.confirm_title, m.getString("label"))
+            val head = if (m.optBoolean("blind")) appContext.getString(R.string.confirm_title_blind)
+            else appContext.getString(R.string.confirm_title, m.getString("label"))
             AgentAccessibilityService.instance?.confirm(if (title.isBlank()) head else "$head\n· $title", detail) ?: false
         }
         scope.launch { pi.messages.collect(::onPi) }
