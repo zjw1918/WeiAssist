@@ -1,3 +1,5 @@
+![WeiAssist: an open-source AI agent for Android, built on Pi and Termux](docs/images/banner.png)
+
 # WeiAssist · 小维助手
 
 **An open-source AI assistant for Android, built on [Pi](https://github.com/earendil-works/pi).**
@@ -12,6 +14,8 @@ the phone with a native app around it.
 > What's done and what's next: [PROGRESS.md](docs/PROGRESS.md) and the [roadmap](docs/ROADMAP.md).
 
 ## Features
+
+![Four conversations in WeiAssist: live weather with curl, a Go web service with tests running in tmux, a year of Hong Kong stock data with a live watch job, and a narrated video made from an idea](docs/images/showcase.png)
 
 - **Many AI providers:** OpenAI (sign in with your ChatGPT subscription, or an API key), Anthropic, Google,
   DeepSeek, OpenRouter, xAI, Moonshot, Mistral and OpenCode, through Pi.
@@ -30,6 +34,14 @@ the phone with a native app around it.
 - **Private by design:** sign-ins are stored only on the phone, encrypted with the Android Keystore. Password
   fields are never sent to a model.
 - **English and Chinese UI.**
+
+<p align="center">
+  <img src="docs/images/agent-made-video.jpg" width="640"
+    alt="A frame from a narrated explainer video about how tuna breathe, with subtitles">
+  <br>
+  <sub>A frame from the video in the last example: from one idea, the assistant wrote the script, generated the
+  voice-over, drew and rendered the animation in Termux, all on the phone.</sub>
+</p>
 
 ## Install
 
