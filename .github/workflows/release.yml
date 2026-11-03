@@ -1,0 +1,94 @@
+name: Release
+
+# Push a version tag (git tag v0.2 && git push origin v0.2) to build a signed APK and publish it as a
+# GitHub Release. Tags with a hyphen (v0.2-beta1) become pre-releases.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write # create the release
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Signed APK
+    runs-on: ubuntu-latest
+    env:
+      # The release key's SHA-256 fingerprint: the job fails if the APK is signed with anything else.
+      EXPECTED_CERT: a4252ad1ebca49b6d011929fc951b0f4e6b0a59d400d831843bc516d7a8f6220
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7 # Gradle builds the Pi bundle with npm
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: pi-host/package-lock.json
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+      - uses: gradle/actions/setup-gradle@v6
+        with:
+          cache-read-only: true # a release must not depend on, or write to, a tag's own cache
+
+      - name: Version from the tag
+        id: version
+        run: |
+          tag="${GITHUB_REF_NAME}"; name="${tag#v}"
+          # v1.2.3 -> 10203; v0.2 -> 200; a pre-release suffix (-beta1) doesn't change the code.
+          IFS=. read -r major minor patch <<< "${name%%-*}"
+          for n in "${major}" "${minor:-0}" "${patch:-0}"; do
+            [[ "${n}" =~ ^[0-9]+$ ]] || { echo "::error::Tag ${tag} is not vMAJOR.MINOR[.PATCH][-suffix]"; exit 1; }
+          done
+          code=$(( major * 10000 + ${minor:-0} * 100 + ${patch:-0} ))
+          echo "name=${name}" >> "$GITHUB_OUTPUT"
+          echo "code=${code}" >> "$GITHUB_OUTPUT"
+          [[ "${name}" == *-* ]] && echo "prerelease=--prerelease" >> "$GITHUB_OUTPUT" || true
+          echo "versionName ${name}, versionCode ${code}"
+
+      - name: Signing key from secrets
+        env:
+          KEYSTORE_BASE64: ${{ secrets.WEIASSIST_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.WEIASSIST_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.WEIASSIST_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.WEIASSIST_KEY_PASSWORD }}
+        run: |
+          [ -n "${KEYSTORE_BASE64}" ] || { echo "::error::Signing secrets are missing"; exit 1; }
+          dir="${RUNNER_TEMP}/signing"; mkdir -p "${dir}"; chmod 700 "${dir}"
+          echo "${KEYSTORE_BASE64}" | base64 -d > "${dir}/release.jks"
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' \
+            "${dir}/release.jks" "${KEYSTORE_PASSWORD}" "${KEY_ALIAS}" "${KEY_PASSWORD}" > "${dir}/keystore.properties"
+          echo "WEIASSIST_SIGNING=${dir}/keystore.properties" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: >
+          ./gradlew assembleRelease --stacktrace
+          -PversionName=${{ steps.version.outputs.name }}
+          -PversionCode=${{ steps.version.outputs.code }}
+
+      - name: Check the signature
+        run: |
+          apk=app/build/outputs/apk/release/app-release.apk
+          bt="${ANDROID_HOME}/build-tools/$(ls "${ANDROID_HOME}/build-tools" | sort -V | tail -1)"
+          cert=$("${bt}/apksigner" verify --print-certs "${apk}" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          [ "${cert}" = "${EXPECTED_CERT}" ] || { echo "::error::APK signed with ${cert:-nothing}, expected ${EXPECTED_CERT}"; exit 1; }
+          cp "${apk}" "WeiAssist-${{ steps.version.outputs.name }}.apk"
+          sha256sum "WeiAssist-${{ steps.version.outputs.name }}.apk" > "WeiAssist-${{ steps.version.outputs.name }}.apk.sha256"
+
+      - name: Remove the key
+        if: always()
+        run: rm -rf "${RUNNER_TEMP}/signing"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "${GITHUB_REF_NAME}"
+          "WeiAssist-${{ steps.version.outputs.name }}.apk"
+          "WeiAssist-${{ steps.version.outputs.name }}.apk.sha256"
+          --title "WeiAssist ${{ steps.version.outputs.name }}"
+          --generate-notes --verify-tag ${{ steps.version.outputs.prerelease }}

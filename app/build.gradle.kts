@@ -15,8 +15,9 @@ android {
         applicationId = "com.lanqi.weiassist"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1"
+        // The release workflow sets these from the tag (-PversionName=0.2 -PversionCode=200).
+        versionCode = providers.gradleProperty("versionCode").orNull?.toInt() ?: 1
+        versionName = providers.gradleProperty("versionName").orNull ?: "0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

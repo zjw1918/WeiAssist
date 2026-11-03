@@ -23,7 +23,8 @@ harness. Pi handles models, sign-in and the agent loop; WeiAssist gives it eyes 
 
 ## Install
 
-No release yet. Build from source (below), or download the debug APK from the latest CI run's artifacts.
+Download the APK from [Releases](https://github.com/zjw1918/WeiAssist/releases/latest) and install it (allow installs
+from your browser or file manager when Android asks). You can also build from source (below).
 Then open WeiAssist, sign in, and to let it operate apps, turn it on under **Settings → Accessibility**.
 Optional: to let it run Linux commands, set up Termux as described in [docs/TERMUX.md](docs/TERMUX.md).
 
@@ -37,7 +38,8 @@ cd pi-host && npm test      # end-to-end tests of the bundled agent
 ./gradlew testDebugUnitTest lint
 ```
 
-`assembleRelease` signs the APK only when it finds a key: a `keystore.properties` file (`storeFile`, `storePassword`,
+Maintainers publish a release by pushing a version tag (`git tag v0.2 && git push origin v0.2`): the Release workflow
+builds, signs and attaches the APK. Locally, `assembleRelease` signs the APK only when it finds a key: a `keystore.properties` file (`storeFile`, `storePassword`,
 `keyAlias`, `keyPassword`) at the path in `WEIASSIST_SIGNING`, or in `~/.android/weiassist-release/`. Without one the
 release APK is unsigned.
 
