@@ -320,14 +320,18 @@ class SessionManager(
 
     // ---- internals ------------------------------------------------------------------------------------
 
-    private val _finished = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 16)
-    /** A session's task ended (done, failed or stopped); the service reports it if no one is watching. */
-    val finished: kotlinx.coroutines.flow.SharedFlow<String> = _finished
+    /** A session's task ended; [onMainScreen]: it was operating the phone's own screen, so another app is in front now. */
+    data class Finished(val id: String, val onMainScreen: Boolean)
+
+    private val _finished = kotlinx.coroutines.flow.MutableSharedFlow<Finished>(extraBufferCapacity = 16)
+    /** A session's task ended (done or failed); the service brings the app back or reports it. */
+    val finished: kotlinx.coroutines.flow.SharedFlow<Finished> = _finished
 
     private fun finished(id: String) {
         prompted -= id
+        val onMain = screens.target(id) == com.lanqi.weiassist.phone.Target.Main // read before the screen is given up
         endScreen(id)
-        _finished.tryEmit(id)
+        _finished.tryEmit(Finished(id, onMain))
         evictIfUnused(id)
     }
 
