@@ -78,6 +78,13 @@ class SessionStore(root: File) {
             is ChatItem.Error -> JSONObject().put("k", "error").put("text", i.text)
             is ChatItem.Step -> JSONObject().put("k", "step").put("tool", i.tool).put("detail", i.detail)
                 .put("ok", i.ok ?: JSONObject.NULL).put("result", i.result).also { if (i.screen > 0) it.put("screen", i.screen) }
+            is ChatItem.Thinking -> JSONObject().put("k", "thinking").put("text", i.text).put("ms", i.ms)
+            is ChatItem.Stats -> i.run.let { r ->
+                JSONObject().put("k", "stats").put("startedAt", r.startedAt).put("ms", r.ms).put("thinkingMs", r.thinkingMs)
+                    .put("steps", r.steps).put("calls", r.calls).put("input", r.input).put("output", r.output)
+                    .put("cacheRead", r.cacheRead).put("cacheWrite", r.cacheWrite).put("reasoning", r.reasoning)
+                    .put("cost", r.cost).put("model", r.model)
+            }
         }
 
         fun itemFrom(o: JSONObject): ChatItem? = when (o.optString("k")) {
@@ -91,6 +98,13 @@ class SessionStore(root: File) {
             "step" -> ChatItem.Step(o.getString("tool"), o.optString("detail"), if (o.isNull("ok")) null else o.getBoolean("ok"),
                 // Only the first line is shown (a few builds kept whole screens here).
                 o.optString("result").lineSequence().first().take(80), o.optInt("screen"))
+            "thinking" -> ChatItem.Thinking(o.optString("text"), o.optLong("ms"))
+            "stats" -> ChatItem.Stats(RunStats(
+                startedAt = o.optLong("startedAt"), ms = o.optLong("ms"), thinkingMs = o.optLong("thinkingMs"),
+                steps = o.optInt("steps"), calls = o.optInt("calls"), input = o.optLong("input"), output = o.optLong("output"),
+                cacheRead = o.optLong("cacheRead"), cacheWrite = o.optLong("cacheWrite"), reasoning = o.optLong("reasoning"),
+                cost = o.optDouble("cost", 0.0), model = o.optString("model"),
+            ))
             else -> null
         }
     }

@@ -308,6 +308,10 @@ function forward(session: string, event: AgentEvent) {
 		case "message_update": {
 			const e = event.assistantMessageEvent;
 			if (e.type === "text_delta") send({ type: "text_delta", delta: e.delta });
+			// The model's reasoning, live (providers that hide it still send start/end: the page times it).
+			else if (e.type === "thinking_start") send({ type: "thinking_start" });
+			else if (e.type === "thinking_delta") send({ type: "thinking_delta", delta: e.delta });
+			else if (e.type === "thinking_end") send({ type: "thinking_end", text: e.content });
 			break;
 		}
 		case "message_end": {
