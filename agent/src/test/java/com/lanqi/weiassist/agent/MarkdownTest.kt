@@ -20,6 +20,30 @@ class MarkdownTest {
         )
     }
 
+    @Test fun inlineTripleBacktickCodeDropsShellTag() {
+        assertEquals(
+            listOf(Span("运行： "), Span("mkdir -p ~/.termux && termux-reload-settings", code = true)),
+            Markdown.inline("运行： ```sh mkdir -p ~/.termux && termux-reload-settings ```"),
+        )
+    }
+
+    @Test fun doubleBacktickCodeHoldsABacktick() {
+        assertEquals(listOf(Span("say "), Span("a`b", code = true)), Markdown.inline("say `` a`b ``"))
+    }
+
+    @Test fun backtickRunsOfOtherLengthsDontClose() {
+        assertEquals(listOf(Span("```x` y")), Markdown.inline("```x` y"))
+    }
+
+    @Test fun codeBlockIndentedUnderAListItem() {
+        val md = "1. 打开 Termux，运行：\n   ```sh\n   mkdir -p ~/.termux && termux-reload-settings\n   ```\n2. 允许权限。"
+        val list = Markdown.parse(md).single() as Markdown.ListBlock
+        assertEquals(listOf("1.", "2."), list.items.map { it.marker })
+        assertEquals(listOf(Markdown.Code("mkdir -p ~/.termux && termux-reload-settings")), list.items[0].code)
+        assertEquals(listOf(Span("打开 Termux，运行：")), list.items[0].text)
+        assertEquals(listOf(Span("允许权限。")), list.items[1].text)
+    }
+
     @Test fun autolinkStopsAtChinesePunctuation() {
         assertEquals(
             listOf(Span("来源："), Span("https://open-meteo.com/", link = "https://open-meteo.com/"), Span("。")),
