@@ -125,7 +125,22 @@
     <string name="status_interrupted">已中断</string>
     <string name="delete">删除</string>
     <string name="delete_title">删除这个对话？</string>
-    <string name="delete_text">对话内容会从手机上删除。正在执行的任务会先停止。它在 Termux 里的文件（~/sessions/…）会保留。</string>
+    <string name="delete_text">对话内容会从手机上删除。正在执行的任务会先停止。</string>
+    <string name="delete_termux_files">同时删除它在 Termux 里的文件</string>
+    <string name="delete_termux_files_many">同时删除它们在 Termux 里的文件</string>
+    <string name="delete_termux_files_off">保留在 ~/sessions/… 里，以后还能用。</string>
+    <string name="delete_termux_files_on">~/sessions/… 里的文件夹会被永久删除。</string>
+    <string name="select">选择</string>
+    <string name="select_all">全选</string>
+    <string name="select_none">全不选</string>
+    <string name="exit_selection">退出选择</string>
+    <plurals name="selected_count">
+        <item quantity="other">已选 %1$d 个</item>
+    </plurals>
+    <plurals name="delete_many_title">
+        <item quantity="other">删除 %1$d 个对话？</item>
+    </plurals>
+    <string name="delete_many_text">对话内容会从手机上删除。正在执行的任务会先停止。</string>
     <string name="reply_hint">消息</string>
     <string name="shell_title">Shell 后台（虚拟显示器）</string>
     <string name="shell_why">让每个手机任务在自己的虚拟显示器里运行，多个任务可以同时进行，你也能看到它们在做什么。只需用「无线调试」（开发者选项）设置一次。</string>

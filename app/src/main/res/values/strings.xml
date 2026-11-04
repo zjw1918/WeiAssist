@@ -126,7 +126,24 @@
     <string name="status_interrupted">Interrupted</string>
     <string name="delete">Delete</string>
     <string name="delete_title">Delete this conversation?</string>
-    <string name="delete_text">Its messages are removed from this phone. A running task is stopped first. Its files in Termux (~/sessions/…) are kept.</string>
+    <string name="delete_text">Its messages are removed from this phone. A running task is stopped first.</string>
+    <string name="delete_termux_files">Also delete its files in Termux</string>
+    <string name="delete_termux_files_many">Also delete their files in Termux</string>
+    <string name="delete_termux_files_off">Kept in ~/sessions/… for you to reuse.</string>
+    <string name="delete_termux_files_on">The folder in ~/sessions/… is removed for good.</string>
+    <string name="select">Select</string>
+    <string name="select_all">Select all</string>
+    <string name="select_none">Select none</string>
+    <string name="exit_selection">Done selecting</string>
+    <plurals name="selected_count">
+        <item quantity="one">%1$d selected</item>
+        <item quantity="other">%1$d selected</item>
+    </plurals>
+    <plurals name="delete_many_title">
+        <item quantity="one">Delete %1$d conversation?</item>
+        <item quantity="other">Delete %1$d conversations?</item>
+    </plurals>
+    <string name="delete_many_text">Their messages are removed from this phone. Running tasks are stopped first.</string>
     <string name="reply_hint">Message</string>
     <string name="shell_title">Shell backend (virtual displays)</string>
     <string name="shell_why">Lets each phone task run in its own virtual display, so several can work at once and you can watch them. Set up once with Wireless debugging (Developer options).</string>

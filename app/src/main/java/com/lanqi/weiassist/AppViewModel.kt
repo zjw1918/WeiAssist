@@ -195,10 +195,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun resume(id: String) = withAgent { sessions.resume(id) }
     fun continueTask(id: String) { val c = controller.value ?: return; viewModelScope.launch { c.sessions.continueTask(id) } }
     fun rename(id: String, title: String) = withAgent { sessions.rename(id, title) }
-    fun delete(id: String) {
-        if (openId.value == id) open(null)
-        withAgent { sessions.delete(id) }
+    fun delete(id: String, termuxFiles: Boolean = false) = delete(listOf(id), termuxFiles)
+    fun delete(ids: Collection<String>, termuxFiles: Boolean = false) {
+        if (openId.value in ids) open(null)
+        withAgent { ids.forEach { sessions.delete(it, termuxFiles) } }
     }
+    /** Whether any of [ids] has a folder in Termux, so deleting can offer to remove it too. */
+    fun hasTermuxFiles(ids: Collection<String>) = termux?.let { t -> ids.any(t::hasFolder) } == true
     fun stopAll() = withAgent { stopAll() }
 
     // ---- the supervisor ---------------------------------------------------------------------------

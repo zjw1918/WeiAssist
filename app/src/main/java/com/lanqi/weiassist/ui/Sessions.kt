@@ -35,6 +35,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -99,6 +100,13 @@ fun SessionsTab(vm: AppViewModel, list: LazyListState) {
     val busy = groups.busy
     val rest = groups.rest
     var newSession by rememberSaveable { mutableStateOf(false) }
+    // Selection mode is on while anything is selected. Ids of sessions deleted meanwhile (by the supervisor, say) drop out.
+    var picked by rememberSaveable { mutableStateOf(listOf<String>()) }
+    val selected = remember(picked, sessions) { sessions.mapTo(HashSet()) { it.id }.let { ids -> picked.filterTo(LinkedHashSet()) { it in ids } } }
+    val selecting = selected.isNotEmpty()
+    val toggle = { id: String -> picked = if (id in selected) selected.minus(id).toList() else selected.toList() + id }
+    var deleteSelected by rememberSaveable { mutableStateOf(false) }
+    BackHandler(enabled = selecting) { picked = emptyList() }
     val atTop by remember { derivedStateOf { list.firstVisibleItemIndex == 0 } }
     val bar = TopAppBarDefaults.pinnedScrollBehavior()
 
@@ -106,13 +114,25 @@ fun SessionsTab(vm: AppViewModel, list: LazyListState) {
         modifier = Modifier.nestedScroll(bar.nestedScrollConnection),
         contentWindowInsets = WindowInsets(0),
         topBar = {
-            TopAppBar(
+            if (selecting) TopAppBar(
+                title = { Text(pluralStringResource(R.plurals.selected_count, selected.size, selected.size)) }, scrollBehavior = bar,
+                navigationIcon = { IconButton(onClick = { picked = emptyList() }) { AppIcon(R.drawable.ic_cancel, stringResource(R.string.exit_selection)) } },
+                actions = {
+                    val all = selected.size == sessions.size
+                    TextButton(onClick = { picked = if (all) emptyList() else sessions.map { it.id } }) {
+                        Text(stringResource(if (all) R.string.select_none else R.string.select_all))
+                    }
+                    IconButton(onClick = { deleteSelected = true }) {
+                        AppIcon(R.drawable.ic_delete, stringResource(R.string.delete), tint = MaterialTheme.colorScheme.error)
+                    }
+                },
+            ) else TopAppBar(
                 title = { Text(stringResource(R.string.tab_sessions)) }, scrollBehavior = bar,
                 actions = { if (busy.size > 1) TextButton(onClick = vm::stopAll) { Text(stringResource(R.string.stop_all)) } },
             )
         },
         floatingActionButton = {
-            ExtendedFloatingActionButton(
+            if (!selecting) ExtendedFloatingActionButton(
                 onClick = { newSession = true }, expanded = atTop,
                 icon = { AppIcon(R.drawable.ic_add, null) }, text = { Text(stringResource(R.string.new_session)) },
             )
@@ -125,13 +145,21 @@ fun SessionsTab(vm: AppViewModel, list: LazyListState) {
             item(key = "supervisor", contentType = "supervisor") { SupervisorCard(vm, supervisor) }
             item(key = "live", contentType = "live") { LiveStrip(vm, groups.byCreation) } // thumbnails never move
             if (busy.isNotEmpty()) item(key = "h-busy", contentType = "header") { SectionHeader(pluralStringResource(R.plurals.sessions_running, busy.size, busy.size)) }
-            items(busy, key = { it.id }, contentType = { "session" }) { SessionRow(it, vm, Modifier.animateItem()) }
+            items(busy, key = { it.id }, contentType = { "session" }) { SessionRow(it, vm, if (selecting) it.id in selected else null, toggle, Modifier.animateItem()) }
             if (rest.isNotEmpty()) item(key = "h-rest", contentType = "header") { SectionHeader(stringResource(R.string.sessions_recent)) }
-            items(rest, key = { it.id }, contentType = { "session" }) { SessionRow(it, vm, Modifier.animateItem()) }
+            items(rest, key = { it.id }, contentType = { "session" }) { SessionRow(it, vm, if (selecting) it.id in selected else null, toggle, Modifier.animateItem()) }
             if (sessions.isEmpty()) item(key = "empty", contentType = "empty") { EmptySessions() }
         }
     }
     if (newSession) NewSessionSheet(vm) { newSession = false }
+    LaunchedEffect(selecting) { if (!selecting) deleteSelected = false }
+    if (deleteSelected && selecting) {
+        DeleteDialog(
+            pluralStringResource(R.plurals.delete_many_title, selected.size, selected.size), stringResource(R.string.delete_many_text),
+            termuxFiles = remember(selected) { vm.hasTermuxFiles(selected) }, many = true,
+            onDismiss = { deleteSelected = false },
+        ) { files -> vm.delete(selected.toList(), files); picked = emptyList() }
+    }
 }
 
 /** The list's sections, worked out once per change of the sessions (not on every recomposition). */
@@ -285,10 +313,13 @@ private fun NewSessionSheet(vm: AppViewModel, onDismiss: () -> Unit) {
     }
 }
 
-/** One conversation in the list. Tap to open; long-press to rename or delete. */
+/**
+ * One conversation in the list. Tap to open; long-press to select, rename or delete.
+ * While the list is selecting ([selected] not null), a tap or long-press toggles it instead.
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun SessionRow(s: SessionSummary, vm: AppViewModel, modifier: Modifier = Modifier) {
+private fun SessionRow(s: SessionSummary, vm: AppViewModel, selected: Boolean?, onToggle: (String) -> Unit, modifier: Modifier = Modifier) {
     var menu by remember { mutableStateOf(false) }
     var rename by rememberSaveable { mutableStateOf(false) }
     var delete by rememberSaveable { mutableStateOf(false) }
@@ -296,12 +327,22 @@ private fun SessionRow(s: SessionSummary, vm: AppViewModel, modifier: Modifier =
     Box(modifier.padding(vertical = 2.dp)) {
         Row(
             Modifier.fillMaxWidth().clip(shape)
-                .background(if (s.status.active) MaterialTheme.colorScheme.surfaceContainerLow else MaterialTheme.colorScheme.surface)
-                .combinedClickable(onClick = { vm.open(s.id) }, onLongClick = { menu = true })
+                .background(
+                    when {
+                        selected == true -> MaterialTheme.colorScheme.secondaryContainer
+                        s.status.active -> MaterialTheme.colorScheme.surfaceContainerLow
+                        else -> MaterialTheme.colorScheme.surface
+                    },
+                )
+                .combinedClickable(
+                    onClick = { if (selected != null) onToggle(s.id) else vm.open(s.id) },
+                    onLongClick = { if (selected != null) onToggle(s.id) else menu = true },
+                )
                 .padding(horizontal = 12.dp, vertical = 12.dp),
             verticalAlignment = Alignment.Top,
         ) {
-            KindAvatar(s.phone)
+            if (selected != null) Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) { Checkbox(selected, onCheckedChange = { onToggle(s.id) }) }
+            else KindAvatar(s.phone)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -325,12 +366,13 @@ private fun SessionRow(s: SessionSummary, vm: AppViewModel, modifier: Modifier =
                         )
                     }
                     Spacer(Modifier.weight(1f))
-                    SessionControls(s, vm)
+                    if (selected == null) SessionControls(s, vm)
                 }
             }
         }
         // Composed only once asked for: a menu per row is work every row would do while it scrolls in.
         if (menu) DropdownMenu(expanded = true, onDismissRequest = { menu = false }) {
+            DropdownMenuItem(text = { Text(stringResource(R.string.select)) }, leadingIcon = { AppIcon(R.drawable.ic_check_circle, null) }, onClick = { menu = false; onToggle(s.id) })
             DropdownMenuItem(text = { Text(stringResource(R.string.rename)) }, leadingIcon = { AppIcon(R.drawable.ic_edit, null) }, onClick = { menu = false; rename = true })
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
@@ -339,7 +381,7 @@ private fun SessionRow(s: SessionSummary, vm: AppViewModel, modifier: Modifier =
         }
     }
     if (rename) RenameDialog(s.title, onDismiss = { rename = false }) { vm.rename(s.id, it) }
-    if (delete) DeleteDialog(onDismiss = { delete = false }) { vm.delete(s.id) }
+    if (delete) DeleteDialog(remember { vm.hasTermuxFiles(listOf(s.id)) }, onDismiss = { delete = false }) { vm.delete(s.id, it) }
 }
 
 @Composable
@@ -398,13 +440,45 @@ private fun RenameDialog(current: String, onDismiss: () -> Unit, onSave: (String
 }
 
 @Composable
-private fun DeleteDialog(onDismiss: () -> Unit, onDelete: () -> Unit) = AlertDialog(
-    onDismissRequest = onDismiss,
-    title = { Text(stringResource(R.string.delete_title)) },
-    text = { Text(stringResource(R.string.delete_text)) },
-    confirmButton = { TextButton(onClick = { onDismiss(); onDelete() }) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) } },
-    dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
-)
+private fun DeleteDialog(termuxFiles: Boolean, onDismiss: () -> Unit, onDelete: (files: Boolean) -> Unit) =
+    DeleteDialog(stringResource(R.string.delete_title), stringResource(R.string.delete_text), termuxFiles, many = false, onDismiss, onDelete)
+
+/**
+ * Confirm deleting conversations. When one has a folder in Termux ([termuxFiles]), a checkbox (off by default: it may
+ * be a project the user still works on) lets them remove that too; [onDelete] gets its value.
+ */
+@Composable
+private fun DeleteDialog(
+    title: String, text: String, termuxFiles: Boolean, many: Boolean,
+    onDismiss: () -> Unit, onDelete: (files: Boolean) -> Unit,
+) {
+    var files by rememberSaveable { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            Column {
+                Text(text)
+                if (termuxFiles) Row(
+                    Modifier.fillMaxWidth().padding(top = 12.dp).clip(MaterialTheme.shapes.small).clickable { files = !files },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(files, onCheckedChange = { files = it })
+                    Column(Modifier.padding(end = 8.dp)) {
+                        Text(stringResource(if (many) R.string.delete_termux_files_many else R.string.delete_termux_files), style = MaterialTheme.typography.bodyMedium)
+                        Text(
+                            stringResource(if (files) R.string.delete_termux_files_on else R.string.delete_termux_files_off),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (files) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onDismiss(); onDelete(termuxFiles && files) }) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
+}
 
 // ---- one session ----------------------------------------------------------------------------------
 
@@ -515,7 +589,7 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
         }
     }
     if (s != null && rename) RenameDialog(s.title, onDismiss = { rename = false }) { vm.rename(s.id, it) }
-    if (s != null && delete) DeleteDialog(onDismiss = { delete = false }) { vm.delete(s.id) }
+    if (s != null && delete) DeleteDialog(remember { vm.hasTermuxFiles(listOf(s.id)) }, onDismiss = { delete = false }) { vm.delete(s.id, it) }
 }
 
 /** The session's controls with words, above its message box. */
