@@ -46,11 +46,68 @@ import com.lanqi.weiassist.agent.Markdown
 /** An answer's Markdown (parsed by agent's Markdown), drawn with the app's theme. Text can be selected and copied. */
 @Composable
 fun MarkdownText(text: String, modifier: Modifier = Modifier) {
-    val blocks = remember(text) { Markdown.parse(text) }
+    val blocks = remember(text) { parsedMarkdown(text) }
     SelectionContainer(modifier) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             blocks.forEach { Block(it) }
         }
+    }
+}
+
+/** One block of an answer, as its own row of the chat list. Its text can be selected and copied. */
+@Composable
+fun MarkdownBlock(block: Markdown.Block, modifier: Modifier = Modifier) {
+    SelectionContainer(modifier) { Block(block) }
+}
+
+/**
+ * Parsed answers by text. The chat's rows are rebuilt whenever an item changes (each step of a run), and a
+ * row scrolled back into view is composed again: neither parses an answer twice. Main thread.
+ */
+private val parsed = android.util.LruCache<String, List<Markdown.Block>>(512)
+
+fun parsedMarkdown(text: String): List<Markdown.Block> = parsed[text] ?: Markdown.parse(text).also { parsed.put(text, it) }
+
+private val plain = android.util.LruCache<String, String>(512)
+
+/** A preview line: Markdown's text without its markers, on one line (cached, like [parsedMarkdown]). */
+fun plainLine(text: String): String = plain[text] ?: Markdown.plain(text).replace('\n', ' ').also { plain.put(text, it) }
+
+/**
+ * The answer streaming now, as blocks. A blank line outside a code block ends the blocks before it for good
+ * (the parser never joins blocks across one), so that settled part is parsed once and keeps its block
+ * instances, which lets their rows skip; each token re-parses only the paragraph being written.
+ */
+class StreamingMarkdown {
+    private var head = ""
+    private var headBlocks = emptyList<Markdown.Block>()
+
+    fun blocks(text: String): List<Markdown.Block> {
+        val cut = settledEnd(text)
+        if (cut != head.length || !text.startsWith(head)) {
+            head = text.substring(0, cut)
+            headBlocks = if (cut == 0) emptyList() else Markdown.parse(head)
+        }
+        val tail = if (cut == 0) text else text.substring(cut)
+        return if (tail.isBlank()) headBlocks else headBlocks + Markdown.parse(tail)
+    }
+
+    /** Where the last blank line outside a fenced code block starts (0 if there is none). */
+    private fun settledEnd(text: String): Int {
+        var end = 0
+        var fenced = false
+        var start = 0
+        while (start < text.length) {
+            val nl = text.indexOf('\n', start).let { if (it < 0) text.length else it }
+            var i = start
+            while (i < nl && (text[i] == ' ' || text[i] == '\t')) i++
+            when {
+                text.startsWith("```", i) || text.startsWith("~~~", i) -> fenced = !fenced
+                i == nl && !fenced && nl < text.length -> end = start
+            }
+            start = nl + 1
+        }
+        return end
     }
 }
 
