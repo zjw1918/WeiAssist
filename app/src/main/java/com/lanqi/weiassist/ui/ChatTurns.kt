@@ -203,8 +203,8 @@ private fun TurnHeader(turn: ChatBlock.Turn, session: SessionState, onProcess: (
 @Composable
 private fun TurnFooterRow(turn: ChatBlock.Turn, session: SessionState, onStats: (String) -> Unit, modifier: Modifier) {
     val onClick = { onStats(turn.key) }
-    if (turn.live) TurnFooter(turn, session.run, rememberNow(true), onClick, modifier)
-    else TurnFooter(turn, turn.stats, 0L, onClick, modifier)
+    if (turn.live) TurnFooter(turn, session.run, onClick, modifier)
+    else TurnFooter(turn, turn.stats, onClick, modifier)
 }
 
 // ---- formatting ---------------------------------------------------------------------------------------
@@ -432,9 +432,9 @@ private fun StepLine(line: ProcessLine.Steps, shimmering: Boolean, showDetail: B
     }
 }
 
-/** Copy, then "8s · 3 steps · 21.6K tokens ›" (live while it runs). */
+/** Copy, then "3 steps · 21.6K tokens ›" (live while it runs; with the time first when there is no header). */
 @Composable
-private fun TurnFooter(turn: ChatBlock.Turn, run: RunStats?, now: Long, onStats: () -> Unit, modifier: Modifier = Modifier) {
+private fun TurnFooter(turn: ChatBlock.Turn, run: RunStats?, onStats: () -> Unit, modifier: Modifier = Modifier) {
     val c = MaterialTheme.colorScheme
     val ctx = LocalContext.current
     val text = remember(turn.answer) { turn.answerText }
@@ -451,9 +451,9 @@ private fun TurnFooter(turn: ChatBlock.Turn, run: RunStats?, now: Long, onStats:
             Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onStats).padding(start = 8.dp, top = 6.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            val ms = if (turn.live) now - run.startedAt else run.ms
             val parts = buildList {
-                add(duration(ms))
+                // The header ("Thought for 23s") already shows the time when there is one (see chatEntries).
+                if (!turn.live && turn.process.isEmpty()) add(duration(run.ms))
                 add(pluralStringResource(R.plurals.run_steps, run.steps, run.steps))
                 if (run.tokens > 0) add(stringResource(R.string.run_tokens, compactCount(run.tokens)))
             }
