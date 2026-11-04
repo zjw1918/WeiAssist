@@ -6,6 +6,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -60,6 +61,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -76,7 +79,6 @@ import com.lanqi.weiassist.AppViewModel
 import com.lanqi.weiassist.R
 import com.lanqi.weiassist.agent.ChatItem
 import com.lanqi.weiassist.agent.Delivery
-import com.lanqi.weiassist.agent.Markdown
 import com.lanqi.weiassist.agent.PreviewHub
 import com.lanqi.weiassist.agent.SessionState
 import com.lanqi.weiassist.agent.SessionStatus
@@ -89,12 +91,13 @@ import com.lanqi.weiassist.agent.SessionSummary
 @Composable
 fun SessionsTab(vm: AppViewModel, list: LazyListState) {
     val all by vm.sessions.collectAsStateWithLifecycle()
-    val supervisor = all.firstOrNull { it.supervisor }
-    val sessions = all.filterNot { it.supervisor }
     // Running sessions in a fixed order (newest first by creation): every step updates updatedAt, so ordering them
     // by it made the rows swap places constantly. Finished ones: most recent first.
-    val busy = sessions.filter { it.status.active }.sortedByDescending { it.createdAt }
-    val rest = sessions.filterNot { it.status.active }
+    val groups = remember(all) { SessionGroups(all) }
+    val supervisor = groups.supervisor
+    val sessions = groups.sessions
+    val busy = groups.busy
+    val rest = groups.rest
     var newSession by rememberSaveable { mutableStateOf(false) }
     val atTop by remember { derivedStateOf { list.firstVisibleItemIndex == 0 } }
     val bar = TopAppBarDefaults.pinnedScrollBehavior()
@@ -119,16 +122,25 @@ fun SessionsTab(vm: AppViewModel, list: LazyListState) {
             Modifier.fillMaxSize().padding(inner).imePadding(), state = list,
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp),
         ) {
-            item(key = "supervisor") { SupervisorCard(vm, supervisor) }
-            item(key = "live") { LiveStrip(vm, sessions.sortedByDescending { it.createdAt }) } // thumbnails never move
-            if (busy.isNotEmpty()) item(key = "h-busy") { SectionHeader(pluralStringResource(R.plurals.sessions_running, busy.size, busy.size)) }
-            items(busy, key = { it.id }) { SessionRow(it, vm, Modifier.animateItem()) }
-            if (rest.isNotEmpty()) item(key = "h-rest") { SectionHeader(stringResource(R.string.sessions_recent)) }
-            items(rest, key = { it.id }) { SessionRow(it, vm, Modifier.animateItem()) }
-            if (sessions.isEmpty()) item(key = "empty") { EmptySessions() }
+            item(key = "supervisor", contentType = "supervisor") { SupervisorCard(vm, supervisor) }
+            item(key = "live", contentType = "live") { LiveStrip(vm, groups.byCreation) } // thumbnails never move
+            if (busy.isNotEmpty()) item(key = "h-busy", contentType = "header") { SectionHeader(pluralStringResource(R.plurals.sessions_running, busy.size, busy.size)) }
+            items(busy, key = { it.id }, contentType = { "session" }) { SessionRow(it, vm, Modifier.animateItem()) }
+            if (rest.isNotEmpty()) item(key = "h-rest", contentType = "header") { SectionHeader(stringResource(R.string.sessions_recent)) }
+            items(rest, key = { it.id }, contentType = { "session" }) { SessionRow(it, vm, Modifier.animateItem()) }
+            if (sessions.isEmpty()) item(key = "empty", contentType = "empty") { EmptySessions() }
         }
     }
     if (newSession) NewSessionSheet(vm) { newSession = false }
+}
+
+/** The list's sections, worked out once per change of the sessions (not on every recomposition). */
+private class SessionGroups(all: List<SessionSummary>) {
+    val supervisor = all.firstOrNull { it.supervisor }
+    val sessions = all.filterNot { it.supervisor }
+    val busy = sessions.filter { it.status.active }.sortedByDescending { it.createdAt }
+    val rest = sessions.filterNot { it.status.active }
+    val byCreation = sessions.sortedByDescending { it.createdAt }
 }
 
 @Composable
@@ -178,7 +190,7 @@ private fun SupervisorCard(vm: AppViewModel, s: SessionSummary?) {
                 }
             }
             Text(
-                s?.preview?.takeIf { it.isNotBlank() }?.let { remember(it) { Markdown.plain(it).replace('\n', ' ') } }
+                s?.preview?.takeIf { it.isNotBlank() }?.let { remember(it) { plainLine(it) } }
                     ?: stringResource(R.string.supervisor_hint),
                 style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis,
                 color = if (s?.error == true) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
@@ -301,7 +313,7 @@ private fun SessionRow(s: SessionSummary, vm: AppViewModel, modifier: Modifier =
                 }
                 // Previews saved before answers were rendered as Markdown still have its markers.
                 if (s.preview.isNotBlank()) Text(
-                    remember(s.preview) { Markdown.plain(s.preview).replace('\n', ' ') }, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    remember(s.preview) { plainLine(s.preview) }, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     color = if (s.error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (s.status != SessionStatus.Idle || s.app != null) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
@@ -317,7 +329,8 @@ private fun SessionRow(s: SessionSummary, vm: AppViewModel, modifier: Modifier =
                 }
             }
         }
-        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+        // Composed only once asked for: a menu per row is work every row would do while it scrolls in.
+        if (menu) DropdownMenu(expanded = true, onDismissRequest = { menu = false }) {
             DropdownMenuItem(text = { Text(stringResource(R.string.rename)) }, leadingIcon = { AppIcon(R.drawable.ic_edit, null) }, onClick = { menu = false; rename = true })
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) },
@@ -446,12 +459,16 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
         }
         Column(Modifier.fillMaxSize().padding(inner)) {
             ScreenPreview(vm, s)
-            val list = rememberLazyListState()
+            // Opens at the end (the index is clamped to the last row), without laying out the top first.
+            val list = rememberSaveable(session.id, saver = LazyListState.Saver) { LazyListState(Int.MAX_VALUE) }
             val blocks = remember(session.items, session.busy) { chatBlocks(session.items, session.busy) }
-            // Follow what it does: new items, streamed text and reasoning (every ~80 characters).
-            LaunchedEffect(session.items.size, session.streaming.length / 80, session.thinking.length / 80, session.busy) {
-                if (blocks.isNotEmpty()) list.animateScrollToItem(list.layoutInfo.totalItemsCount.coerceAtLeast(1) - 1)
-            }
+            // Rows change only when items do; the streaming answer is its own rows, re-parsed a paragraph at a time.
+            val entries = remember(blocks) { chatEntries(blocks) }
+            val liveFooter = entries.lastOrNull()?.takeIf { it is ChatEntry.Footer && it.turn.live }
+            val body = remember(entries) { if (liveFooter != null) entries.subList(0, entries.size - 1) else entries }
+            val stream = remember(session.id) { StreamingMarkdown() }
+            val streamBlocks = if (liveFooter != null && session.streaming.isNotEmpty()) stream.blocks(session.streaming) else emptyList()
+            FollowEnd(list, session, rowsKey = entries.size + streamBlocks.size)
             // The turn whose details are open (by key, so a live turn's sheet follows it as it runs).
             var processOf by rememberSaveable(session.id) { mutableStateOf<String?>(null) }
             var statsOf by rememberSaveable(session.id) { mutableStateOf<String?>(null) }
@@ -459,20 +476,23 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
                 Modifier.weight(1f).fillMaxWidth(), state = list,
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                if (showTrace) item {
+                if (showTrace) item(key = "trace", contentType = "trace") {
                     Text(
                         session.trace.joinToString("\n"), style = CodeStyle.copy(fontSize = 11.sp, lineHeight = 15.sp),
-                        modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.small).padding(10.dp),
+                        modifier = Modifier.padding(bottom = BLOCK_GAP).fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.small).padding(10.dp),
                     )
                 }
+                val onProcess = { key: String -> processOf = key }
+                val onStats = { key: String -> statsOf = key }
                 // Keyed by session too: state kept per row stays with its session.
-                items(blocks, key = { "${session.id}:${it.key}" }) { b ->
-                    when (b) {
-                        is ChatBlock.Message -> ChatRow(b.item)
-                        is ChatBlock.Turn -> TurnView(b, session, onProcess = { processOf = b.key }, onStats = { statsOf = b.key })
+                items(body, key = { "${session.id}:${it.key}" }, contentType = { it.contentType }) { e -> ChatEntryView(e, session, onProcess, onStats) }
+                if (liveFooter != null) {
+                    items(streamBlocks.size, key = { "${session.id}:${liveFooter.key}:s$it" }, contentType = { streamBlocks[it].javaClass }) { i ->
+                        MarkdownBlock(streamBlocks[i], Modifier.padding(top = LINE_GAP).fillMaxWidth().padding(horizontal = 2.dp))
                     }
+                    item(key = "${session.id}:${liveFooter.key}", contentType = liveFooter.contentType) { ChatEntryView(liveFooter, session, onProcess, onStats) }
                 }
-                item(key = "end") { Spacer(Modifier.height(1.dp)) }
+                item(key = "end", contentType = "end") { Spacer(Modifier.height(BLOCK_GAP + 1.dp)) }
             }
             blocks.firstOrNull { it.key == processOf }?.let { ProcessSheet(it as ChatBlock.Turn, session) { processOf = null } }
             blocks.firstOrNull { it.key == statsOf }?.let { StatsSheet(it as ChatBlock.Turn, session) { statsOf = null } }
@@ -529,29 +549,48 @@ private fun ScreenPreview(vm: AppViewModel, s: SessionSummary) {
     }
 }
 
+/** The user's message: a bubble on the right, with its attachments and, while steering, whether it was delivered. */
 @Composable
-private fun ChatRow(item: ChatItem) {
+fun UserMessage(entry: ChatItem, modifier: Modifier = Modifier) {
+    val item = entry as? ChatItem.User ?: return
     val c = MaterialTheme.colorScheme
-    when (item) {
-        is ChatItem.User -> Column(Modifier.fillMaxWidth().padding(start = 48.dp), horizontalAlignment = Alignment.End) {
-            val sent = item.delivery == Delivery.Sent
-            MessageAttachments(item.attachments, Modifier.padding(bottom = if (item.text.isBlank()) 0.dp else 6.dp))
-            if (item.text.isNotBlank()) Text(
-                item.text, style = MaterialTheme.typography.bodyLarge, color = if (sent) c.onPrimaryContainer else c.onSurfaceVariant,
-                modifier = Modifier.widthIn(max = 320.dp)
-                    .background(if (sent) c.primaryContainer else c.surfaceContainerHigh, RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp))
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
-            )
-            if (!sent) Text(
-                stringResource(if (item.delivery == Delivery.Queued) R.string.steer_queued else R.string.steer_not_delivered),
-                style = MaterialTheme.typography.labelSmall, color = if (item.delivery == Delivery.Queued) c.onSurfaceVariant else c.error,
-                modifier = Modifier.padding(top = 4.dp, end = 6.dp),
-            )
-        }
-        // Answers read as text on the page, not as bubbles: they are often long and formatted.
-        is ChatItem.Assistant -> MarkdownText(item.text, Modifier.fillMaxWidth().padding(horizontal = 2.dp))
-        is ChatItem.Error -> ErrorText(item.text)
-        // Steps, reasoning and run stats are part of a turn (see TurnView).
-        else -> Unit
+    Column(modifier.fillMaxWidth().padding(start = 48.dp), horizontalAlignment = Alignment.End) {
+        val sent = item.delivery == Delivery.Sent
+        MessageAttachments(item.attachments, Modifier.padding(bottom = if (item.text.isBlank()) 0.dp else 6.dp))
+        if (item.text.isNotBlank()) Text(
+            item.text, style = MaterialTheme.typography.bodyLarge, color = if (sent) c.onPrimaryContainer else c.onSurfaceVariant,
+            modifier = Modifier.widthIn(max = 320.dp)
+                .background(if (sent) c.primaryContainer else c.surfaceContainerHigh, RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp))
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+        )
+        if (!sent) Text(
+            stringResource(if (item.delivery == Delivery.Queued) R.string.steer_queued else R.string.steer_not_delivered),
+            style = MaterialTheme.typography.labelSmall, color = if (item.delivery == Delivery.Queued) c.onSurfaceVariant else c.error,
+            modifier = Modifier.padding(top = 4.dp, end = 6.dp),
+        )
+    }
+}
+
+/**
+ * Keeps the end of the conversation in view as it grows, while the user is there: once they scroll up to
+ * read, it stays put (until they come back to the end, or send a message).
+ */
+@Composable
+private fun FollowEnd(list: LazyListState, session: SessionState, rowsKey: Int) {
+    var follow by remember(session.id) { mutableStateOf(true) }
+    // The user moved the list since it last followed: each time their scroll (or its fling) settles, it follows
+    // again only if it ended at the bottom. Our own scrolls, even cut short by new text, don't count.
+    val byUser = remember(list) { booleanArrayOf(false) }
+    LaunchedEffect(list) {
+        launch { list.interactionSource.interactions.collect { if (it is DragInteraction.Start) { byUser[0] = true; follow = false } } }
+        snapshotFlow { list.isScrollInProgress }.collect { scrolling -> if (!scrolling && byUser[0]) follow = !list.canScrollForward }
+    }
+    val last = session.items.lastOrNull()
+    LaunchedEffect(last) { if (last is ChatItem.User) follow = true }
+    // New rows, streamed text and reasoning (every ~80 characters).
+    LaunchedEffect(rowsKey, session.streaming.length / 80, session.thinking.length / 80, session.busy, follow) {
+        if (!follow || list.layoutInfo.totalItemsCount == 0) return@LaunchedEffect
+        byUser[0] = false
+        list.animateScrollToItem(list.layoutInfo.totalItemsCount - 1)
     }
 }

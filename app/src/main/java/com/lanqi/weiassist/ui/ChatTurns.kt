@@ -5,7 +5,6 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -58,10 +57,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.lanqi.weiassist.R
 import com.lanqi.weiassist.agent.ChatItem
+import com.lanqi.weiassist.agent.Markdown
 import com.lanqi.weiassist.agent.RunStats
 import com.lanqi.weiassist.agent.SessionState
 import com.lanqi.weiassist.agent.SessionStatus
@@ -122,6 +123,88 @@ fun chatBlocks(items: List<ChatItem>, busy: Boolean): List<ChatBlock> {
     }
     close(null, busy)
     return out
+}
+
+// ---- the conversation as list rows ----------------------------------------------------------------
+
+/**
+ * One row of the chat list: the unit the LazyColumn composes, recycles (by [contentType]) and skips when it is
+ * unchanged. A turn is several rows (header, live steps, each block of its answer, footer), so a long answer
+ * is laid out a block at a time as it scrolls into view, not all at once.
+ */
+sealed interface ChatEntry {
+    val key: String
+    /** Space above it: more before a new message or turn than between the rows of one turn. */
+    val gap: Dp
+
+    data class Message(override val key: String, override val gap: Dp, val item: ChatItem) : ChatEntry
+    data class Header(override val key: String, override val gap: Dp, val turn: ChatBlock.Turn) : ChatEntry
+    /** The live turn's latest steps and its reasoning as it streams. */
+    data class LiveSteps(override val key: String, override val gap: Dp, val turn: ChatBlock.Turn) : ChatEntry
+    /** One block (paragraph, list, code, table…) of an answer. */
+    data class Answer(override val key: String, override val gap: Dp, val block: Markdown.Block) : ChatEntry
+    data class Failure(override val key: String, override val gap: Dp, val text: String) : ChatEntry
+    data class Footer(override val key: String, override val gap: Dp, val turn: ChatBlock.Turn) : ChatEntry
+
+    /** Rows of one kind reuse each other's composition as they scroll in and out (like RecyclerView's view types). */
+    val contentType: Any get() = if (this is Answer) block.javaClass else javaClass
+}
+
+val BLOCK_GAP = 14.dp
+val LINE_GAP = 8.dp
+
+/** The rows for [blocks]. Answers' Markdown is parsed once per text (see [parsedMarkdown]). */
+fun chatEntries(blocks: List<ChatBlock>): List<ChatEntry> {
+    val out = ArrayList<ChatEntry>(blocks.size * 3)
+    for (b in blocks) {
+        var gap = if (out.isEmpty()) 0.dp else BLOCK_GAP
+        fun next() = gap.also { gap = LINE_GAP }
+        when (b) {
+            is ChatBlock.Message -> out += ChatEntry.Message(b.key, next(), b.item)
+            is ChatBlock.Turn -> {
+                if (b.live || b.process.isNotEmpty()) out += ChatEntry.Header("${b.key}:h", next(), b)
+                if (b.live) out += ChatEntry.LiveSteps("${b.key}:p", next(), b)
+                b.answer.forEachIndexed { i, item ->
+                    when (item) {
+                        is ChatItem.Assistant -> parsedMarkdown(item.text).forEachIndexed { j, block -> out += ChatEntry.Answer("${b.key}:a$i.$j", next(), block) }
+                        is ChatItem.Error -> out += ChatEntry.Failure("${b.key}:e$i", next(), item.text)
+                        else -> Unit
+                    }
+                }
+                // The live turn's streaming answer goes before its footer (see SessionScreen).
+                out += ChatEntry.Footer("${b.key}:f", next(), b)
+            }
+        }
+    }
+    return out
+}
+
+/** One row on the page. Only the live turn's rows read [session]; the others skip while it streams. */
+@Composable
+fun ChatEntryView(e: ChatEntry, session: SessionState, onProcess: (String) -> Unit, onStats: (String) -> Unit) {
+    val m = Modifier.padding(top = e.gap)
+    when (e) {
+        is ChatEntry.Message -> UserMessage(e.item, m)
+        is ChatEntry.Header -> TurnHeader(e.turn, session, onProcess, m)
+        is ChatEntry.LiveSteps -> LiveProcess(e.turn, session, m)
+        is ChatEntry.Answer -> MarkdownBlock(e.block, m.fillMaxWidth().padding(horizontal = 2.dp))
+        is ChatEntry.Failure -> ErrorText(e.text, m)
+        is ChatEntry.Footer -> TurnFooterRow(e.turn, session, onStats, m)
+    }
+}
+
+@Composable
+private fun TurnHeader(turn: ChatBlock.Turn, session: SessionState, onProcess: (String) -> Unit, modifier: Modifier) {
+    val onClick = { onProcess(turn.key) }
+    if (turn.live) ProcessHeader(turn, session.status, session.thinkingSince != null, session.run, rememberNow(true), onClick, modifier)
+    else ProcessHeader(turn, SessionStatus.Idle, false, turn.stats, 0L, onClick, modifier)
+}
+
+@Composable
+private fun TurnFooterRow(turn: ChatBlock.Turn, session: SessionState, onStats: (String) -> Unit, modifier: Modifier) {
+    val onClick = { onStats(turn.key) }
+    if (turn.live) TurnFooter(turn, session.run, rememberNow(true), onClick, modifier)
+    else TurnFooter(turn, turn.stats, 0L, onClick, modifier)
 }
 
 // ---- formatting ---------------------------------------------------------------------------------------
@@ -216,56 +299,34 @@ private fun processLines(process: List<ChatItem>): List<ProcessLine> {
 
 // ---- the turn on the page ---------------------------------------------------------------------------
 
-/**
- * The agent's turn: a header with what it is doing now (live) or what it did (tap for the details), the steps
- * as they happen, the answer, and a footer with what the run took.
- */
 @Composable
-fun TurnView(turn: ChatBlock.Turn, session: SessionState, onProcess: () -> Unit, onStats: () -> Unit) {
-    val live = turn.live
-    val now = rememberNow(live)
-    val run = if (live) session.run else turn.stats
-    Column(Modifier.fillMaxWidth().animateContentSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        if (live || turn.process.isNotEmpty()) ProcessHeader(turn, session, run, now, onProcess)
-        if (live) LiveProcess(turn, session, now)
-        turn.answer.forEach { item ->
-            when (item) {
-                is ChatItem.Assistant -> MarkdownText(item.text, Modifier.fillMaxWidth().padding(horizontal = 2.dp))
-                is ChatItem.Error -> ErrorText(item.text)
-                else -> Unit
-            }
-        }
-        if (live && session.streaming.isNotEmpty()) MarkdownText(session.streaming, Modifier.fillMaxWidth().padding(horizontal = 2.dp))
-        TurnFooter(turn, run, now, onStats)
-    }
-}
-
-@Composable
-fun ErrorText(text: String) {
+fun ErrorText(text: String, modifier: Modifier = Modifier) {
     val c = MaterialTheme.colorScheme
     Text(
         text, color = c.onErrorContainer, style = MaterialTheme.typography.bodyMedium,
-        modifier = Modifier.fillMaxWidth().background(c.errorContainer, MaterialTheme.shapes.small).padding(horizontal = 12.dp, vertical = 8.dp),
+        modifier = modifier.fillMaxWidth().background(c.errorContainer, MaterialTheme.shapes.small).padding(horizontal = 12.dp, vertical = 8.dp),
     )
 }
 
 /** "Thinking 18s ›" while it runs (shimmering), "Thought for 23s ›" after. */
 @Composable
-private fun ProcessHeader(turn: ChatBlock.Turn, session: SessionState, run: RunStats?, now: Long, onClick: () -> Unit) {
+private fun ProcessHeader(
+    turn: ChatBlock.Turn, status: SessionStatus, thinking: Boolean, run: RunStats?, now: Long, onClick: () -> Unit, modifier: Modifier = Modifier,
+) {
     val c = MaterialTheme.colorScheme
     val elapsed = run?.let { if (turn.live) now - it.startedAt else it.ms }
     val label = when {
-        turn.live && session.status == SessionStatus.Queued -> stringResource(R.string.run_waiting)
-        turn.live && session.status == SessionStatus.Paused -> stringResource(R.string.run_paused, duration(elapsed ?: 0))
-        turn.live && session.thinkingSince != null -> stringResource(R.string.run_thinking, duration(elapsed ?: 0))
+        turn.live && status == SessionStatus.Queued -> stringResource(R.string.run_waiting)
+        turn.live && status == SessionStatus.Paused -> stringResource(R.string.run_paused, duration(elapsed ?: 0))
+        turn.live && thinking -> stringResource(R.string.run_thinking, duration(elapsed ?: 0))
         turn.live -> stringResource(R.string.run_working, duration(elapsed ?: 0))
         run != null && run.thinkingMs > 0 && turn.steps == 0 -> stringResource(R.string.run_thought_for, duration(run.ms))
         run != null -> stringResource(R.string.run_worked_for, duration(run.ms))
         else -> pluralStringResource(R.plurals.run_steps, turn.steps, turn.steps)
     }
-    val animate = turn.live && session.status == SessionStatus.Running
+    val animate = turn.live && status == SessionStatus.Running
     Row(
-        Modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(vertical = 4.dp, horizontal = 2.dp),
+        modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(vertical = 4.dp, horizontal = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (animate) PulsingDots() else AppIcon(R.drawable.ic_lightbulb, null, Modifier.size(16.dp), tint = c.onSurfaceVariant)
@@ -303,11 +364,12 @@ private fun shimmer(base: Color): Brush {
 
 /** While it runs: its reasoning as it streams, and its latest steps (the newest one shimmering while it runs). */
 @Composable
-private fun LiveProcess(turn: ChatBlock.Turn, session: SessionState, now: Long) {
-    val lines = processLines(turn.process).filterNot { it is ProcessLine.Thought }
+private fun LiveProcess(turn: ChatBlock.Turn, session: SessionState, modifier: Modifier = Modifier) {
+    val now = rememberNow(true)
+    val lines = remember(turn.process) { processLines(turn.process).filterNot { it is ProcessLine.Thought } }
     val shown = lines.takeLast(MAX_LIVE_LINES)
     val c = MaterialTheme.colorScheme
-    Column(Modifier.fillMaxWidth().padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(modifier.fillMaxWidth().padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (lines.size > shown.size) Text(
             pluralStringResource(R.plurals.run_earlier, lines.size - shown.size, lines.size - shown.size),
             style = MaterialTheme.typography.labelMedium, color = c.outline, modifier = Modifier.padding(start = 22.dp),
@@ -372,13 +434,13 @@ private fun StepLine(line: ProcessLine.Steps, shimmering: Boolean, showDetail: B
 
 /** Copy, then "8s · 3 steps · 21.6K tokens ›" (live while it runs). */
 @Composable
-private fun TurnFooter(turn: ChatBlock.Turn, run: RunStats?, now: Long, onStats: () -> Unit) {
+private fun TurnFooter(turn: ChatBlock.Turn, run: RunStats?, now: Long, onStats: () -> Unit, modifier: Modifier = Modifier) {
     val c = MaterialTheme.colorScheme
     val ctx = LocalContext.current
-    val text = turn.answerText
+    val text = remember(turn.answer) { turn.answerText }
     val copyable = !turn.live && text.isNotBlank()
     if (!copyable && run == null) return
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         if (copyable) {
             val copied = stringResource(R.string.copied)
             IconButton(onClick = { copy(ctx, text); Toast.makeText(ctx, copied, Toast.LENGTH_SHORT).show() }, modifier = Modifier.size(32.dp)) {
@@ -419,13 +481,13 @@ fun ProcessSheet(turn: ChatBlock.Turn, session: SessionState, onDismiss: () -> U
             stringResource(R.string.run_process), style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
         )
-        val lines = processLines(turn.process)
+        val lines = remember(turn.process) { processLines(turn.process) }
         LazyColumn(
             Modifier.fillMaxWidth(), contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, end = 20.dp, bottom = 32.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
             if (lines.isEmpty() && !turn.live) item { Text(stringResource(R.string.run_stopped_early), color = c.onSurfaceVariant) }
-            items(lines.size) { i ->
+            items(lines.size, contentType = { lines[it].javaClass }) { i ->
                 when (val line = lines[i]) {
                     is ProcessLine.Thought -> ThoughtEntry(line.item.text, line.item.ms)
                     is ProcessLine.Steps -> StepsEntry(line)
