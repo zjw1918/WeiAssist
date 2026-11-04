@@ -72,23 +72,36 @@ object Attachments {
         val ext = name.substringAfterLast('.', "").lowercase()
         val mime = cr.getType(uri)?.takeIf { it != "application/octet-stream" }
             ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
+        importFrom(context, name, mime) { cr.openInputStream(uri) }
+    }
+
+    /** The same for a file already on the phone (one received in a chat): [mime] as the sender said, or from the name. */
+    suspend fun importFile(context: Context, src: File, name: String, mime: String): Attachment = withContext(Dispatchers.IO) {
+        if (src.length() > PICK_MAX_BYTES) throw TooLarge(name)
+        val m = mime.takeIf { it != "application/octet-stream" }
+            ?: MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase()) ?: mime
+        importFrom(context, name, m) { src.inputStream() }
+    }
+
+    private fun importFrom(context: Context, name: String, mime: String, open: () -> java.io.InputStream?): Attachment {
+        val ext = name.substringAfterLast('.', "").lowercase()
         val dir = staging(context)
         val id = UUID.randomUUID().toString().take(8)
-        when {
+        return when {
             mime.startsWith("image/") -> {
-                val bmp = decodeScaled(context, uri) ?: throw Unsupported(name)
+                val bmp = decodeScaled(open) ?: throw Unsupported(name)
                 val out = File(dir, "$id.jpg")
                 out.outputStream().use { flatten(bmp).compress(Bitmap.CompressFormat.JPEG, 85, it) }
                 Attachment(name, "image/jpeg", out.path, out.length())
             }
             mime == "application/pdf" -> {
                 val out = File(dir, "$id.pdf")
-                copy(context, uri, out, name)
+                copy(open, out, name)
                 Attachment(name, mime, out.path, out.length())
             }
             else -> {
                 val out = File(dir, "$id.${ext.ifEmpty { "txt" }}")
-                copy(context, uri, out, name)
+                copy(open, out, name)
                 // Text if it says so or reads as text (code files often come as octet-stream).
                 if (!looksLikeText(out)) { out.delete(); throw Unsupported(name) }
                 Attachment(name, if (mime.startsWith("text/")) mime else "text/plain", out.path, out.length())
@@ -154,19 +167,18 @@ object Attachments {
     private fun image(bytes: ByteArray, mime: String) =
         JSONObject().put("type", "image").put("mimeType", mime).put("data", Base64.encodeToString(bytes, Base64.NO_WRAP))
 
-    private fun copy(context: Context, uri: Uri, out: File, name: String) {
-        val input = context.contentResolver.openInputStream(uri) ?: throw Unsupported(name)
+    private fun copy(open: () -> java.io.InputStream?, out: File, name: String) {
+        val input = open() ?: throw Unsupported(name)
         input.use { i -> out.outputStream().use { o -> if (i.copyTo(o) > PICK_MAX_BYTES) { out.delete(); throw TooLarge(name) } } }
     }
 
-    private fun decodeScaled(context: Context, uri: Uri): Bitmap? {
-        val cr = context.contentResolver
+    private fun decodeScaled(open: () -> java.io.InputStream?): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        cr.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        open()?.use { BitmapFactory.decodeStream(it, null, bounds) }
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
         var sample = 1
         while (max(bounds.outWidth, bounds.outHeight) / (sample * 2) >= IMAGE_MAX_SIDE) sample *= 2
-        val bmp = cr.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) } ?: return null
+        val bmp = open()?.use { BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply { inSampleSize = sample }) } ?: return null
         val side = max(bmp.width, bmp.height)
         if (side <= IMAGE_MAX_SIDE) return bmp
         val k = IMAGE_MAX_SIDE.toFloat() / side

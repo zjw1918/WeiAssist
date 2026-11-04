@@ -29,9 +29,14 @@ class TelegramBot(
     private val onOffset: (Long) -> Unit = {},
     private val api: Api = HttpApi(token),
 ) : Channel {
-    /** One Bot API call: the decoded response (`ok`, `result`, or `error_code`, `description`, `parameters`). */
-    fun interface Api {
+    /** The Bot API: calls answer with the decoded response (`ok`, `result`, or `error_code`, `description`, `parameters`). */
+    interface Api {
         suspend fun call(method: String, params: JSONObject, timeoutMs: Int): JSONObject
+        /** A call with a file (multipart/form-data): [fields] as text, the file as [fileField]. */
+        suspend fun upload(method: String, fields: Map<String, String>, fileField: String, file: java.io.File, name: String, mime: String): JSONObject =
+            throw UnsupportedOperationException()
+        /** Fetch a file by its `file_path` (from getFile) into [dest]. */
+        suspend fun download(path: String, dest: java.io.File): Unit = throw UnsupportedOperationException()
     }
 
     data class Me(val id: Long, val username: String, val name: String)
@@ -75,13 +80,13 @@ class TelegramBot(
                 }
                 _link.value = Link.Online
                 backoff = MIN_BACKOFF_MS
-                for (i in 0 until updates.length()) {
-                    val u = updates.getJSONObject(i)
+                val batch = (0 until updates.length()).map { updates.getJSONObject(it) }
+                batch.lastOrNull()?.let {
                     // Moved before handling: a message that makes us fail is not delivered again and again.
-                    offset = u.getLong("update_id") + 1
+                    offset = it.getLong("update_id") + 1
                     onOffset(offset)
-                    parseUpdate(u)?.let { onMessage(it) }
                 }
+                for (m in parseBatch(batch)) onMessage(m)
             }
         } finally {
             _link.value = Link.Off
@@ -117,6 +122,27 @@ class TelegramBot(
     private fun keyboard(buttons: List<Button>) = JSONObject().put("inline_keyboard", JSONArray().put(
         JSONArray(buttons.map { JSONObject().put("text", it.label).put("callback_data", it.data) }),
     ))
+
+    override suspend fun download(file: RemoteFile, dest: java.io.File) {
+        if (file.size > MAX_DOWNLOAD) throw ChannelException("too large: bots can fetch files up to 20 MB")
+        val r = request("getFile", JSONObject().put("file_id", file.id)) as JSONObject
+        val path = r.optString("file_path").ifEmpty { throw ChannelException("Telegram gave no path for the file") }
+        try { api.download(path, dest) } catch (e: IOException) { throw ChannelException(clean(e.message ?: e.javaClass.simpleName)) }
+    }
+
+    override suspend fun sendFile(chat: ChatRef, file: java.io.File, name: String, mime: String, caption: String): String {
+        val size = file.length()
+        if (size > MAX_UPLOAD) throw ChannelException("too large: bots can send files up to 50 MB")
+        // Telegram shows photos inline (it recompresses them); other images and large ones as files.
+        val photo = mime in PHOTO_TYPES && size <= MAX_PHOTO
+        val (method, field) = if (photo) "sendPhoto" to "photo" else "sendDocument" to "document"
+        val fields = mapOf("chat_id" to chat.chat) + if (caption.isNotBlank()) mapOf("caption" to caption.take(1024)) else emptyMap()
+        val r = try { api.upload(method, fields, field, file, name, mime) } catch (e: IOException) {
+            throw ChannelException(clean(e.message ?: e.javaClass.simpleName))
+        }
+        if (!r.optBoolean("ok")) throw ChannelException(clean("${r.optInt("error_code")} ${r.optString("description")}"), fatal = r.optInt("error_code") == 401)
+        return r.getJSONObject("result").getLong("message_id").toString()
+    }
 
     override suspend fun typing(chat: ChatRef) {
         request("sendChatAction", JSONObject().put("chat_id", chat.chat).put("action", "typing"))
@@ -175,6 +201,51 @@ class TelegramBot(
                 conn.disconnect()
             }
         }
+
+        override suspend fun upload(method: String, fields: Map<String, String>, fileField: String, file: java.io.File, name: String, mime: String): JSONObject =
+            withContext(Dispatchers.IO) {
+                val boundary = "----weiassist" + java.util.UUID.randomUUID().toString().replace("-", "")
+                val conn = URL("$base/bot$token/$method").openConnection() as HttpURLConnection
+                val closing = coroutineContext[Job]?.invokeOnCompletion { conn.disconnect() }
+                try {
+                    conn.requestMethod = "POST"
+                    conn.connectTimeout = 15_000
+                    conn.readTimeout = 120_000
+                    conn.doOutput = true
+                    conn.setChunkedStreamingMode(64 * 1024)
+                    conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+                    conn.outputStream.buffered().use { out ->
+                        fun w(s: String) = out.write(s.toByteArray())
+                        for ((k, v) in fields) w("--$boundary\r\nContent-Disposition: form-data; name=\"$k\"\r\n\r\n$v\r\n")
+                        val quoted = name.replace("\"", "'").replace("\r", "").replace("\n", "")
+                        w("--$boundary\r\nContent-Disposition: form-data; name=\"$fileField\"; filename=\"$quoted\"\r\nContent-Type: $mime\r\n\r\n")
+                        file.inputStream().use { it.copyTo(out) }
+                        w("\r\n--$boundary--\r\n")
+                    }
+                    val code = conn.responseCode
+                    val body = (if (code < 400) conn.inputStream else conn.errorStream)?.use { String(it.readBytes()) }.orEmpty()
+                    runCatching { JSONObject(body) }.getOrElse { JSONObject().put("ok", false).put("error_code", code).put("description", "HTTP $code") }
+                } finally {
+                    closing?.dispose()
+                    conn.disconnect()
+                }
+            }
+
+        override suspend fun download(path: String, dest: java.io.File) = withContext(Dispatchers.IO) {
+            val conn = URL("$base/file/bot$token/$path").openConnection() as HttpURLConnection
+            val closing = coroutineContext[Job]?.invokeOnCompletion { conn.disconnect() }
+            try {
+                conn.connectTimeout = 15_000
+                conn.readTimeout = 60_000
+                if (conn.responseCode != 200) throw IOException("HTTP ${conn.responseCode}")
+                dest.parentFile?.mkdirs()
+                conn.inputStream.use { i -> dest.outputStream().use { o -> i.copyTo(o) } }
+                Unit
+            } finally {
+                closing?.dispose()
+                conn.disconnect()
+            }
+        }
     }
 
     companion object {
@@ -184,9 +255,33 @@ class TelegramBot(
         private const val MIN_BACKOFF_MS = 2_000L
         private const val MAX_BACKOFF_MS = 60_000L
         private const val MAX_FLOOD_WAIT_S = 30L
+        /** The Bot API's limits: bots fetch files up to 20 MB, send up to 50 MB, photos up to 10 MB. */
+        private const val MAX_DOWNLOAD = 20L * 1024 * 1024
+        private const val MAX_UPLOAD = 50L * 1024 * 1024
+        private const val MAX_PHOTO = 10L * 1024 * 1024
+        private val PHOTO_TYPES = setOf("image/jpeg", "image/png", "image/webp")
 
         /** A Bot API token as BotFather gives it: "<bot id>:<secret>". */
         fun looksLikeToken(s: String) = Regex("""^\d{5,}:[A-Za-z0-9_-]{30,}$""").matches(s.trim())
+
+        /**
+         * One getUpdates batch as messages: an album's parts (one `media_group_id`, sent together) become one
+         * message with all their files and the caption one of them has.
+         */
+        fun parseBatch(updates: List<JSONObject>): List<Inbound> {
+            val out = mutableListOf<Inbound>()
+            var group: String? = null
+            for (u in updates) {
+                val m = parseUpdate(u) ?: continue
+                val g = u.optJSONObject("message")?.optString("media_group_id")?.ifEmpty { null }
+                val last = out.lastOrNull()
+                if (g != null && g == group && last != null && last.chat == m.chat) {
+                    out[out.size - 1] = last.copy(text = last.text.ifEmpty { m.text }, files = last.files + m.files, unsupported = last.unsupported || m.unsupported)
+                } else out += m
+                group = g
+            }
+            return out
+        }
 
         /** An update to an [Inbound], or null when it isn't a message to answer (an edit, a service message). */
         fun parseUpdate(u: JSONObject): Inbound? {
@@ -196,9 +291,9 @@ class TelegramBot(
             if (from.optBoolean("is_bot")) return null
             val chat = m.optJSONObject("chat") ?: return null
             val text = m.optString("text").ifEmpty { m.optString("caption") }
-            val media = listOf("photo", "document", "voice", "audio", "video", "video_note", "sticker", "location", "contact")
-                .any { m.has(it) }
-            if (text.isEmpty() && !media) return null
+            val files = files(m)
+            val other = listOf("voice", "audio", "video", "video_note", "sticker", "animation", "location", "contact").any { m.has(it) }
+            if (text.isEmpty() && files.isEmpty() && !other) return null
             val name = listOf(from.optString("first_name"), from.optString("last_name")).filter { it.isNotBlank() }.joinToString(" ")
                 .ifBlank { from.optString("username") }
             return Inbound(
@@ -206,8 +301,22 @@ class TelegramBot(
                 from = Sender(from.get("id").toString(), name),
                 text = text,
                 private = chat.optString("type") == "private",
-                unsupported = media,
+                unsupported = other,
+                files = files,
             )
+        }
+
+        /** A photo (its largest size) or a document. */
+        private fun files(m: JSONObject): List<RemoteFile> {
+            m.optJSONArray("photo")?.takeIf { it.length() > 0 }?.let { sizes ->
+                val p = sizes.getJSONObject(sizes.length() - 1)
+                return listOf(RemoteFile(p.getString("file_id"), "photo-${m.optLong("message_id")}.jpg", "image/jpeg", p.optLong("file_size", -1)))
+            }
+            m.optJSONObject("document")?.let { d ->
+                return listOf(RemoteFile(d.getString("file_id"), d.optString("file_name").ifEmpty { "file" },
+                    d.optString("mime_type").ifEmpty { "application/octet-stream" }, d.optLong("file_size", -1)))
+            }
+            return emptyList()
         }
 
         /** A button tap ("callback query") on one of the bot's messages. */

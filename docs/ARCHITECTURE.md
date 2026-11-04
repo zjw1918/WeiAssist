@@ -205,6 +205,14 @@ what they mean). Like OpenClaw's and Hermes Agent's gateways, but on the phone a
 - **Replies:** a run that a Telegram message started (or steered) is sent back as it happens: the answer
   streams by editing one message (at most once every 1.2 s), the steps in one status message (the last three,
   then "⚙ N steps"), "typing…" meanwhile. Runs started in the app are not sent to Telegram.
+- **Files:** photos and documents sent to the bot (an album is one message) are fetched (Bot API: up to 20 MB) and
+  attached when the model can read them (images, PDFs, text); in a conversation with Termux every file is also put
+  in its folder's `inbox/`, and the message says where. The model sends files back with `send_file` (pi-host
+  `channel-tools.ts`, offered to chat conversations with Termux): images up to 10 MB as photos, others as documents,
+  up to 50 MB. `/screen` sends a picture of the screen the conversation is working on.
+- **Termux ↔ app:** Termux runs as another Linux user, so files cross through `LoopbackTransfer`: a one-shot HTTP
+  endpoint on 127.0.0.1 with a random secret in its URL, which Termux's `curl` uploads to (`Termux.pull`) or
+  downloads from (`Termux.push`). The bot token never goes to Termux, where the model could read it.
 - **Staying reachable:** while the bot is on, `AgentService` stays a started foreground service ("Listening on
   Telegram"). The offset of the last update handled is saved, so a restart doesn't handle a message twice.
   Not yet: starting after a reboot.

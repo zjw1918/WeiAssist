@@ -602,6 +602,42 @@ test("a session configured without bash has no bash tool, and the model isn't to
 	assert.equal(calls.length, 0);
 });
 
+test("a conversation from Telegram is told so, and send_file asks Kotlin to send the file", async () => {
+	const sent = [];
+	const host = await startHost({
+		credentials: apiKeyCredentials,
+		hostCalls: { send_file: (m) => { sent.push(m); return sent.length === 1 ? { ok: true, text: "sent chart.png (12 KB) to the chat" } : { ok: false, text: "No such file in Termux: chart.png" }; } },
+	});
+	await configure(host, "tg", { channel: "telegram" });
+	const before = mock.requests.length;
+	host.call("prompt", { session: "tg", text: "hello" });
+	await host.waitFor("idle", (m) => m.session === "tg", 15_000);
+	const body = mock.requests[before].body;
+	assert.match(body, /from Telegram/);
+	assert.match(body, /"name":"send_file"/);
+	assert.equal(sent.length, 0);
+	host.call("prompt", { session: "tg", text: "the chart please [[script:send_file]]" });
+	await host.waitFor("idle", (m) => m.session === "tg" && host.messages.some((x) => x.type === "tool_end" && x.tool === "send_file"), 15_000);
+	assert.deepEqual([sent[0].session, sent[0].path, sent[0].caption], ["tg", "chart.png", "The chart"]);
+	const ok = host.messages.find((m) => m.type === "tool_end" && m.tool === "send_file");
+	assert.match(ok.output, /sent chart.png/);
+	assert.equal(ok.isError, false);
+	// A file that didn't go is a failed step (a new conversation: the mock's script counts this one's tool results).
+	await configure(host, "tg3", { channel: "telegram" });
+	host.call("prompt", { session: "tg3", text: "again [[script:send_file]]" });
+	await host.waitFor("idle", (m) => m.session === "tg3", 15_000);
+	const failed = host.messages.find((m) => m.type === "tool_end" && m.tool === "send_file" && m.session === "tg3");
+	assert.equal(failed.isError, true);
+	assert.match(failed.output, /No such file/);
+	// Without bash it can't reach Termux, so no send_file.
+	await configure(host, "tg2", { channel: "telegram", bash: false });
+	const b2 = mock.requests.length;
+	host.call("prompt", { session: "tg2", text: "hello" });
+	await host.waitFor("idle", (m) => m.session === "tg2", 15_000);
+	assert.doesNotMatch(mock.requests[b2].body, /"name":"send_file"/);
+	assert.match(mock.requests[b2].body, /from Telegram/);
+});
+
 test("Stop during a bash command asks Kotlin to kill that command", async () => {
 	let finish, running;
 	const started = new Promise((r) => { running = r; });

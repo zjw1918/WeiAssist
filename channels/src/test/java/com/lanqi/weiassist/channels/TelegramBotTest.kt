@@ -17,6 +17,13 @@ class TelegramBotTest {
     /** Answers each method from [answers] in turn; records the calls. */
     private class FakeApi(val answers: Map<String, ArrayDeque<JSONObject>>) : TelegramBot.Api {
         val calls = mutableListOf<Pair<String, JSONObject>>()
+        val uploads = mutableListOf<Triple<String, String, Map<String, String>>>()
+        override suspend fun upload(method: String, fields: Map<String, String>, fileField: String, file: java.io.File, name: String, mime: String): JSONObject {
+            uploads += Triple(method, fileField, fields)
+            return JSONObject().put("ok", true).put("result", JSONObject().put("message_id", 11))
+        }
+        val downloads = mutableListOf<String>()
+        override suspend fun download(path: String, dest: java.io.File) { downloads += path; dest.writeText("x") }
         override suspend fun call(method: String, params: JSONObject, timeoutMs: Int): JSONObject {
             calls += method to params
             return answers[method]?.removeFirstOrNull() ?: throw CancellationException("no more $method")
@@ -39,8 +46,8 @@ class TelegramBotTest {
         assertTrue(m.private)
         assertFalse(m.unsupported)
         assertFalse(TelegramBot.parseUpdate(update(1, "hi", "group"))!!.private)
-        val photo = JSONObject(update(2, "").toString()).also { it.getJSONObject("message").remove("text"); it.getJSONObject("message").put("photo", JSONArray()) }
-        assertTrue(TelegramBot.parseUpdate(photo)!!.unsupported)
+        val voice = JSONObject(update(2, "").toString()).also { it.getJSONObject("message").remove("text"); it.getJSONObject("message").put("voice", JSONObject()) }
+        assertTrue(TelegramBot.parseUpdate(voice)!!.unsupported)
         assertNull(TelegramBot.parseUpdate(JSONObject().put("update_id", 3).put("edited_message", JSONObject())))
     }
 
@@ -54,7 +61,7 @@ class TelegramBotTest {
         val bot = TelegramBot(token, 5, { offsets += it }, api)
         try { bot.receive { got += it.text } } catch (_: CancellationException) {}
         assertEquals(listOf("a", "b"), got)
-        assertEquals(listOf(8L, 9L), offsets)
+        assertEquals(listOf(9L), offsets) // once per batch, before its messages are handled
         assertEquals(5L, api.calls.first { it.first == "getUpdates" }.second.getLong("offset"))
         assertEquals(Link.Off, bot.link.value)
     }
@@ -119,6 +126,55 @@ class TelegramBotTest {
         assertFalse(api.calls[1].second.has("reply_markup"))
         bot.acknowledge(Press("cb1", "c:x:y", "5"), "Allowed")
         assertEquals("Allowed", api.calls[2].second.getString("text"))
+    }
+
+    private fun photoUpdate(id: Long, group: String?, caption: String?) = JSONObject().put("update_id", id).put("message", JSONObject()
+        .put("message_id", id).put("from", JSONObject().put("id", 42).put("first_name", "Ann"))
+        .put("chat", JSONObject().put("id", 42).put("type", "private"))
+        .put("photo", JSONArray().put(JSONObject().put("file_id", "small$id")).put(JSONObject().put("file_id", "big$id").put("file_size", 1000)))
+        .also { m -> if (group != null) m.put("media_group_id", group); if (caption != null) m.put("caption", caption) })
+
+    @Test fun photosAndDocumentsAreFiles() {
+        val p = TelegramBot.parseUpdate(photoUpdate(5, null, "look"))!!
+        assertEquals("look", p.text)
+        assertEquals(listOf(RemoteFile("big5", "photo-5.jpg", "image/jpeg", 1000)), p.files)
+        assertFalse(p.unsupported)
+        val doc = JSONObject(update(6, "").toString()).also {
+            val m = it.getJSONObject("message"); m.remove("text")
+            m.put("document", JSONObject().put("file_id", "d1").put("file_name", "data.xlsx").put("mime_type", "application/vnd.ms-excel").put("file_size", 34))
+        }
+        assertEquals(RemoteFile("d1", "data.xlsx", "application/vnd.ms-excel", 34), TelegramBot.parseUpdate(doc)!!.files.single())
+    }
+
+    @Test fun anAlbumIsOneMessage() {
+        val batch = listOf(photoUpdate(1, "g", null), photoUpdate(2, "g", "both"), update(3, "after"), photoUpdate(4, "h", null))
+        val ms = TelegramBot.parseBatch(batch)
+        assertEquals(3, ms.size)
+        assertEquals("both", ms[0].text)
+        assertEquals(listOf("big1", "big2"), ms[0].files.map { it.id })
+        assertEquals("after", ms[1].text)
+        assertEquals(listOf("big4"), ms[2].files.map { it.id })
+    }
+
+    @Test fun imagesGoAsPhotosOtherFilesAsDocuments() = runBlocking {
+        val api = FakeApi(emptyMap())
+        val bot = TelegramBot(token, api = api)
+        val chat = ChatRef("telegram", "42")
+        val f = java.io.File.createTempFile("tgt", ".png").apply { writeText("png"); deleteOnExit() }
+        assertEquals("11", bot.sendFile(chat, f, "chart.png", "image/png", "The chart"))
+        bot.sendFile(chat, f, "report.pdf", "application/pdf")
+        assertEquals(listOf("sendPhoto" to "photo", "sendDocument" to "document"), api.uploads.map { it.first to it.second })
+        assertEquals("The chart", api.uploads[0].third["caption"])
+        assertFalse(api.uploads[1].third.containsKey("caption"))
+    }
+
+    @Test fun downloadsGoThroughGetFile() = runBlocking {
+        val api = FakeApi(mapOf("getFile" to ArrayDeque(listOf(ok(JSONObject().put("file_path", "photos/file_1.jpg"))))))
+        val dest = java.io.File.createTempFile("tgd", ".jpg").apply { deleteOnExit() }
+        TelegramBot(token, api = api).download(RemoteFile("big1", "p.jpg", "image/jpeg", 10), dest)
+        assertEquals(listOf("photos/file_1.jpg"), api.downloads)
+        try { TelegramBot(token, api = api).download(RemoteFile("x", "big.zip", "application/zip", 30L * 1024 * 1024), dest); fail() }
+        catch (e: ChannelException) { assertTrue(e.message!!.contains("20 MB")) }
     }
 
     @Test fun tokens() {

@@ -24,6 +24,12 @@ interface Channel {
     /** Answer a [Press] (the app shows it was received); [note] is shown briefly. */
     suspend fun acknowledge(press: Press, note: String? = null)
 
+    /** Fetch a file someone sent ([Inbound.files]) into [dest]. */
+    suspend fun download(file: RemoteFile, dest: java.io.File)
+
+    /** Send a file to [chat] (an image as a picture where the channel can); returns the message's id. */
+    suspend fun sendFile(chat: ChatRef, file: java.io.File, name: String, mime: String, caption: String = ""): String
+
     /** Show "typing…" in [chat] for a few seconds. */
     suspend fun typing(chat: ChatRef)
 }
@@ -49,13 +55,16 @@ data class Button(val label: String, val data: String)
 /** A tap on a [Button]: [id] to acknowledge it, [message] the message it was under. */
 data class Press(val id: String, val data: String, val message: String)
 
+/** A file attached to a message, still on the channel's servers: [id] is the channel's own; [size] -1 if unknown. */
+data class RemoteFile(val id: String, val name: String, val mime: String, val size: Long)
+
 /** Who sent a message: [id] is the channel's own user id, [name] what to show for them. */
 data class Sender(val id: String, val name: String)
 
 /**
  * A message to the assistant, or a tap on one of its buttons ([press], with empty [text]). [private]: a
- * one-to-one chat with the bot (groups are not supported yet). [unsupported]: it carried something other
- * than text (a photo, a file, a voice note), not handled yet.
+ * one-to-one chat with the bot (groups are not supported yet). [files]: photos and documents with it (an
+ * album comes as one message). [unsupported]: it carried something else (a voice note, a sticker), not handled yet.
  */
 data class Inbound(
     val chat: ChatRef,
@@ -64,6 +73,7 @@ data class Inbound(
     val private: Boolean,
     val unsupported: Boolean = false,
     val press: Press? = null,
+    val files: List<RemoteFile> = emptyList(),
 )
 
 /** A message in the channel's own markup ([markup]), and the same as plain text in case the markup is refused. */

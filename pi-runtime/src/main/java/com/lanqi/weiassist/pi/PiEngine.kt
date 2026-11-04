@@ -209,11 +209,14 @@ class PiEngine(context: Context, private val agentName: String) {
         tools: String? = null, systemPrompt: String? = null, messages: org.json.JSONArray? = null,
         /** False: no bash tool (Linux commands in Termux) either. */
         bash: Boolean = true,
+        /** The messaging app the user talks from ("telegram"), if any: the prompt says so, and send_file is offered. */
+        channel: String? = null,
     ) {
         val cfg = JSONObject().put("session", session).put("provider", provider).put("modelId", modelId)
             .put("thinkingLevel", thinkingLevel)
         if (tools != null) cfg.put("tools", tools)
         if (!bash) cfg.put("bash", false)
+        if (channel != null) cfg.put("channel", channel)
         if (systemPrompt != null) cfg.put("systemPrompt", systemPrompt)
         if (!baseUrl.isNullOrBlank()) cfg.put("baseUrl", baseUrl)
         if (messages != null) cfg.put("messages", messages)

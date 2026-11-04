@@ -40,15 +40,11 @@
     <string name="tg_cmd_status">What I\'m doing now</string>
     <string name="tg_paired">Paired! This chat is now connected to %1$s on your phone.</string>
     <string name="tg_hello">Hi, this is %1$s on your phone.</string>
-    <string name="tg_help">Send me a message and I\'ll work on it on your phone. %1$s
-
-/new – start a new conversation
-/stop – stop the current task
-/status – what I\'m doing now</string>
+    <string name="tg_help">Send me a message and I\'ll work on it on your phone. %1$s\n\n/new – start a new conversation\n/stop – stop the current task\n/status – what I\'m doing now\n/screen – see the screen I\'m working on</string>
     <string name="tg_new">New conversation started.</string>
     <string name="tg_stopped">Stopped.</string>
     <string name="tg_nothing_running">Nothing is running.</string>
-    <string name="tg_text_only">I can only read text messages here for now.</string>
+    <string name="tg_text_only">I can read text, photos and files here; not voice messages, videos or stickers yet.</string>
     <string name="tg_not_sent">Couldn\'t pass that on. Try again.</string>
     <string name="tg_status_none">No conversation yet. Send me a message to start one.</string>
     <string name="tg_state_running">working</string>
@@ -73,4 +69,8 @@
     <string name="tg_confirm_expired">This question isn\'t open any more.</string>
     <string name="tg_confirm_on_phone">💳 This looks like a payment: allow or deny it on the phone.</string>
     <string name="tg_already_paired">This account is already paired. Send me a message to start.</string>
+    <string name="tg_cmd_screen">See the screen I\'m working on</string>
+    <string name="tg_no_screen">This conversation isn\'t working on a screen now. It has one while it uses the phone\'s apps.</string>
+    <string name="tg_file_unreadable">I can\'t read %1$s here: I read pictures, PDFs and text files. (With Linux commands allowed, I get every file in Termux.)</string>
+    <string name="tg_file_not_fetched">Couldn\'t fetch %1$s from Telegram: %2$s</string>
 </resources>

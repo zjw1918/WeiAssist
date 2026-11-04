@@ -70,7 +70,10 @@ class AgentController(context: Context) {
     init {
         screens.isActive = { id -> sessions.summary(id)?.status?.active == true }
         // Stop and Delete end the session's Termux jobs too; its files there are kept unless the user asked otherwise.
-        sessions.onEnded = { id, deleted, files -> scope.launch { termux.cleanUp(id, deleted, files) } }
+        sessions.onEnded = { id, deleted, files ->
+            gateway.cancelTransfers(id)
+            scope.launch { termux.cleanUp(id, deleted, files) }
+        }
     }
 
     /**
@@ -94,7 +97,17 @@ class AgentController(context: Context) {
     }
 
     /** Talking to the assistant from Telegram: one conversation per chat (see Gateway). */
-    val gateway = Gateway(appContext, sessions, scope)
+    val gateway = Gateway(appContext, sessions, termux, scope).also { g ->
+        // /screen: the session's own display, or the phone's screen while that session is operating it.
+        g.screenshot = { id ->
+            when (val t = sessions.screenOf(id)) {
+                is com.lanqi.weiassist.phone.Target.Virtual -> kotlinx.coroutines.withContext(Dispatchers.IO) { t.io.screenshot(1080, 80) }.takeIf { it.isNotEmpty() }
+                com.lanqi.weiassist.phone.Target.Main -> AgentAccessibilityService.instance?.screenshot(1080)
+                    ?.takeUnless { it.startsWith("error") }?.let { android.util.Base64.decode(it, android.util.Base64.NO_WRAP) }
+                null -> null
+            }
+        }
+    }
 
     /** Live pictures of the sessions' displays. */
     val previews = PreviewHub(appContext, shell)
@@ -129,6 +142,12 @@ class AgentController(context: Context) {
             else termux.run(id, m.getString("call"), m.getString("command"), m.optInt("timeout", 120))
         }
         pi.registerHostCall("bash_kill") { m -> termux.kill(m.optString("session"), m.getString("call")); null }
+        // send_file (pi-host channel-tools.ts): a file from the session's Termux folder to its chat.
+        pi.registerHostCall("send_file") { m ->
+            val id = m.optString("session")
+            val (ok, text) = if (!sessions.gate(id)) false to "Stopped by the user." else gateway.sendFile(id, m.getString("path"), m.optString("caption"))
+            JSONObject().put("ok", ok).put("text", text)
+        }
         pi.registerHostCall("supervisor") { m ->
             val caller = m.optString("session")
             // Only a supervisor session may manage the others.

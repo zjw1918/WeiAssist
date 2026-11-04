@@ -17,6 +17,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -27,6 +28,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.util.IdentityHashMap
 
 /**
@@ -43,7 +45,7 @@ import java.util.IdentityHashMap
  *
  * Main thread, like [SessionManager]. The bot token is kept encrypted ([SecureStore]).
  */
-class Gateway(context: Context, private val sessions: SessionManager, private val scope: CoroutineScope) {
+class Gateway(context: Context, private val sessions: SessionManager, private val termux: Termux, private val scope: CoroutineScope) {
     data class Owner(val id: String, val name: String)
 
     /** What a conversation from Telegram may do. */
@@ -95,8 +97,16 @@ class Gateway(context: Context, private val sessions: SessionManager, private va
     private val _state = MutableStateFlow(State())
     val state: StateFlow<State> = _state.asStateFlow()
 
+    /** send_file transfers running now, by session: Stop or Delete cancels them ([cancelTransfers]). */
+    private val transfers = HashMap<String, MutableSet<kotlinx.coroutines.Deferred<Pair<Boolean, String>>>>()
+
+    /** A JPEG of the screen session [id] works on, or null when it has none (set by the controller, which knows the screens). */
+    var screenshot: suspend (id: String) -> ByteArray? = { null }
+
     /** Read the saved setup and start receiving if it is on. Call once the sessions are loaded. */
     suspend fun start() {
+        // Files on their way in or out when the process last ended: nothing will send them now.
+        withContext(Dispatchers.IO) { File(app.cacheDir, "outbox").deleteRecursively(); File(app.cacheDir, "inbox").deleteRecursively() }
         val token = withContext(Dispatchers.IO) { secret.read() }
         prefs.getString("bindings", null)?.let { s -> JSONObject(s).let { o -> o.keys().forEach { bindings[it] = o.getString(it) } } }
         _state.value = State(
@@ -199,6 +209,7 @@ class Gateway(context: Context, private val sessions: SessionManager, private va
                     "new" to app.getString(R.string.tg_cmd_new),
                     "stop" to app.getString(R.string.tg_cmd_stop),
                     "status" to app.getString(R.string.tg_cmd_status),
+                    "screen" to app.getString(R.string.tg_cmd_screen),
                 ))
                 return
             } catch (e: ChannelException) {
@@ -244,13 +255,98 @@ class Gateway(context: Context, private val sessions: SessionManager, private va
                 reply(b, m.chat, app.getString(if (id != null) R.string.tg_stopped else R.string.tg_nothing_running))
             }
             "status" -> reply(b, m.chat, status(m.chat))
+            "screen" -> scope.launch { sendScreen(b, m.chat) }
             else -> {
-                if (m.unsupported) { reply(b, m.chat, app.getString(R.string.tg_text_only)); return }
+                if (m.unsupported && m.files.isEmpty()) { reply(b, m.chat, app.getString(R.string.tg_text_only)); return }
                 val (id, note) = session(m.chat)
                 if (note != null) reply(b, m.chat, note)
-                if (!sessions.send(id, m.text)) { reply(b, m.chat, app.getString(R.string.tg_not_sent)); return }
+                val (files, where) = receive(b, m, id)
+                val text = listOf(m.text, where).filter { it.isNotBlank() }.joinToString("\n\n")
+                if (text.isBlank() && files.isEmpty()) return // nothing usable came (the chat was told why)
+                if (!sessions.send(id, text, files)) { reply(b, m.chat, app.getString(R.string.tg_not_sent)); return }
                 if (replies[id]?.isActive != true) replies[id] = scope.launch { mirror(b, id, m.chat) }
             }
+        }
+    }
+
+    /**
+     * The files of [m], fetched from Telegram: what the model can read (images, PDFs, text) as attachments; and, for a
+     * conversation with Termux, every file also put into its folder's inbox/, with a note saying where (so it can work
+     * with a spreadsheet, a zip, or the photo itself). A file that can't be used is reported in the chat.
+     */
+    private suspend fun receive(b: TelegramBot, m: Inbound, session: String): Pair<List<Attachment>, String> {
+        if (m.files.isEmpty()) return emptyList<Attachment>() to ""
+        val withTermux = sessions.summary(session)?.termux == true && termux.setupProblem() == null
+        val attachments = mutableListOf<Attachment>()
+        val saved = mutableListOf<String>()
+        for (f in m.files) {
+            val tmp = File(app.cacheDir, "inbox/${java.util.UUID.randomUUID().toString().take(8)}-${f.name.replace('/', '_')}")
+            try {
+                b.download(f, tmp)
+                val readable = try { Attachments.importFile(app, tmp, f.name, f.mime) } catch (e: Attachments.Unsupported) { null }
+                    catch (e: Attachments.TooLarge) { null }
+                readable?.let { attachments += it }
+                val path = if (withTermux) termux.push(session, tmp, f.name) else null
+                if (path != null) saved += "${f.name} → $path"
+                if (readable == null && path == null) reply(b, m.chat, app.getString(R.string.tg_file_unreadable, f.name))
+            } catch (e: ChannelException) {
+                reply(b, m.chat, app.getString(R.string.tg_file_not_fetched, f.name, e.message.orEmpty()))
+            } finally {
+                tmp.delete()
+            }
+        }
+        val where = if (saved.isEmpty()) "" else "[Files from the user, saved in your Termux folder: ${saved.joinToString("; ")}]"
+        return attachments to where
+    }
+
+    /** /screen: a picture of the screen this chat's conversation is working on. */
+    private suspend fun sendScreen(b: TelegramBot, chat: ChatRef) {
+        val id = bindings[chat.key]?.takeIf { sessions.summary(it) != null }
+        val jpeg = id?.let { runCatching { screenshot(it) }.getOrNull() }
+        if (jpeg == null) { reply(b, chat, app.getString(R.string.tg_no_screen)); return }
+        val f = File(app.cacheDir, "outbox/screen-$id.jpg").apply { parentFile?.mkdirs(); writeBytes(jpeg) }
+        try { b.sendFile(chat, f, "screen.jpg", "image/jpeg", sessions.summary(id)?.title.orEmpty()) }
+        catch (e: ChannelException) { Log.w(TAG, "screen not sent: ${e.message}") }
+        finally { f.delete() }
+    }
+
+    /**
+     * The send_file tool: copy [path] out of session [session]'s Termux folder and send it to its chat. Returns whether
+     * it went, and what happened (for the model). Stopping or deleting the session cancels it ([cancelTransfers]).
+     */
+    suspend fun sendFile(session: String, path: String, caption: String): Pair<Boolean, String> {
+        val transfer = scope.async { transfer(session, path, caption) }
+        transfers.getOrPut(session) { HashSet() } += transfer
+        return try {
+            transfer.await()
+        } catch (e: CancellationException) {
+            if (!transfer.isCancelled) throw e // our caller was cancelled, not the transfer
+            false to "Stopped by the user; the file was not sent."
+        } finally {
+            transfers[session]?.let { it -= transfer; if (it.isEmpty()) transfers.remove(session) }
+        }
+    }
+
+    /** The session was stopped or deleted: abandon its file transfers (Termux's curl then finds the endpoint closed). */
+    fun cancelTransfers(session: String) { transfers.remove(session)?.forEach { it.cancel() } }
+
+    private suspend fun transfer(session: String, path: String, caption: String): Pair<Boolean, String> {
+        val b = bot ?: return false to "Telegram is not connected now, so nothing was sent."
+        val chat = chatOf(session) ?: return false to "This conversation is not with a chat, so there is no one to send a file to."
+        val name = path.trimEnd('/').substringAfterLast('/').ifEmpty { "file" }
+        val tmp = File(app.cacheDir, "outbox/${java.util.UUID.randomUUID().toString().take(8)}-$name")
+        try {
+            termux.pull(session, path, tmp, MAX_SEND)?.let { return false to it }
+            // Stopped while it was copied: don't send it after all.
+            if (sessions.summary(session)?.status?.active != true) return false to "Stopped by the user; the file was not sent."
+            val ext = name.substringAfterLast('.', "").lowercase()
+            val mime = android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
+            b.sendFile(chat, tmp, name, mime, caption)
+            return true to "Sent $name (${android.text.format.Formatter.formatShortFileSize(app, tmp.length())}) to the user's chat."
+        } catch (e: ChannelException) {
+            return false to "Telegram did not take the file: ${e.message}"
+        } finally {
+            tmp.delete()
         }
     }
 
@@ -490,5 +586,7 @@ class Gateway(context: Context, private val sessions: SessionManager, private va
         private const val EDIT_MS = 1_200L
         /** "typing…" lasts 5 s in Telegram. */
         private const val TYPING_MS = 4_500L
+        /** Bots may send files up to 50 MB. */
+        private const val MAX_SEND = 50L * 1024 * 1024
     }
 }

@@ -40,6 +40,7 @@ import { fetchEvents, nativeFetch } from "./native-fetch.ts";
 import { PhoneSession, phoneSystemPrompt, pruneOldScreens, pruneScreens } from "./phone-tools.ts";
 import { SupervisorSession, supervisorSystemPrompt } from "./supervisor-tools.ts";
 import { bashPrompt, bashTool } from "./bash-tool.ts";
+import { channelPrompt, sendFileTool } from "./channel-tools.ts";
 import { compact, needsCompaction } from "./compact.ts";
 import { dispatch } from "./shims/http.ts";
 
@@ -282,10 +283,11 @@ async function startLogin(provider: string, type: "oauth" | "api_key") {
 /**
  * tools: "phone" (operate the phone), "supervisor" (manage the other sessions), or none (chat). `phone: true` = "phone".
  * bash: false = no Linux commands either (a chat that can only talk, e.g. from a messaging app the user restricted).
+ * channel: the messaging app the user talks from ("telegram"): the prompt says so, and with bash it may send_file.
  */
 type Config = {
 	session: string; provider: string; modelId: string; thinkingLevel?: string; baseUrl?: string; systemPrompt?: string;
-	tools?: "phone" | "supervisor"; phone?: boolean; bash?: boolean; messages?: AgentMessage[];
+	tools?: "phone" | "supervisor"; phone?: boolean; bash?: boolean; channel?: string; messages?: AgentMessage[];
 };
 
 interface Session {
@@ -398,6 +400,7 @@ async function configure(cfg: Config) {
 	const phone = tools === "phone" ? new PhoneSession(cfg.session) : undefined;
 	const supervisor = tools === "supervisor" ? new SupervisorSession(cfg.session) : undefined;
 	const bash = !supervisor && cfg.bash !== false;
+	const channel = supervisor ? undefined : cfg.channel;
 	// The conversation goes on across a change of model or tools; a saved one is restored as given.
 	// System messages are left out: Pi puts the current system prompt and tools in front (initialState).
 	const history = (cfg.messages ?? prev?.agent.state.messages ?? []).filter((m: any) => m.role !== "system");
@@ -407,11 +410,12 @@ async function configure(cfg: Config) {
 			messages: history,
 			systemPrompt: cfg.systemPrompt ?? (supervisor ? supervisorSystemPrompt(agentName)
 				: (phone ? phoneSystemPrompt(agentName)
-					: `You are ${agentName}, a helpful assistant on the user's Android phone. Reply in the user's language.`) + (bash ? "\n" + bashPrompt : "")),
+					: `You are ${agentName}, a helpful assistant on the user's Android phone. Reply in the user's language.`) + (bash ? "\n" + bashPrompt : "") + (channel ? "\n" + channelPrompt(channel, bash) : "")),
 			model,
 			thinkingLevel: thinkingLevel as any,
 			// Chat and phone sessions get bash (Termux) unless configured without; the supervisor only manages sessions.
-			tools: supervisor ? supervisor.tools : [...(phone?.tools ?? []), ...(bash ? [bashTool(cfg.session)] : [])],
+			tools: supervisor ? supervisor.tools
+				: [...(phone?.tools ?? []), ...(bash ? [bashTool(cfg.session)] : []), ...(bash && channel ? [sendFileTool(cfg.session)] : [])],
 		},
 		// Forwarded to providers for routing and prompt caching (OpenCode requires it as x-opencode-session).
 		sessionId: cfg.session,

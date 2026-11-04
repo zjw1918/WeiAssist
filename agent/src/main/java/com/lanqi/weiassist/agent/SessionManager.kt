@@ -209,11 +209,12 @@ class SessionManager(
             val phone = s.summary.phone
             val tools = when { s.summary.supervisor -> "supervisor"; phone -> "phone"; else -> null }
             val bash = s.summary.termux
-            val config = listOf(provider, model, thinking, mock, tools, bash).joinToString("|")
+            val channel = s.summary.channel
+            val config = listOf(provider, model, thinking, mock, tools, bash, channel).joinToString("|")
             if (configured[id] != config) {
                 // First use in this runtime: give Pi the saved conversation back.
                 val history = if (id !in configured) withContext(io) { store.loadTranscript(id) } else null
-                pi.configure(id, provider, model, thinking, mock, tools = tools, messages = history, bash = bash)
+                pi.configure(id, provider, model, thinking, mock, tools = tools, messages = history, bash = bash, channel = channel)
                 configured[id] = config
             }
             // Read now: messages typed while Pi was being set up joined the task (see send).

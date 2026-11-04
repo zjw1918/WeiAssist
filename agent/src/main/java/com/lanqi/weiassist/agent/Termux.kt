@@ -139,6 +139,57 @@ class Termux(context: Context) {
         if (deleted) markUsed(session, false)
     }
 
+    /**
+     * Copy [path] (relative to session [session]'s folder, or absolute) out of Termux into [dest], at most [maxBytes]:
+     * Termux's curl uploads it to a one-shot endpoint in this app ([LoopbackTransfer]). Returns null when it
+     * arrived, else what went wrong (for the model).
+     */
+    suspend fun pull(session: String, path: String, dest: java.io.File, maxBytes: Long): String? {
+        setupProblem()?.let { return it }
+        // $1 = session folder, $2 = path, $3 = most bytes, $4 = URL. Exit codes: 3 no file, 4 too large, 5 no curl.
+        val script = """
+            cd "${'$'}{HOME}/sessions/${'$'}{1}" 2> /dev/null || cd "${'$'}{HOME}"
+            f="${'$'}{2/#\~/${'$'}HOME}"
+            [ -f "${'$'}{f}" ] || exit 3
+            [ "${'$'}(stat -c %s "${'$'}{f}")" -le "${'$'}{3}" ] || exit 4
+            command -v curl > /dev/null || exit 5
+            curl -sS -f --max-time 110 -H "Expect:" --data-binary @"${'$'}{f}" "${'$'}{4}"
+        """.trimIndent()
+        val (r, ok) = LoopbackTransfer.receive(dest, maxBytes) { url ->
+            execute(arrayOf("-c", script, "bash", safe(session), path, maxBytes.toString(), url), 150)
+        }
+        if (ok) return null
+        r ?: return "No answer from Termux."
+        if (r.getInt("err", RESULT_OK) != RESULT_OK) return "Termux could not run the command: ${r.getString("errmsg").orEmpty()}"
+        return when (r.getInt("exitCode", -1)) {
+            3 -> "No such file in Termux: $path"
+            4 -> "The file is larger than ${maxBytes / (1024 * 1024)} MB."
+            5 -> "curl is missing in Termux: run `pkg install -y curl` with bash, then try again."
+            else -> "The file could not be copied out of Termux. ${r.getString("stderr").orEmpty().take(300)}".trim()
+        }
+    }
+
+    /**
+     * Put [file] into session [session]'s folder as inbox/[name] (Termux's curl downloads it from a one-shot endpoint).
+     * Returns the path in Termux (relative to the session's folder), or null if it failed.
+     */
+    suspend fun push(session: String, file: java.io.File, name: String): String? {
+        if (setupProblem() != null) return null
+        markUsed(session, true)
+        val clean = name.replace('/', '_').replace('\\', '_').replace("\u0000", "").trim().trimStart('.').ifEmpty { "file" }.take(120)
+        // $1 = session folder, $2 = file name (no slashes), $3 = URL. An existing file of that name gets a number.
+        val script = """
+            d="${'$'}{HOME}/sessions/${'$'}{1}/inbox"; mkdir -p "${'$'}{d}" && cd "${'$'}{d}" || exit 97
+            n="${'$'}{2}"; i=1
+            while [ -e "${'$'}{n}" ]; do n="${'$'}{i}-${'$'}{2}"; i=${'$'}((i+1)); done
+            command -v curl > /dev/null || exit 5
+            curl -sS -f --max-time 110 -o "${'$'}{n}" "${'$'}{3}" && echo "inbox/${'$'}{n}"
+        """.trimIndent()
+        val (r, ok) = LoopbackTransfer.send(file) { url -> execute(arrayOf("-c", script, "bash", safe(session), clean, url), 150) }
+        if (!ok || r == null || r.getInt("exitCode", -1) != 0) return null
+        return r.getString("stdout").orEmpty().trim().ifEmpty { null }
+    }
+
     /** For Settings: can commands run, and are the basic tools there? Null text = Termux not usable (see [setupProblem]). */
     suspend fun check(): Pair<Boolean, String> {
         setupProblem()?.let { return false to it }
