@@ -21,6 +21,14 @@ Message the assistant on your phone from anywhere: from Telegram on another phon
 Create a bot with @BotFather, paste its token in **Settings → Telegram**, pair your account with one tap, and
 your phone's assistant is a chat away. Setup and details: [docs/TELEGRAM.md](docs/TELEGRAM.md).
 
+<p align="center">
+  <img src="docs/images/telegram-demo.gif" width="560"
+    alt="Telegram on a Mac and the phone side by side: asked for San Diego's weather, the assistant answers using Termux; asked to email the forecast with Gmail, it writes the email on the phone and asks before tapping Send, in Telegram and on the phone; Deny is tapped in Telegram and nothing is sent">
+  <br>
+  <sub>Asked from Telegram on a Mac: the weather (via Termux), then "email this forecast with Gmail". Before tapping
+  Send it asks, in the chat and on the phone; Deny, and nothing is sent.</sub>
+</p>
+
 - **No server needed:** the app fetches your bot's messages from Telegram itself. Only accounts you pair can use it.
 - **Each chat is a conversation**, also in the app's list. Answers stream in; `/new`, `/stop`, `/status`, and
   `/screen` to see the screen it is working on.
