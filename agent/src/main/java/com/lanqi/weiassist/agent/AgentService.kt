@@ -56,10 +56,16 @@ class AgentService : Service() {
                 .collect(::onWork)
         }
         scope.launch {
-            controller.sessions.finished.collect { id ->
-                val appVisible = androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState
-                    .isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
-                if (clients == 0 || !appVisible) notifyFinished(id)
+            controller.sessions.finished.collect { f ->
+                launch {
+                    // It drove the phone's own screen: the last app it used is in front. Come back to its answer.
+                    if (f.onMainScreen && !appVisible() && returnToApp(f.id)) {
+                        kotlinx.coroutines.delay(RETURN_CHECK_MS)
+                        if (appVisible()) return@launch
+                        Log.i(TAG, "could not come back to the front (blocked?): notifying instead")
+                    }
+                    if (clients == 0 || !appVisible()) notifyFinished(f.id)
+                }
             }
         }
     }
@@ -110,6 +116,18 @@ class AgentService : Service() {
             Log.w(TAG, "could not go foreground: ${e.javaClass.simpleName}")
         }
     }
+
+    private fun appVisible() = androidx.lifecycle.ProcessLifecycleOwner.get().lifecycle.currentState
+        .isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)
+
+    /**
+     * Brings the app to the front at the session's page. Allowed from the background because the app's
+     * accessibility service is bound by the system (Android's exemption for background activity starts);
+     * some phones still block it, so the caller checks and falls back to the notification.
+     */
+    private fun returnToApp(session: String): Boolean = runCatching {
+        startActivity(openApp(session).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+    }.onFailure { Log.w(TAG, "could not come back to the front: $it") }.isSuccess
 
     /** The app's launcher screen (this module doesn't know the UI's activity class), optionally at a session. */
     private fun openApp(session: String? = null): Intent = (packageManager.getLaunchIntentForPackage(packageName) ?: Intent())
@@ -198,6 +216,8 @@ class AgentService : Service() {
         private const val CHANNEL_DONE = "agent-results"
         private const val NOTIFICATION_DONE = 2
         private const val ACTION_STOP = "com.lanqi.weiassist.STOP"
+        /** How long the app has to come to the front before the result is shown as a notification instead. */
+        private const val RETURN_CHECK_MS = 1500L
         /** Intent extra: the session to open (from a result notification). */
         const val EXTRA_SESSION = "com.lanqi.weiassist.SESSION"
 
