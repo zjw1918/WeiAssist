@@ -360,13 +360,13 @@ private fun SessionRow(s: SessionSummary, vm: AppViewModel, selected: Boolean?, 
                 val where = listOfNotNull(if (s.channel == "telegram") stringResource(R.string.kind_telegram) else null, s.app).joinToString(" · ").ifEmpty { null }
                 if (s.status != SessionStatus.Idle || where != null) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
                     StatusBadge(s.status)
-                    where?.let {
-                        Text(
-                            (if (s.status != SessionStatus.Idle) " · " else "") + it, style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    Spacer(Modifier.weight(1f))
+                    // Weighted, so it gets only the room the controls leave (unweighted, a long app name took it all
+                    // and squeezed Continue into a column one letter wide).
+                    if (where != null) Text(
+                        (if (s.status != SessionStatus.Idle) " · " else "") + where, style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    ) else Spacer(Modifier.weight(1f))
                     if (selected == null) SessionControls(s, vm)
                 }
             }
@@ -412,7 +412,7 @@ private fun SessionControls(s: SessionSummary, vm: AppViewModel) {
                 SmallIconButton(R.drawable.ic_play, stringResource(R.string.resume)) { vm.resume(s.id) }
                 SmallIconButton(R.drawable.ic_stop, stringResource(R.string.stop)) { vm.stop(s.id) }
             }
-            SessionStatus.Interrupted -> TextButton(onClick = { vm.continueTask(s.id) }) { Text(stringResource(R.string.continue_label)) }
+            SessionStatus.Interrupted -> TextButton(onClick = { vm.continueTask(s.id) }) { Text(stringResource(R.string.continue_label), maxLines = 1, softWrap = false) }
             SessionStatus.Idle -> Unit
         }
     }
