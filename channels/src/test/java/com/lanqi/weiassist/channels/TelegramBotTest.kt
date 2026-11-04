@@ -59,6 +59,17 @@ class TelegramBotTest {
         assertEquals(Link.Off, bot.link.value)
     }
 
+    @Test fun aNetworkFailureAtTheStartIsRetried() = runBlocking {
+        val api = FakeApi(mapOf(
+            "deleteWebhook" to ArrayDeque(listOf(err(502, "Bad Gateway"), ok(true))),
+            "getUpdates" to ArrayDeque(listOf(ok(JSONArray().put(update(1, "hi"))))),
+        ))
+        val got = mutableListOf<String>()
+        try { TelegramBot(token, api = api).receive { got += it.text } } catch (_: CancellationException) {}
+        assertEquals(listOf("hi"), got)
+        assertEquals(2, api.calls.count { it.first == "deleteWebhook" })
+    }
+
     @Test fun rejectedTokenIsFatalAndNeverShown() = runBlocking {
         val api = FakeApi(mapOf("getMe" to ArrayDeque(listOf(err(401, "Unauthorized for $token")))))
         try { TelegramBot(token, api = api).me(); fail() } catch (e: ChannelException) {
@@ -79,6 +90,35 @@ class TelegramBotTest {
     @Test fun unchangedEditIsFine() = runBlocking {
         val api = FakeApi(mapOf("editMessageText" to ArrayDeque(listOf(err(400, "Bad Request: message is not modified")))))
         TelegramBot(token, api = api).edit(ChatRef("telegram", "42"), "9", Rich("x", "x"))
+    }
+
+    @Test fun parsesButtonPresses() {
+        val q = JSONObject().put("update_id", 4).put("callback_query", JSONObject().put("id", "cb1").put("data", "c:ABCD2345:y")
+            .put("from", JSONObject().put("id", 42).put("first_name", "Ann"))
+            .put("message", JSONObject().put("message_id", 77).put("chat", JSONObject().put("id", 42).put("type", "private"))))
+        val m = TelegramBot.parseUpdate(q)!!
+        assertEquals(Press("cb1", "c:ABCD2345:y", "77"), m.press)
+        assertEquals(ChatRef("telegram", "42"), m.chat)
+        assertEquals("42", m.from.id)
+        assertEquals("", m.text)
+    }
+
+    @Test fun buttonsGoInOneRowAndAnEditWithoutThemRemovesThem() = runBlocking {
+        val api = FakeApi(mapOf(
+            "sendMessage" to ArrayDeque(listOf(ok(JSONObject().put("message_id", 5)))),
+            "editMessageText" to ArrayDeque(listOf(ok(JSONObject()))),
+            "answerCallbackQuery" to ArrayDeque(listOf(ok(true))),
+        ))
+        val bot = TelegramBot(token, api = api)
+        val chat = ChatRef("telegram", "42")
+        bot.send(chat, Rich("q", "q"), listOf(Button("Yes", "c:x:y"), Button("No", "c:x:n")))
+        val row = api.calls[0].second.getJSONObject("reply_markup").getJSONArray("inline_keyboard").getJSONArray(0)
+        assertEquals(2, row.length())
+        assertEquals("c:x:n", row.getJSONObject(1).getString("callback_data"))
+        bot.edit(chat, "5", Rich("done", "done"))
+        assertFalse(api.calls[1].second.has("reply_markup"))
+        bot.acknowledge(Press("cb1", "c:x:y", "5"), "Allowed")
+        assertEquals("Allowed", api.calls[2].second.getString("text"))
     }
 
     @Test fun tokens() {

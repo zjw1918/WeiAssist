@@ -55,13 +55,16 @@ class TelegramBot(
     override suspend fun receive(onMessage: suspend (Inbound) -> Unit) {
         _link.value = Link.Connecting
         var backoff = MIN_BACKOFF_MS
+        var hooked = true
         try {
-            // A bot with a webhook can't be polled. Pending messages are kept.
-            request("deleteWebhook", JSONObject().put("drop_pending_updates", false))
             while (true) {
                 val updates = try {
+                    // A bot with a webhook can't be polled. Pending messages are kept.
+                    if (hooked) { request("deleteWebhook", JSONObject().put("drop_pending_updates", false)); hooked = false }
+                    // Reached Telegram: online now, not only when the first long poll returns (up to 50 s later).
+                    _link.value = Link.Online
                     val params = JSONObject().put("offset", offset).put("timeout", POLL_SECONDS)
-                        .put("allowed_updates", JSONArray(listOf("message")))
+                        .put("allowed_updates", JSONArray(listOf("message", "callback_query")))
                     request("getUpdates", params, timeoutMs = (POLL_SECONDS + 15) * 1000) as? JSONArray ?: JSONArray()
                 } catch (e: ChannelException) {
                     if (e.fatal) throw e
@@ -85,16 +88,19 @@ class TelegramBot(
         }
     }
 
-    override suspend fun send(chat: ChatRef, text: Rich): String {
+    override suspend fun send(chat: ChatRef, text: Rich, buttons: List<Button>): String {
         val params = JSONObject().put("chat_id", chat.chat)
             .put("link_preview_options", JSONObject().put("is_disabled", true))
+        if (buttons.isNotEmpty()) params.put("reply_markup", keyboard(buttons))
         val r = withMarkup(params, text) { request("sendMessage", it) }
         return (r as JSONObject).getLong("message_id").toString()
     }
 
-    override suspend fun edit(chat: ChatRef, message: String, text: Rich) {
+    override suspend fun edit(chat: ChatRef, message: String, text: Rich, buttons: List<Button>) {
         val params = JSONObject().put("chat_id", chat.chat).put("message_id", message.toLong())
             .put("link_preview_options", JSONObject().put("is_disabled", true))
+        // Without reply_markup an edit removes the message's buttons.
+        if (buttons.isNotEmpty()) params.put("reply_markup", keyboard(buttons))
         try {
             withMarkup(params, text) { request("editMessageText", it) }
         } catch (e: ChannelException) {
@@ -102,6 +108,15 @@ class TelegramBot(
             if ("message is not modified" !in e.message.orEmpty()) throw e
         }
     }
+
+    override suspend fun acknowledge(press: Press, note: String?) {
+        request("answerCallbackQuery", JSONObject().put("callback_query_id", press.id).apply { if (note != null) put("text", note) })
+    }
+
+    /** Buttons side by side, in one row. */
+    private fun keyboard(buttons: List<Button>) = JSONObject().put("inline_keyboard", JSONArray().put(
+        JSONArray(buttons.map { JSONObject().put("text", it.label).put("callback_data", it.data) }),
+    ))
 
     override suspend fun typing(chat: ChatRef) {
         request("sendChatAction", JSONObject().put("chat_id", chat.chat).put("action", "typing"))
@@ -175,6 +190,7 @@ class TelegramBot(
 
         /** An update to an [Inbound], or null when it isn't a message to answer (an edit, a service message). */
         fun parseUpdate(u: JSONObject): Inbound? {
+            u.optJSONObject("callback_query")?.let { return parsePress(it) }
             val m = u.optJSONObject("message") ?: return null
             val from = m.optJSONObject("from") ?: return null
             if (from.optBoolean("is_bot")) return null
@@ -191,6 +207,20 @@ class TelegramBot(
                 text = text,
                 private = chat.optString("type") == "private",
                 unsupported = media,
+            )
+        }
+
+        /** A button tap ("callback query") on one of the bot's messages. */
+        private fun parsePress(q: JSONObject): Inbound? {
+            val from = q.optJSONObject("from") ?: return null
+            val m = q.optJSONObject("message") ?: return null
+            val chat = m.optJSONObject("chat") ?: return null
+            return Inbound(
+                chat = ChatRef(ID, chat.get("id").toString()),
+                from = Sender(from.get("id").toString(), from.optString("first_name")),
+                text = "",
+                private = chat.optString("type") == "private",
+                press = Press(q.getString("id"), q.optString("data"), m.get("message_id").toString()),
             )
         }
     }

@@ -132,6 +132,8 @@ data class SessionSummary(
     val supervisor: Boolean = false,
     /** The messaging app this conversation is with ("telegram", see Gateway), or null for one in the app. */
     val channel: String? = null,
+    /** It may run Linux commands in Termux (the bash tool); false for a chat that may only talk. */
+    val termux: Boolean = true,
 )
 
 /** A whole session: kept in memory while it runs or is on screen, else only on disk. */

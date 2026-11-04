@@ -589,6 +589,19 @@ test("a chat session runs bash in Termux; the command and the session reach Kotl
 	assert.match(JSON.stringify(lastRequest), /Hangzhou: 🌧/, "the model saw the output");
 });
 
+test("a session configured without bash has no bash tool, and the model isn't told about Termux", async () => {
+	const calls = [];
+	const host = await startHost({ credentials: apiKeyCredentials, hostCalls: { bash: (m) => { calls.push(m); return "ran"; } } });
+	await configure(host, "nb", { bash: false });
+	const before = mock.requests.length;
+	host.call("prompt", { session: "nb", text: "hello" });
+	await host.waitFor("idle", (m) => m.session === "nb", 15_000);
+	const body = mock.requests[before].body;
+	assert.doesNotMatch(body, /"name":"bash"/);
+	assert.doesNotMatch(body, /Termux/);
+	assert.equal(calls.length, 0);
+});
+
 test("Stop during a bash command asks Kotlin to kill that command", async () => {
 	let finish, running;
 	const started = new Promise((r) => { running = r; });

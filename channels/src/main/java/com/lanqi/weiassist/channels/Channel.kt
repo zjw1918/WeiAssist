@@ -15,11 +15,14 @@ interface Channel {
     /** Receive messages until cancelled, reconnecting by itself; fatal problems end it with a [ChannelException]. */
     suspend fun receive(onMessage: suspend (Inbound) -> Unit)
 
-    /** Send [text] to [chat]; returns the new message's id. */
-    suspend fun send(chat: ChatRef, text: Rich): String
+    /** Send [text] to [chat], with [buttons] under it; returns the new message's id. */
+    suspend fun send(chat: ChatRef, text: Rich, buttons: List<Button> = emptyList()): String
 
-    /** Replace a message this channel sent. */
-    suspend fun edit(chat: ChatRef, message: String, text: Rich)
+    /** Replace a message this channel sent (its buttons too: none given, none left). */
+    suspend fun edit(chat: ChatRef, message: String, text: Rich, buttons: List<Button> = emptyList())
+
+    /** Answer a [Press] (the app shows it was received); [note] is shown briefly. */
+    suspend fun acknowledge(press: Press, note: String? = null)
 
     /** Show "typing…" in [chat] for a few seconds. */
     suspend fun typing(chat: ChatRef)
@@ -40,12 +43,19 @@ data class ChatRef(val channel: String, val chat: String) {
     val key get() = "$channel:$chat"
 }
 
+/** A button under a message: [data] comes back in the [Press] when it is tapped (at most 64 bytes). */
+data class Button(val label: String, val data: String)
+
+/** A tap on a [Button]: [id] to acknowledge it, [message] the message it was under. */
+data class Press(val id: String, val data: String, val message: String)
+
 /** Who sent a message: [id] is the channel's own user id, [name] what to show for them. */
 data class Sender(val id: String, val name: String)
 
 /**
- * A message to the assistant. [private]: a one-to-one chat with the bot (groups are not supported yet).
- * [unsupported]: it carried something other than text (a photo, a file, a voice note), not handled yet.
+ * A message to the assistant, or a tap on one of its buttons ([press], with empty [text]). [private]: a
+ * one-to-one chat with the bot (groups are not supported yet). [unsupported]: it carried something other
+ * than text (a photo, a file, a voice note), not handled yet.
  */
 data class Inbound(
     val chat: ChatRef,
@@ -53,6 +63,7 @@ data class Inbound(
     val text: String,
     val private: Boolean,
     val unsupported: Boolean = false,
+    val press: Press? = null,
 )
 
 /** A message in the channel's own markup ([markup]), and the same as plain text in case the markup is refused. */

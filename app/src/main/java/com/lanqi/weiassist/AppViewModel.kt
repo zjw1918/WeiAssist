@@ -144,6 +144,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun pairTelegram() = withAgent { gateway.startPairing() }
     fun cancelTelegramPairing() = withAgent { gateway.cancelPairing() }
     fun removeTelegramOwner(id: String) = withAgent { gateway.removeOwner(id) }
+    fun telegramAccess(a: com.lanqi.weiassist.agent.Gateway.Access) = withAgent { gateway.setAccess(a) }
 
     /** The bash tool's Termux bridge, for its Settings section. */
     val termux get() = controller.value?.termux

@@ -39,7 +39,11 @@
     <string name="tg_cmd_status">我现在在做什么</string>
     <string name="tg_paired">配对成功！这个聊天已连接到你手机上的%1$s。</string>
     <string name="tg_hello">你好，我是你手机上的%1$s。</string>
-    <string name="tg_help">给我发消息，我会在你的手机上处理。我可以在 Termux 里运行 Linux 命令；暂时还不能从这里操作手机上的应用。\n\n/new – 开始新对话\n/stop – 停止当前任务\n/status – 我现在在做什么</string>
+    <string name="tg_help">给我发消息，我会在你的手机上处理。%1$s
+
+/new – 开始新对话
+/stop – 停止当前任务
+/status – 我现在在做什么</string>
     <string name="tg_new">已开始新对话。</string>
     <string name="tg_stopped">已停止。</string>
     <string name="tg_nothing_running">现在没有在运行的任务。</string>
@@ -54,4 +58,17 @@
     <plurals name="tg_steps">
         <item quantity="other">⚙ %1$d 步</item>
     </plurals>
+    <string name="tg_can_chat">在这里我只能聊天：不能运行 Linux 命令，也不能操作手机应用。</string>
+    <string name="tg_can_termux">我可以在 Termux 里运行 Linux 命令；暂时不能从这里操作手机上的应用。</string>
+    <string name="tg_can_phone">我可以在 Termux 里运行 Linux 命令，也能操作手机上的应用。发送、删除这类操作前会在这里问你；付款只能在手机上确认。</string>
+    <string name="tg_phone_unavailable">操作手机应用需要无障碍服务，但手机上它是关闭的，所以这次我先不使用手机应用。</string>
+    <string name="tg_kind_changed">应用里修改了 Telegram 的权限，所以这是一个新对话。</string>
+    <string name="tg_confirm_allow">✅ 允许</string>
+    <string name="tg_confirm_deny">❌ 拒绝</string>
+    <string name="tg_confirm_allowed">✅ 已允许</string>
+    <string name="tg_confirm_denied">❌ 已拒绝</string>
+    <string name="tg_confirm_closed">已在手机上回答，或任务已结束。</string>
+    <string name="tg_confirm_expired">这个问题已经失效。</string>
+    <string name="tg_confirm_on_phone">💳 这像是付款：请在手机上允许或拒绝。</string>
+    <string name="tg_already_paired">这个账号已经配对好了。给我发消息就能开始。</string>
 </resources>

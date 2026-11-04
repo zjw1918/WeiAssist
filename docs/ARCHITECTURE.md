@@ -193,7 +193,15 @@ what they mean). Like OpenClaw's and Hermes Agent's gateways, but on the phone a
   once) and a `t.me/<bot>?start=<code>` link. Anyone else gets no answer. Private chats only.
 - **One conversation per chat:** a session marked `channel = "telegram"`, also in the app's list. `/new`
   starts another, `/stop` stops it, `/status` says what it is doing. A message while it works steers it.
-  These sessions are chat sessions (Termux, no phone tasks): confirming Send/Pay from the chat comes first.
+- **What it may do** (`Gateway.Access`, one choice for all chats): only talk (Pi configured with `bash: false`),
+  talk and run Termux commands (default), or also use the phone's apps (a phone session; needs the
+  accessibility service, else it falls back to Termux and says so). A chat whose conversation may do something
+  else than the current choice gets a new one.
+- **Confirming from the chat:** with phone tasks, Pi's `confirm` host call asks on the phone's overlay card *and*
+  in the chat (✅/❌ inline buttons, `callback_query`); `Confirmations.first` takes the first answer and withdraws
+  the other question, and a stopped task withdraws both. Only a paired account, in that chat, can answer, and only
+  a question still open (a nonce per question). Payment-like buttons (`Confirmations.isPayment`) can only be
+  allowed on the phone; the chat is told. A question also asked in a chat counts as declined after 15 minutes.
 - **Replies:** a run that a Telegram message started (or steered) is sent back as it happens: the answer
   streams by editing one message (at most once every 1.2 s), the steps in one status message (the last three,
   then "⚙ N steps"), "typing…" meanwhile. Runs started in the app are not sent to Telegram.

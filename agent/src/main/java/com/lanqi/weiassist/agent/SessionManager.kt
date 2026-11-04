@@ -139,12 +139,12 @@ class SessionManager(
 
     /**
      * A new, empty session. [phone] = it may operate the phone; [supervisor] = it manages the others;
-     * [channel] = it is a chat in that messaging app (see Gateway).
+     * [channel] = it is a chat in that messaging app (see Gateway); [termux] = it may run Linux commands.
      */
-    fun create(phone: Boolean, title: String = "", supervisor: Boolean = false, channel: String? = null): String {
+    fun create(phone: Boolean, title: String = "", supervisor: Boolean = false, channel: String? = null, termux: Boolean = true): String {
         val now = System.currentTimeMillis()
         val id = UUID.randomUUID().toString().substring(0, 8)
-        val summary = SessionSummary(id, title, phone && !supervisor, SessionStatus.Idle, now, now, supervisor = supervisor, channel = channel)
+        val summary = SessionSummary(id, title, phone && !supervisor, SessionStatus.Idle, now, now, supervisor = supervisor, channel = channel, termux = termux)
         live[id] = MutableStateFlow(SessionState(summary))
         publish(summary)
         scope.launch(io) { store.saveSummary(summary) }
@@ -208,11 +208,12 @@ class SessionManager(
             val (provider, model, thinking, mock) = settings()
             val phone = s.summary.phone
             val tools = when { s.summary.supervisor -> "supervisor"; phone -> "phone"; else -> null }
-            val config = listOf(provider, model, thinking, mock, tools).joinToString("|")
+            val bash = s.summary.termux
+            val config = listOf(provider, model, thinking, mock, tools, bash).joinToString("|")
             if (configured[id] != config) {
                 // First use in this runtime: give Pi the saved conversation back.
                 val history = if (id !in configured) withContext(io) { store.loadTranscript(id) } else null
-                pi.configure(id, provider, model, thinking, mock, tools = tools, messages = history)
+                pi.configure(id, provider, model, thinking, mock, tools = tools, messages = history, bash = bash)
                 configured[id] = config
             }
             // Read now: messages typed while Pi was being set up joined the task (see send).

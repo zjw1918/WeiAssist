@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -138,10 +139,23 @@ class AgentController(context: Context) {
             val fields = m.optJSONArray("typed")
             val detail = if (fields == null || fields.length() == 0) appContext.getString(R.string.confirm_nothing_typed)
             else (0 until fields.length()).joinToString("\n") { fields.getString(it) }
-            val title = sessions.summary(m.optString("session"))?.title.orEmpty()
+            val id = m.optString("session")
+            val title = sessions.summary(id)?.title.orEmpty()
             val head = if (m.optBoolean("blind")) appContext.getString(R.string.confirm_title_blind)
             else appContext.getString(R.string.confirm_title, m.getString("label"))
-            AgentAccessibilityService.instance?.confirm(if (title.isBlank()) head else "$head\n· $title", detail) ?: false
+            val question = if (title.isBlank()) head else "$head\n· $title"
+            val payment = !m.optBoolean("blind") && Confirmations.isPayment(m.optString("label"))
+            // On the phone's card and, for a conversation from Telegram, in its chat: the first answer wins.
+            val asks = listOfNotNull<suspend () -> Boolean?>(
+                AgentAccessibilityService.instance?.let { card -> suspend { card.confirm(question, detail) } },
+                if (gateway.canAsk(id)) suspend { gateway.confirm(id, "$question\n\n$detail", payment) } else null,
+            )
+            if (asks.isEmpty()) false
+            else Confirmations.first(
+                // Stopped meanwhile: nobody needs to answer any more (the questions are withdrawn).
+                asks + suspend { sessions.summaries.first { l -> l.none { it.id == id && it.status.active } }; false },
+                timeoutMs = if (asks.size > 1) REMOTE_CONFIRM_MS else null,
+            )
         }
         scope.launch { pi.messages.collect(::onPi) }
         // The shell helper came: queued phone sessions get displays. It went: so did its displays.
@@ -356,6 +370,8 @@ class AgentController(context: Context) {
         "insufficient_quota" in msg || "credit balance is too low" in msg || "429" in msg && "quota" in msg
 
     private companion object {
+        /** A question also asked in a chat goes unanswered this long: not allowed (the task doesn't hold its screen for ever). */
+        const val REMOTE_CONFIRM_MS = 15 * 60_000L
         val HTTP_402 = Regex("""\b402\b""")
     }
 }

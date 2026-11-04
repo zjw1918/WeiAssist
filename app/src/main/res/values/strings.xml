@@ -312,4 +312,11 @@
     <string name="telegram_background">While it is on, a notification stays so the app keeps running. Some phones still stop apps in the background: turning on the accessibility service, or allowing WeiAssist to run in the background, helps.</string>
     <string name="telegram_forget">Remove the bot</string>
     <string name="kind_telegram">Telegram</string>
+    <string name="telegram_access">What it may do from Telegram</string>
+    <string name="telegram_access_chat">Only talk</string>
+    <string name="telegram_access_chat_hint">No Linux commands, no phone apps.</string>
+    <string name="telegram_access_termux">Talk and run Linux commands</string>
+    <string name="telegram_access_termux_hint">In Termux, like a conversation in the app.</string>
+    <string name="telegram_access_phone">Also use the phone\'s apps</string>
+    <string name="telegram_access_phone_hint">Asks you in Telegram (and on the phone) before Send, Delete and the like; payments only on the phone. Needs the accessibility service. While the phone is locked, phone tasks may not work.</string>
 </resources>

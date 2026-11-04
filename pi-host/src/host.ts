@@ -279,10 +279,13 @@ async function startLogin(provider: string, type: "oauth" | "api_key") {
 // side in this one runtime (one WebView for all of them keeps memory flat). Every message to Kotlin
 // about a session carries its id.
 
-/** tools: "phone" (operate the phone), "supervisor" (manage the other sessions), or none (chat). `phone: true` = "phone". */
+/**
+ * tools: "phone" (operate the phone), "supervisor" (manage the other sessions), or none (chat). `phone: true` = "phone".
+ * bash: false = no Linux commands either (a chat that can only talk, e.g. from a messaging app the user restricted).
+ */
 type Config = {
 	session: string; provider: string; modelId: string; thinkingLevel?: string; baseUrl?: string; systemPrompt?: string;
-	tools?: "phone" | "supervisor"; phone?: boolean; messages?: AgentMessage[];
+	tools?: "phone" | "supervisor"; phone?: boolean; bash?: boolean; messages?: AgentMessage[];
 };
 
 interface Session {
@@ -394,6 +397,7 @@ async function configure(cfg: Config) {
 	const tools = cfg.tools ?? (cfg.phone ? "phone" : undefined);
 	const phone = tools === "phone" ? new PhoneSession(cfg.session) : undefined;
 	const supervisor = tools === "supervisor" ? new SupervisorSession(cfg.session) : undefined;
+	const bash = !supervisor && cfg.bash !== false;
 	// The conversation goes on across a change of model or tools; a saved one is restored as given.
 	// System messages are left out: Pi puts the current system prompt and tools in front (initialState).
 	const history = (cfg.messages ?? prev?.agent.state.messages ?? []).filter((m: any) => m.role !== "system");
@@ -403,11 +407,11 @@ async function configure(cfg: Config) {
 			messages: history,
 			systemPrompt: cfg.systemPrompt ?? (supervisor ? supervisorSystemPrompt(agentName)
 				: (phone ? phoneSystemPrompt(agentName)
-					: `You are ${agentName}, a helpful assistant on the user's Android phone. Reply in the user's language.`) + "\n" + bashPrompt),
+					: `You are ${agentName}, a helpful assistant on the user's Android phone. Reply in the user's language.`) + (bash ? "\n" + bashPrompt : "")),
 			model,
 			thinkingLevel: thinkingLevel as any,
-			// Chat and phone sessions get bash (Termux); the supervisor only manages sessions.
-			tools: supervisor ? supervisor.tools : [...(phone?.tools ?? []), bashTool(cfg.session)],
+			// Chat and phone sessions get bash (Termux) unless configured without; the supervisor only manages sessions.
+			tools: supervisor ? supervisor.tools : [...(phone?.tools ?? []), ...(bash ? [bashTool(cfg.session)] : [])],
 		},
 		// Forwarded to providers for routing and prompt caching (OpenCode requires it as x-opencode-session).
 		sessionId: cfg.session,

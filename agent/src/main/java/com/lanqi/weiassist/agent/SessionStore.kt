@@ -62,6 +62,7 @@ class SessionStore(root: File) {
             .put("createdAt", s.createdAt).put("updatedAt", s.updatedAt).put("preview", s.preview)
             .put("error", s.error).put("app", s.app ?: JSONObject.NULL).put("supervisor", s.supervisor)
             .also { if (s.channel != null) it.put("channel", s.channel) }
+            .also { if (!s.termux) it.put("termux", false) }
 
         fun summaryFrom(o: JSONObject) = SessionSummary(
             id = o.getString("id"), title = o.optString("title"), phone = o.optBoolean("phone"),
@@ -69,6 +70,7 @@ class SessionStore(root: File) {
             createdAt = o.optLong("createdAt"), updatedAt = o.optLong("updatedAt"), preview = o.optString("preview"),
             error = o.optBoolean("error"), app = o.optString("app").takeIf { it.isNotEmpty() && it != "null" },
             supervisor = o.optBoolean("supervisor"), channel = o.optString("channel").ifEmpty { null },
+            termux = o.optBoolean("termux", true),
         )
 
         fun itemJson(i: ChatItem): JSONObject = when (i) {

@@ -207,10 +207,13 @@ class PiEngine(context: Context, private val agentName: String) {
     suspend fun configure(
         session: String, provider: String, modelId: String, thinkingLevel: String, baseUrl: String?,
         tools: String? = null, systemPrompt: String? = null, messages: org.json.JSONArray? = null,
+        /** False: no bash tool (Linux commands in Termux) either. */
+        bash: Boolean = true,
     ) {
         val cfg = JSONObject().put("session", session).put("provider", provider).put("modelId", modelId)
             .put("thinkingLevel", thinkingLevel)
         if (tools != null) cfg.put("tools", tools)
+        if (!bash) cfg.put("bash", false)
         if (systemPrompt != null) cfg.put("systemPrompt", systemPrompt)
         if (!baseUrl.isNullOrBlank()) cfg.put("baseUrl", baseUrl)
         if (messages != null) cfg.put("messages", messages)

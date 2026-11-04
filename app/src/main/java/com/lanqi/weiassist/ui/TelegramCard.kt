@@ -12,6 +12,10 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.ui.semantics.Role
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -35,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lanqi.weiassist.AppViewModel
 import com.lanqi.weiassist.R
+import com.lanqi.weiassist.agent.Gateway
 import com.lanqi.weiassist.channels.Link
 import kotlinx.coroutines.launch
 
@@ -64,6 +69,9 @@ fun TelegramSection(vm: AppViewModel) {
                 Switch(checked = s.enabled, onCheckedChange = vm::telegramEnabled)
             }
 
+            Text(stringResource(R.string.telegram_access), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
+            AccessChoice(s.access, vm::telegramAccess)
+
             Text(stringResource(R.string.telegram_accounts), style = MaterialTheme.typography.titleSmall, modifier = Modifier.padding(top = 8.dp))
             if (s.owners.isEmpty()) Text(stringResource(R.string.telegram_no_accounts), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             s.owners.forEach { o ->
@@ -79,6 +87,31 @@ fun TelegramSection(vm: AppViewModel) {
             Text(stringResource(R.string.telegram_privacy), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Text(stringResource(R.string.telegram_background), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             TextButton(onClick = vm::forgetTelegram) { Text(stringResource(R.string.telegram_forget), color = MaterialTheme.colorScheme.error) }
+        }
+    }
+}
+
+/** What conversations from Telegram may do: one choice for every chat. */
+@Composable
+private fun AccessChoice(current: Gateway.Access, onChoose: (Gateway.Access) -> Unit) {
+    Column(Modifier.selectableGroup()) {
+        Gateway.Access.entries.forEach { a ->
+            val (title, hint) = when (a) {
+                Gateway.Access.Chat -> R.string.telegram_access_chat to R.string.telegram_access_chat_hint
+                Gateway.Access.Termux -> R.string.telegram_access_termux to R.string.telegram_access_termux_hint
+                Gateway.Access.Phone -> R.string.telegram_access_phone to R.string.telegram_access_phone_hint
+            }
+            Row(
+                Modifier.fillMaxWidth().selectable(selected = a == current, role = Role.RadioButton, onClick = { onChoose(a) })
+                    .padding(vertical = 6.dp),
+                verticalAlignment = Alignment.Top,
+            ) {
+                RadioButton(selected = a == current, onClick = null, modifier = Modifier.padding(end = 12.dp, top = 2.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(title), style = MaterialTheme.typography.bodyLarge)
+                    Text(stringResource(hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
         }
     }
 }
@@ -114,7 +147,7 @@ private fun Connect(vm: AppViewModel) {
 
 /** A code waiting to be sent to the bot: open Telegram with it, or type it there. */
 @Composable
-private fun Pairing(p: com.lanqi.weiassist.agent.Gateway.Pairing, bot: String?, vm: AppViewModel) {
+private fun Pairing(p: Gateway.Pairing, bot: String?, vm: AppViewModel) {
     val ctx = LocalContext.current
     Text(stringResource(R.string.telegram_pair_how, bot.orEmpty()), style = MaterialTheme.typography.bodyMedium)
     SelectionContainer {

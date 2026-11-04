@@ -307,4 +307,11 @@
     <string name="telegram_background">打开时会常驻一条通知，让应用保持运行。有些手机仍会在后台停止应用：打开无障碍服务，或允许小维助手在后台运行，会有帮助。</string>
     <string name="telegram_forget">移除机器人</string>
     <string name="kind_telegram">Telegram</string>
+    <string name="telegram_access">从 Telegram 可以做什么</string>
+    <string name="telegram_access_chat">只聊天</string>
+    <string name="telegram_access_chat_hint">不运行 Linux 命令，不操作手机应用。</string>
+    <string name="telegram_access_termux">聊天和运行 Linux 命令</string>
+    <string name="telegram_access_termux_hint">在 Termux 中运行，和应用里的对话一样。</string>
+    <string name="telegram_access_phone">也可以操作手机应用</string>
+    <string name="telegram_access_phone_hint">发送、删除这类操作前会在 Telegram（和手机上）问你；付款只能在手机上确认。需要无障碍服务。手机锁屏时，操作手机应用的任务可能无法进行。</string>
 </resources>

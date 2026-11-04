@@ -40,7 +40,11 @@
     <string name="tg_cmd_status">What I\'m doing now</string>
     <string name="tg_paired">Paired! This chat is now connected to %1$s on your phone.</string>
     <string name="tg_hello">Hi, this is %1$s on your phone.</string>
-    <string name="tg_help">Send me a message and I\'ll work on it on your phone. I can run Linux commands in Termux; I can\'t use the phone\'s apps from here yet.\n\n/new – start a new conversation\n/stop – stop the current task\n/status – what I\'m doing now</string>
+    <string name="tg_help">Send me a message and I\'ll work on it on your phone. %1$s
+
+/new – start a new conversation
+/stop – stop the current task
+/status – what I\'m doing now</string>
     <string name="tg_new">New conversation started.</string>
     <string name="tg_stopped">Stopped.</string>
     <string name="tg_nothing_running">Nothing is running.</string>
@@ -56,4 +60,17 @@
         <item quantity="one">⚙ %1$d step</item>
         <item quantity="other">⚙ %1$d steps</item>
     </plurals>
+    <string name="tg_can_chat">From here I can only talk: no Linux commands, no phone apps.</string>
+    <string name="tg_can_termux">I can run Linux commands in Termux; I can\'t use the phone\'s apps from here.</string>
+    <string name="tg_can_phone">I can run Linux commands in Termux and use the phone\'s apps. Before anything like Send or Delete I ask you here; payments can only be allowed on the phone.</string>
+    <string name="tg_phone_unavailable">Phone tasks need the accessibility service, which is off on the phone, so I\'ll work without the phone\'s apps for now.</string>
+    <string name="tg_kind_changed">What I may do from Telegram was changed in the app, so this is a new conversation.</string>
+    <string name="tg_confirm_allow">✅ Allow</string>
+    <string name="tg_confirm_deny">❌ Deny</string>
+    <string name="tg_confirm_allowed">✅ Allowed</string>
+    <string name="tg_confirm_denied">❌ Denied</string>
+    <string name="tg_confirm_closed">Answered on the phone, or the task ended.</string>
+    <string name="tg_confirm_expired">This question isn\'t open any more.</string>
+    <string name="tg_confirm_on_phone">💳 This looks like a payment: allow or deny it on the phone.</string>
+    <string name="tg_already_paired">This account is already paired. Send me a message to start.</string>
 </resources>
