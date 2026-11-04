@@ -163,4 +163,60 @@ class SessionReducerTest {
         assertTrue(s.items.none { it is ChatItem.Error })
         assertNull(s.error)
     }
+
+    @Test fun `reasoning streams live, then becomes a timed item before the answer`() {
+        var s = SessionReducer.reduce(running, msg("thinking_start"), now = 1_000)
+        s = SessionReducer.reduce(s, msg("thinking_delta", "delta" to "Mail first"), now = 1_500)
+        assertEquals("Mail first", s.thinking)
+        assertEquals(1_000L, s.thinkingSince)
+        s = SessionReducer.reduce(s, msg("thinking_end", "text" to "Mail first, then reply."), now = 4_000)
+        assertEquals("", s.thinking)
+        assertNull(s.thinkingSince)
+        assertEquals(ChatItem.Thinking("Mail first, then reply.", 3_000), s.items.last())
+        assertEquals(3_000L, s.run?.thinkingMs)
+    }
+
+    @Test fun `text after reasoning ends it even when its end is missing`() {
+        var s = SessionReducer.reduce(running, msg("thinking_start"), now = 1_000)
+        s = SessionReducer.reduce(s, msg("thinking_delta", "delta" to "hmm"), now = 1_200)
+        s = SessionReducer.reduce(s, msg("text_delta", "delta" to "Hi"), now = 2_000)
+        assertEquals(ChatItem.Thinking("hmm", 1_000), s.items.last())
+        assertEquals("Hi", s.streaming)
+    }
+
+    @Test fun `a run counts its steps and tokens, and ends as a stats item`() {
+        val started = SessionReducer.userMessage(idle, "go", queued = false, now = 10_000)
+        val usage = JSONObject().put("input", 1000).put("output", 50).put("cacheRead", 400).put("cacheWrite", 0).put("reasoning", 20)
+            .put("cost", JSONObject().put("total", 0.01))
+        var s = SessionReducer.reduce(started, msg("assistant_end", "text" to "", "stopReason" to "toolUse", "usage" to usage, "provider" to "p", "model" to "m"), now = 11_000)
+        s = SessionReducer.reduce(s, msg("tool_start", "tool" to "tap", "args" to JSONObject().put("id", 1)), now = 11_000)
+        s = SessionReducer.reduce(s, msg("tool_end", "tool" to "tap", "isError" to false, "output" to "ok"), now = 12_000)
+        s = SessionReducer.reduce(s, msg("assistant_end", "text" to "Done", "stopReason" to "stop", "usage" to usage, "provider" to "p", "model" to "m"), now = 13_000)
+        s = SessionReducer.reduce(s, msg("idle"), now = 18_000)
+        assertNull(s.run)
+        val run = (s.items.last() as ChatItem.Stats).run
+        assertEquals(8_000L, run.ms)
+        assertEquals(1, run.steps)
+        assertEquals(2, run.calls)
+        assertEquals(2_000L, run.input)
+        assertEquals(800L, run.cacheRead)
+        assertEquals(2_900L, run.tokens)
+        assertEquals(40L, run.reasoning)
+        assertEquals(0.02, run.cost, 1e-9)
+        assertEquals("p/m", run.model)
+        assertEquals(run, (SessionStore.itemFrom(SessionStore.itemJson(ChatItem.Stats(run))) as ChatItem.Stats).run)
+        val t = ChatItem.Thinking("why", 1234)
+        assertEquals(t, SessionStore.itemFrom(SessionStore.itemJson(t)))
+    }
+
+    @Test fun `a queued run starts its clock when it gets the screen, and a stop still reports it`() {
+        val queued = SessionReducer.userMessage(idle, "go", queued = true, now = 1_000)
+        val s = SessionReducer.withStatus(queued, SessionStatus.Running, now = 5_000)
+        assertEquals(5_000L, s.run?.startedAt)
+        val stepped = SessionReducer.reduce(s, msg("tool_start", "tool" to "read_screen", "args" to JSONObject()), now = 6_000)
+        val stopped = SessionReducer.stopped(stepped, now = 9_000)
+        assertEquals(4_000L, (stopped.items.last() as ChatItem.Stats).run.ms)
+        // Nothing happened yet: no stats.
+        assertTrue(SessionReducer.stopped(s, now = 6_000).items.none { it is ChatItem.Stats })
+    }
 }

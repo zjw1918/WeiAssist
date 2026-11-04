@@ -80,6 +80,31 @@ sealed interface ChatItem {
      */
     data class Step(val tool: String, val detail: String, val ok: Boolean? = null, val result: String = "", val screen: Int = 0) : ChatItem
     data class Error(val text: String) : ChatItem
+    /** The model's reasoning before an answer or a tool call: [text] is empty when the provider hides it. */
+    data class Thinking(val text: String, val ms: Long) : ChatItem
+    /** Ends a run (one task, from the user's message to idle): what it took. */
+    data class Stats(val run: RunStats) : ChatItem
+}
+
+/**
+ * What one run took: wall time, the time spent reasoning, tool steps, and tokens summed over its model calls
+ * ([input] counts each call's whole prompt, so it grows with the conversation; cached input is in [cacheRead]).
+ */
+data class RunStats(
+    val startedAt: Long,
+    val ms: Long = 0,
+    val thinkingMs: Long = 0,
+    val steps: Int = 0,
+    val calls: Int = 0,
+    val input: Long = 0,
+    val output: Long = 0,
+    val cacheRead: Long = 0,
+    val cacheWrite: Long = 0,
+    val reasoning: Long = 0,
+    val cost: Double = 0.0,
+    val model: String = "",
+) {
+    val tokens get() = input + output + cacheRead + cacheWrite
 }
 
 enum class Delivery {
@@ -119,6 +144,12 @@ data class SessionState(
     val pendingTask: String? = null,
     /** Files attached to [pendingTask]. */
     val pendingAttachments: List<Attachment> = emptyList(),
+    /** The reasoning Pi is streaming now (moves into [items] as a [ChatItem.Thinking] when it ends). */
+    val thinking: String = "",
+    /** When the reasoning streaming now began; null when the model isn't reasoning. */
+    val thinkingSince: Long? = null,
+    /** The run in progress, counted as it goes; it ends as a [ChatItem.Stats]. */
+    val run: RunStats? = null,
 ) {
     val id get() = summary.id
     val status get() = summary.status

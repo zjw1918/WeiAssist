@@ -67,7 +67,6 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -448,11 +447,17 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
         Column(Modifier.fillMaxSize().padding(inner)) {
             ScreenPreview(vm, s)
             val list = rememberLazyListState()
-            val count = session.items.size + (if (session.streaming.isNotEmpty()) 1 else 0)
-            LaunchedEffect(count, session.streaming.length / 80) { if (count > 0) list.animateScrollToItem(count - 1) }
+            val blocks = remember(session.items, session.busy) { chatBlocks(session.items, session.busy) }
+            // Follow what it does: new items, streamed text and reasoning (every ~80 characters).
+            LaunchedEffect(session.items.size, session.streaming.length / 80, session.thinking.length / 80, session.busy) {
+                if (blocks.isNotEmpty()) list.animateScrollToItem(list.layoutInfo.totalItemsCount.coerceAtLeast(1) - 1)
+            }
+            // The turn whose details are open (by key, so a live turn's sheet follows it as it runs).
+            var processOf by rememberSaveable(session.id) { mutableStateOf<String?>(null) }
+            var statsOf by rememberSaveable(session.id) { mutableStateOf<String?>(null) }
             LazyColumn(
                 Modifier.weight(1f).fillMaxWidth(), state = list,
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 if (showTrace) item {
                     Text(
@@ -460,10 +465,17 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
                         modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh, MaterialTheme.shapes.small).padding(10.dp),
                     )
                 }
-                // Keyed by session too: state kept per row (an expanded step) stays with its session.
-                items(session.items.size, key = { i -> "${session.id}:$i" }) { i -> ChatRow(session.items[i]) }
-                if (session.streaming.isNotEmpty()) item { ChatRow(ChatItem.Assistant(session.streaming)) }
+                // Keyed by session too: state kept per row stays with its session.
+                items(blocks, key = { "${session.id}:${it.key}" }) { b ->
+                    when (b) {
+                        is ChatBlock.Message -> ChatRow(b.item)
+                        is ChatBlock.Turn -> TurnView(b, session, onProcess = { processOf = b.key }, onStats = { statsOf = b.key })
+                    }
+                }
+                item(key = "end") { Spacer(Modifier.height(1.dp)) }
             }
+            blocks.firstOrNull { it.key == processOf }?.let { ProcessSheet(it as ChatBlock.Turn, session) { processOf = null } }
+            blocks.firstOrNull { it.key == statsOf }?.let { StatsSheet(it as ChatBlock.Turn, session) { statsOf = null } }
             Column(
                 Modifier.fillMaxWidth().windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime))
                     .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 10.dp),
@@ -538,32 +550,8 @@ private fun ChatRow(item: ChatItem) {
         }
         // Answers read as text on the page, not as bubbles: they are often long and formatted.
         is ChatItem.Assistant -> MarkdownText(item.text, Modifier.fillMaxWidth().padding(horizontal = 2.dp))
-        is ChatItem.Error -> Text(
-            item.text, color = c.onErrorContainer, style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.fillMaxWidth().background(c.errorContainer, MaterialTheme.shapes.small).padding(horizontal = 12.dp, vertical = 8.dp),
-        )
-        is ChatItem.Step -> StepRow(item)
-    }
-}
-
-/** One tool step: its name and argument, and whether it read the screen (actions return the screen they leave). */
-@Composable
-private fun StepRow(item: ChatItem.Step) {
-    val c = MaterialTheme.colorScheme
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 2.dp)) {
-        when (item.ok) {
-            null -> Box(Modifier.size(14.dp), contentAlignment = Alignment.Center) { Box(Modifier.size(6.dp).background(c.outline, CircleShape)) }
-            true -> AppIcon(R.drawable.ic_check_circle, null, Modifier.size(14.dp), tint = c.outline)
-            false -> AppIcon(R.drawable.ic_cancel, null, Modifier.size(14.dp), tint = c.error)
-        }
-        Text(
-            "  ${item.tool} ${item.detail}", fontFamily = FontFamily.Monospace, fontSize = 12.sp,
-            color = if (item.ok == false) c.error else c.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
-        )
-        if (item.screen > 0) Text(
-            "  · " + stringResource(R.string.step_screen, item.screen),
-            style = MaterialTheme.typography.labelSmall, color = c.primary, maxLines = 1,
-        )
+        is ChatItem.Error -> ErrorText(item.text)
+        // Steps, reasoning and run stats are part of a turn (see TurnView).
+        else -> Unit
     }
 }
