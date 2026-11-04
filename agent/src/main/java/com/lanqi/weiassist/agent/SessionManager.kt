@@ -220,15 +220,18 @@ class SessionManager(
         }
     }
 
-    /** Told when the user stops a session ([deleted] false) or deletes it: e.g. end its jobs in Termux. */
-    var onEnded: (id: String, deleted: Boolean) -> Unit = { _, _ -> }
+    /**
+     * Told when the user stops a session ([deleted] false) or deletes it: e.g. end its jobs in Termux.
+     * [files]: the user asked to delete its files in Termux too.
+     */
+    var onEnded: (id: String, deleted: Boolean, files: Boolean) -> Unit = { _, _, _ -> }
 
     /** Stop the session's task (Pi's Agent.abort); a queued task is dropped. */
     fun stop(id: String) {
         val s = live[id]?.value ?: return
         if (!s.busy) return
         Log.d(TAG, "stop $id (${s.status})")
-        onEnded(id, false)
+        onEnded(id, false, false)
         stops[id] = (stops[id] ?: 0) + 1
         prompted -= id
         paused[id]?.value = false
@@ -261,10 +264,10 @@ class SessionManager(
         else summary(id)?.let { s -> s.copy(title = title.trim()).also { publish(it); scope.launch(io) { store.saveSummary(it) } } }
     }
 
-    /** Remove the session for good: stop it, drop its Agent, delete its files. */
-    fun delete(id: String) {
+    /** Remove the session for good: stop it, drop its Agent, delete its files ([termuxFiles]: its Termux folder too). */
+    fun delete(id: String, termuxFiles: Boolean = false) {
         stop(id)
-        onEnded(id, true)
+        onEnded(id, true, termuxFiles)
         screens.release(id)
         live.remove(id); watchers.remove(id); leftWhileBusy.remove(id); paused.remove(id); stops.remove(id); configured.remove(id)
         pendingWrites.remove(id)?.cancel()

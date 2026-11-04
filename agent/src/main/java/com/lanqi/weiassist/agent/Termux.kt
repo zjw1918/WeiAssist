@@ -51,6 +51,9 @@ class Termux(context: Context) {
     /** Sessions that have used bash: only they have a folder and jobs to clean up. */
     private val prefs = app.getSharedPreferences("termux", Context.MODE_PRIVATE)
     private fun used(session: String) = session in prefs.getStringSet("used", emptySet())!!
+
+    /** Whether session [session] has a folder in Termux (~/sessions/<id>) that deleting it could remove. */
+    fun hasFolder(session: String) = used(session)
     private fun markUsed(session: String, on: Boolean) {
         val set = prefs.getStringSet("used", emptySet())!!.toMutableSet()
         if (if (on) set.add(session) else set.remove(session)) prefs.edit().putStringSet("used", set).apply()
@@ -109,21 +112,30 @@ class Termux(context: Context) {
 
     /**
      * The session was stopped or [deleted]: end its tmux jobs and running commands. Its files in ~/sessions/<id> are
-     * always kept: they may be a project the user works on for months, and deleting a conversation must not wipe it.
+     * kept unless the user asked, when deleting, to remove them too ([files]): they may be a project the user works on
+     * for months, so deleting a conversation must not wipe them by default.
      * Then Termux's wake lock is dropped if no session has jobs left.
      */
-    suspend fun cleanUp(session: String, deleted: Boolean) {
+    suspend fun cleanUp(session: String, deleted: Boolean, files: Boolean = false) {
         if (!used(session) || setupProblem() != null) return
+        val id = safe(session)
+        if (id.isEmpty()) return // "$HOME/sessions/" would be every session's folder
+        // $1 = the session folder's name (only letters, digits, _ and -: it can't climb out of ~/sessions);
+        // $2 = 1 to delete the folder after its jobs are ended.
         val script = PRELUDE + """
+            [ -n "${'$'}{1}" ] || exit 0
             d="${'$'}{HOME}/sessions/${'$'}{1}"
             if [ -d "${'$'}{d}" ]; then
               TMUX_TMPDIR="${'$'}{d}/.tmux" tmux kill-server 2> /dev/null
               for p in "${'$'}{d}"/.bash-*.pid; do [ -f "${'$'}{p}" ] && kill -TERM "${'$'}(cat "${'$'}{p}")" 2> /dev/null; done
+              [ "${'$'}{2}" = 1 ] && rm -rf -- "${'$'}{d}"
             fi
             sync_lock > /dev/null 2>&1
             exit 0
         """.trimIndent()
-        execute(arrayOf("-c", script, "bash", safe(session)), 30)
+        val wipe = deleted && files
+        // A big folder (node_modules, a build) can take a while to remove.
+        execute(arrayOf("-c", script, "bash", id, if (wipe) "1" else "0"), if (wipe) 180 else 30)
         if (deleted) markUsed(session, false)
     }
 
