@@ -472,9 +472,13 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
             // The turn whose details are open (by key, so a live turn's sheet follows it as it runs).
             var processOf by rememberSaveable(session.id) { mutableStateOf<String?>(null) }
             var statsOf by rememberSaveable(session.id) { mutableStateOf<String?>(null) }
+            // No edge stretch: while a run is live (its rows redraw every second), a fling that reached the end left the
+            // stretch "in progress" for good, and a list with overscroll in progress takes every touch as the start of
+            // a drag: no row (run details, steps, copy) could be tapped until the page was reopened.
             LazyColumn(
                 Modifier.weight(1f).fillMaxWidth(), state = list,
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(14.dp),
+                overscrollEffect = null,
             ) {
                 if (showTrace) item(key = "trace", contentType = "trace") {
                     Text(
