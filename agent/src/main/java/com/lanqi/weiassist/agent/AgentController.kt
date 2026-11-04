@@ -92,6 +92,9 @@ class AgentController(context: Context) {
         return if (sessions.send(id, text)) id else null
     }
 
+    /** Talking to the assistant from Telegram: one conversation per chat (see Gateway). */
+    val gateway = Gateway(appContext, sessions, scope)
+
     /** Live pictures of the sessions' displays. */
     val previews = PreviewHub(appContext, shell)
     /** Each phone session's virtual display (while it has one). */
@@ -153,6 +156,7 @@ class AgentController(context: Context) {
         scope.launch {
             sessions.load()
             loaded.complete(Unit)
+            launch { gateway.start() }
             val ready = pi.start()
             _state.update { it.copy(piVersion = ready.optString("pi")) }
         }

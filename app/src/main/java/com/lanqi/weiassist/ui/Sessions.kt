@@ -357,9 +357,10 @@ private fun SessionRow(s: SessionSummary, vm: AppViewModel, selected: Boolean?, 
                     remember(s.preview) { plainLine(s.preview) }, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     color = if (s.error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (s.status != SessionStatus.Idle || s.app != null) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
+                val where = listOfNotNull(if (s.channel == "telegram") stringResource(R.string.kind_telegram) else null, s.app).joinToString(" · ").ifEmpty { null }
+                if (s.status != SessionStatus.Idle || where != null) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
                     StatusBadge(s.status)
-                    s.app?.let {
+                    where?.let {
                         Text(
                             (if (s.status != SessionStatus.Idle) " · " else "") + it, style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -501,7 +502,10 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
                     if (s != null) Column {
                         Text(s.title.ifBlank { stringResource(R.string.untitled) }, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
-                            listOfNotNull(stringResource(if (s.phone) R.string.kind_phone else R.string.kind_chat), s.app).joinToString(" · "),
+                            listOfNotNull(
+                                stringResource(if (s.phone) R.string.kind_phone else R.string.kind_chat),
+                                if (s.channel == "telegram") stringResource(R.string.kind_telegram) else null, s.app,
+                            ).joinToString(" · "),
                             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                     }

@@ -20,6 +20,7 @@ dependencies {
     api(project(":pi-runtime"))
     api(project(":phone"))
     api(project(":shell"))
+    api(project(":channels"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.process)
     testImplementation(libs.junit)

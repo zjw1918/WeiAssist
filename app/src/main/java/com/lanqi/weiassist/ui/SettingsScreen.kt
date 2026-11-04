@@ -65,6 +65,9 @@ fun SettingsTab(vm: AppViewModel, s: AgentState) {
             SectionHeader(stringResource(R.string.shell_title))
             Group { Column(Modifier.padding(GroupContentPadding)) { ShellSection() } }
 
+            SectionHeader(stringResource(R.string.telegram_title))
+            Group { Column(Modifier.padding(GroupContentPadding)) { TelegramSection(vm) } }
+
             vm.termux?.let { termux ->
                 SectionHeader(stringResource(R.string.termux_title))
                 Group { Column(Modifier.padding(GroupContentPadding)) { TermuxSection(termux) } }

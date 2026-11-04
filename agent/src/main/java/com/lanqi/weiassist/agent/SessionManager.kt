@@ -137,11 +137,14 @@ class SessionManager(
 
     // ---- commands -------------------------------------------------------------------------------------
 
-    /** A new, empty session. [phone] = it may operate the phone; [supervisor] = it manages the others. */
-    fun create(phone: Boolean, title: String = "", supervisor: Boolean = false): String {
+    /**
+     * A new, empty session. [phone] = it may operate the phone; [supervisor] = it manages the others;
+     * [channel] = it is a chat in that messaging app (see Gateway).
+     */
+    fun create(phone: Boolean, title: String = "", supervisor: Boolean = false, channel: String? = null): String {
         val now = System.currentTimeMillis()
         val id = UUID.randomUUID().toString().substring(0, 8)
-        val summary = SessionSummary(id, title, phone && !supervisor, SessionStatus.Idle, now, now, supervisor = supervisor)
+        val summary = SessionSummary(id, title, phone && !supervisor, SessionStatus.Idle, now, now, supervisor = supervisor, channel = channel)
         live[id] = MutableStateFlow(SessionState(summary))
         publish(summary)
         scope.launch(io) { store.saveSummary(summary) }

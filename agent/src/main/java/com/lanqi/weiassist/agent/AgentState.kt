@@ -130,6 +130,8 @@ data class SessionSummary(
     val app: String? = null,
     /** The supervisor: the one session that manages the others (see SessionCommands). */
     val supervisor: Boolean = false,
+    /** The messaging app this conversation is with ("telegram", see Gateway), or null for one in the app. */
+    val channel: String? = null,
 )
 
 /** A whole session: kept in memory while it runs or is on screen, else only on disk. */

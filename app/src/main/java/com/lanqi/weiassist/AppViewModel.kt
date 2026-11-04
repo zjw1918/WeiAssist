@@ -132,6 +132,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         .map { it || enabledInSettings }
         .stateIn(viewModelScope, SharingStarted.Eagerly, enabledInSettings)
 
+    /** Telegram (see Gateway), for its Settings section. */
+    val telegram: StateFlow<com.lanqi.weiassist.agent.Gateway.State> = controller
+        .flatMapLatest { it?.gateway?.state ?: flowOf(com.lanqi.weiassist.agent.Gateway.State()) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, com.lanqi.weiassist.agent.Gateway.State())
+
+    /** Check and save a bot token; the problem to show, or null when it is connected. */
+    suspend fun connectTelegram(token: String): String? = controller.value?.gateway?.connect(token)
+    fun telegramEnabled(on: Boolean) = withAgent { gateway.setEnabled(on) }
+    fun forgetTelegram() = withAgent { gateway.forget() }
+    fun pairTelegram() = withAgent { gateway.startPairing() }
+    fun cancelTelegramPairing() = withAgent { gateway.cancelPairing() }
+    fun removeTelegramOwner(id: String) = withAgent { gateway.removeOwner(id) }
+
     /** The bash tool's Termux bridge, for its Settings section. */
     val termux get() = controller.value?.termux
 

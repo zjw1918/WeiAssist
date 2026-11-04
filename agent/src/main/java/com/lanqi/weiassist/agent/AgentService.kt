@@ -30,7 +30,8 @@ import kotlinx.coroutines.launch
  * - Screens (and later the floating assistant) bind to it and observe [AgentController.state].
  * - While any session is working (or a sign-in waits in the browser) it is a *started foreground*
  *   service with a notification and a Stop button, so the work survives the user leaving or closing the app.
- * - When Pi is idle it drops back to bound-only: no notification, and it ends with the last client.
+ * - While the Telegram bot is on ([Gateway]) it stays started too, so messages from the chat arrive any time.
+ * - Otherwise it drops back to bound-only: no notification, and it ends with the last client.
  */
 class AgentService : Service() {
     inner class LocalBinder : Binder() {
@@ -51,7 +52,7 @@ class AgentService : Service() {
         // The shell helper (for virtual displays): start it if it was set up and isn't running (e.g. after a reboot).
         com.lanqi.weiassist.shell.ShellBackend.get(this).autoStart()
         scope.launch {
-            kotlinx.coroutines.flow.combine(controller.state, controller.sessions.summaries) { s, list -> work(s, list) }
+            kotlinx.coroutines.flow.combine(controller.state, controller.sessions.summaries, controller.gateway.state, ::work)
                 .distinctUntilChanged()
                 .collect(::onWork)
         }
@@ -70,14 +71,17 @@ class AgentService : Service() {
         }
     }
 
-    private fun work(s: AgentState, list: List<SessionSummary>): Work {
+    private fun work(s: AgentState, list: List<SessionSummary>, g: Gateway.State): Work {
         val active = list.filter { it.status.active }
-        return Work(active.size, s.signingInWithBrowser, active.singleOrNull()?.title)
+        return Work(active.size, s.signingInWithBrowser, active.singleOrNull()?.title, g.bot.takeIf { g.listening })
     }
 
-    /** [running] = sessions with work (running, queued or paused); [task] names it when there is one. */
-    private data class Work(val running: Int, val signingIn: Boolean, val task: String?) {
-        val active get() = running > 0 || signingIn
+    /**
+     * [running] = sessions with work (running, queued or paused); [task] names it when there is one.
+     * [listening]: the Telegram bot (its @username) that messages may come to at any time.
+     */
+    private data class Work(val running: Int, val signingIn: Boolean, val task: String?, val listening: String? = null) {
+        val active get() = running > 0 || signingIn || listening != null
     }
 
     private fun onWork(w: Work) {
@@ -97,7 +101,7 @@ class AgentService : Service() {
         when (intent?.action) {
             ACTION_STOP -> controller.stopAll()
             else -> {
-                val w = work(controller.state.value, controller.sessions.summaries.value)
+                val w = work(controller.state.value, controller.sessions.summaries.value, controller.gateway.state.value)
                 // startForegroundService() promises startForeground(); keep it even if the work just ended.
                 goForeground(w)
                 if (!w.active) onWork(w)
@@ -154,8 +158,10 @@ class AgentService : Service() {
             else resources.getQuantityString(R.plurals.notif_running_many, w.running, w.running)
             b.setContentText(text)
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel, getString(if (w.running == 1) R.string.notif_stop else R.string.notif_stop_all), stop)
-        } else {
+        } else if (w.signingIn) {
             b.setContentText(getString(R.string.notif_signin))
+        } else {
+            b.setContentText(getString(R.string.notif_listening, w.listening.orEmpty()))
         }
         return b.build()
     }

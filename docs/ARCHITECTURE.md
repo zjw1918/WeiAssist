@@ -180,6 +180,27 @@ sessions instead of the phone (`pi-host/src/supervisor-tools.ts`): `list_session
   installed) and passes the text on; the supervisor answers briefly, easy to listen to. A wake word or a
   floating bubble would call the same entry point.
 
+## Messaging apps (Telegram)
+
+The user can talk to the assistant from Telegram (`:channels` moves messages; `Gateway` in `:agent` decides
+what they mean). Like OpenClaw's and Hermes Agent's gateways, but on the phone and without a server.
+
+- **Transport** (`TelegramBot`): the Bot API by long polling (`getUpdates`, 50 s), so the phone only makes
+  outgoing HTTPS requests. Answers are sent as Telegram HTML (`TelegramHtml`: Markdown → b/i/code/pre/a,
+  tables as monospace, cut under 4096 characters), as plain text if Telegram refuses the markup. The token is
+  kept with `SecureStore` and never logged (removed from error texts).
+- **Who may talk:** only accounts the user paired: the app shows a one-time code (8 characters, 10 minutes,
+  once) and a `t.me/<bot>?start=<code>` link. Anyone else gets no answer. Private chats only.
+- **One conversation per chat:** a session marked `channel = "telegram"`, also in the app's list. `/new`
+  starts another, `/stop` stops it, `/status` says what it is doing. A message while it works steers it.
+  These sessions are chat sessions (Termux, no phone tasks): confirming Send/Pay from the chat comes first.
+- **Replies:** a run that a Telegram message started (or steered) is sent back as it happens: the answer
+  streams by editing one message (at most once every 1.2 s), the steps in one status message (the last three,
+  then "⚙ N steps"), "typing…" meanwhile. Runs started in the app are not sent to Telegram.
+- **Staying reachable:** while the bot is on, `AgentService` stays a started foreground service ("Listening on
+  Telegram"). The offset of the last update handled is saved, so a restart doesn't handle a message twice.
+  Not yet: starting after a reboot.
+
 ## Why each piece exists
 
 - **Native fetch:** browsers enforce CORS, and providers' error responses (401, 429) carry no CORS headers. In a WebView every API error would surface as "Connection error". Node, Pi's home runtime, has no CORS either.

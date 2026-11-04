@@ -284,4 +284,27 @@
     <string name="tool_list_sessions">查看会话列表</string>
     <string name="tool_get_session">查看会话</string>
     <string name="tool_wait_for">等待会话</string>
+
+    <!-- Telegram（TelegramCard.kt） -->
+    <string name="telegram_title">Telegram</string>
+    <string name="telegram_why">在 Telegram 里随时随地和助手对话。每个 Telegram 聊天都是这里列表中的一个对话。从 Telegram 发来的任务可以聊天、运行 Linux 命令，暂时还不能操作手机上的应用。</string>
+    <string name="telegram_steps">1. 在 Telegram 中打开 @BotFather，发送 /newbot。\n2. 取个名字，BotFather 会给你一个令牌。\n3. 把令牌粘贴到这里。</string>
+    <string name="telegram_token">机器人令牌</string>
+    <string name="telegram_connect">连接</string>
+    <string name="telegram_connecting_button">正在检查…</string>
+    <string name="telegram_online">在线：可以接收消息</string>
+    <string name="telegram_connecting">正在连接…</string>
+    <string name="telegram_retrying">连不上 Telegram，正在重试（%1$s）</string>
+    <string name="telegram_off">已关闭：消息会留在 Telegram，打开后再接收</string>
+    <string name="telegram_accounts">谁可以使用</string>
+    <string name="telegram_no_accounts">还没有人。请配对你自己的 Telegram 账号；机器人会忽略其他所有人。</string>
+    <string name="telegram_remove_account">移除</string>
+    <string name="telegram_pair">配对 Telegram 账号</string>
+    <string name="telegram_pair_how">点「在 Telegram 中打开」再点 Start，或把这个代码发给 @%1$s：</string>
+    <string name="telegram_open">在 Telegram 中打开</string>
+    <string name="telegram_pair_once">代码只能用一次，10 分钟内有效。</string>
+    <string name="telegram_privacy">机器人聊天没有端到端加密：你发送的内容和助手的回答都会经过 Telegram 的服务器。你配对的任何人都能使用这台手机上的助手和 Termux。</string>
+    <string name="telegram_background">打开时会常驻一条通知，让应用保持运行。有些手机仍会在后台停止应用：打开无障碍服务，或允许小维助手在后台运行，会有帮助。</string>
+    <string name="telegram_forget">移除机器人</string>
+    <string name="kind_telegram">Telegram</string>
 </resources>

@@ -22,7 +22,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="On-device AI assistant carrying out a task the user started (operating other apps through its accessibility service, or waiting for the user to finish signing in to the AI provider in the browser). The user can stop it from the notification." />
+                android:value="On-device AI assistant carrying out a task the user started (operating other apps through its accessibility service, or waiting for the user to finish signing in to the AI provider in the browser), or receiving the messages the user sends it from Telegram, when they turned that on. The user can stop it from the notification or turn Telegram off in Settings." />
         </service>
     </application>
 </manifest>

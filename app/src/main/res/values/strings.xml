@@ -289,4 +289,27 @@
     <string name="tool_list_sessions">List sessions</string>
     <string name="tool_get_session">Check a session</string>
     <string name="tool_wait_for">Wait for sessions</string>
+
+    <!-- Telegram (TelegramCard.kt) -->
+    <string name="telegram_title">Telegram</string>
+    <string name="telegram_why">Talk to the assistant from Telegram, wherever you are. Each Telegram chat is a conversation here, in your list. From Telegram it can chat and run Linux commands, not use the phone\'s apps (yet).</string>
+    <string name="telegram_steps">1. In Telegram, open @BotFather and send /newbot.\n2. Choose a name; BotFather gives you a token.\n3. Paste the token here.</string>
+    <string name="telegram_token">Bot token</string>
+    <string name="telegram_connect">Connect</string>
+    <string name="telegram_connecting_button">Checking…</string>
+    <string name="telegram_online">Online: messages come in</string>
+    <string name="telegram_connecting">Connecting…</string>
+    <string name="telegram_retrying">Can\'t reach Telegram, retrying (%1$s)</string>
+    <string name="telegram_off">Off: messages wait in Telegram until you turn it on</string>
+    <string name="telegram_accounts">Who may use it</string>
+    <string name="telegram_no_accounts">No one yet. Pair your own Telegram account; the bot ignores everyone else.</string>
+    <string name="telegram_remove_account">Remove</string>
+    <string name="telegram_pair">Pair a Telegram account</string>
+    <string name="telegram_pair_how">Tap Open in Telegram and press Start, or send this code to @%1$s:</string>
+    <string name="telegram_open">Open in Telegram</string>
+    <string name="telegram_pair_once">The code works once, for 10 minutes.</string>
+    <string name="telegram_privacy">Bot chats aren\'t end-to-end encrypted: what you send and what the assistant answers pass through Telegram\'s servers. Anyone you pair can use the assistant and Termux on this phone.</string>
+    <string name="telegram_background">While it is on, a notification stays so the app keeps running. Some phones still stop apps in the background: turning on the accessibility service, or allowing WeiAssist to run in the background, helps.</string>
+    <string name="telegram_forget">Remove the bot</string>
+    <string name="kind_telegram">Telegram</string>
 </resources>

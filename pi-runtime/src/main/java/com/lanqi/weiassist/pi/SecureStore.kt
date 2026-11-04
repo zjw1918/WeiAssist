@@ -47,4 +47,7 @@ class SecureStore(context: Context, name: String = "pi-credentials") {
         tmp.writeBytes(byteArrayOf(iv.size.toByte()) + iv + cipher.doFinal(text.toByteArray(Charsets.UTF_8)))
         tmp.renameTo(file)
     }
+
+    /** Forget what is stored. */
+    fun clear() { file.delete() }
 }
