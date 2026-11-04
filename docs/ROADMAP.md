@@ -50,6 +50,29 @@ Status legend: ✅ done · 🔨 next · ⬜ planned. Current status and todo: [P
 - ✅ **Attachments:** images, PDFs (as page images) and text files in messages, with a full-screen image viewer.
 - ✅ **Long tasks:** a visible step list; the user can steer mid-task (Pi's `steer`/follow-up queue).
 
+## 2b. Reach it from messaging apps
+
+Talk to the assistant on the phone from anywhere, like OpenClaw's and Hermes Agent's gateways, but with no server:
+the phone fetches its bot's messages itself. Telegram first; user guide: [TELEGRAM.md](TELEGRAM.md).
+
+- ✅ **Telegram, text:** a bot the user creates, paired to their account with a one-time code; one conversation per
+  chat; streamed answers; `/new`, `/stop`, `/status`.
+- ✅ **Control from the chat:** what conversations from Telegram may do (only talk / + Termux / + phone apps);
+  risky taps asked in the chat and on the phone at once, first answer wins; payments only on the phone.
+- ✅ **Files:** photos and documents in (also into Termux's `inbox/`), `send_file` out, `/screen`.
+- ⬜ **Option: always reachable** (designed, not scheduled):
+  - start again by itself after a reboot and after an app update when the bot is on (a boot / package-replaced
+    receiver; works only after the first unlock), and restart the service if Android kills it (sticky while listening);
+  - tell a Telegram chat when its task was interrupted, with a Continue button there;
+  - a background-health card: battery-optimization exemption, accessibility on (keeps ColorOS from freezing the
+    app), the maker's autostart screen where known, "last heard from Telegram";
+  - measure overnight with the screen off (Doze, ColorOS, HyperOS) before promising anything.
+- ⬜ **Voice messages** (speech to text), videos.
+- ⬜ **Group chats** (owner's messages only; others' as untrusted data).
+- ⬜ **A second channel** behind the same `Channel` interface: Feishu/Lark or DingTalk (long-connection modes, no
+  server), or Discord. WhatsApp (needs a public webhook, or an unofficial client) and personal WeChat (no API, and
+  its screens hide their contents from accessibility) are not planned.
+
 ## 3. Experience
 
 - ⬜ **Chat-first home:** message list, streaming answers, markdown, tool steps shown as friendly cards, and an "advanced" panel for the raw Pi trace.

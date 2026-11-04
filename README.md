@@ -4,8 +4,8 @@
 
 **An open-source AI assistant for Android, built on [Pi](https://github.com/earendil-works/pi).**
 Chat with the AI provider of your choice, hand it files and photos, let it run Linux commands for live
-information and coding, and keep several conversations going at once. No servers of ours in between:
-the app talks to your provider directly.
+information and coding, and keep several conversations going at once. **Away from your phone? Talk to it
+from Telegram.** No servers of ours in between: the app talks to your provider (and your Telegram bot) directly.
 
 Pi, the minimal, extensible agent harness, handles models, sign-in and the agent loop; WeiAssist brings it to
 the phone with a native app around it.
@@ -14,6 +14,23 @@ the phone with a native app around it.
 > What's done and what's next: [PROGRESS.md](docs/PROGRESS.md) and the [roadmap](docs/ROADMAP.md).
 
 ## Features
+
+### 💬 Talk to it from Telegram
+
+Message the assistant on your phone from anywhere: from Telegram on another phone, a tablet or your computer.
+Create a bot with @BotFather, paste its token in **Settings → Telegram**, pair your account with one tap, and
+your phone's assistant is a chat away. Setup and details: [docs/TELEGRAM.md](docs/TELEGRAM.md).
+
+- **No server needed:** the app fetches your bot's messages from Telegram itself. Only accounts you pair can use it.
+- **Each chat is a conversation**, also in the app's list. Answers stream in; `/new`, `/stop`, `/status`, and
+  `/screen` to see the screen it is working on.
+- **Photos and files both ways:** send it pictures, PDFs, spreadsheets or archives; it sends back the charts,
+  documents and videos it makes in Termux.
+- **You stay in control:** choose what it may do from Telegram: only talk, also run Linux commands, or also use
+  the phone's apps. Before anything like Send or Delete it asks you in the chat (✅ / ❌) and on the phone;
+  payments can only be allowed on the phone.
+
+### Everything else
 
 ![Four conversations in WeiAssist: live weather with curl, a Go web service with tests running in tmux, a year of Hong Kong stock data with a live watch job, and a narrated video made from an idea](docs/images/showcase.png)
 
@@ -47,8 +64,9 @@ the phone with a native app around it.
 
 Download the APK from [Releases](https://github.com/zjw1918/WeiAssist/releases/latest) and install it (allow installs
 from your browser or file manager when Android asks). You can also build from source (below).
-Then open WeiAssist and connect it to an AI provider. Optional extras, both under **Settings**:
-Linux commands (set up Termux as described in [docs/TERMUX.md](docs/TERMUX.md)) and phone tasks (accessibility).
+Then open WeiAssist and connect it to an AI provider. Optional extras, all under **Settings**:
+Linux commands (set up Termux as described in [docs/TERMUX.md](docs/TERMUX.md)), phone tasks (accessibility),
+and Telegram ([docs/TELEGRAM.md](docs/TELEGRAM.md)).
 
 ## Build
 
@@ -72,6 +90,10 @@ How it fits together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Contributing
 WeiAssist has no servers. Your messages and attachments, the output of commands it runs, and, for phone
 tasks, the relevant screen contents go to the AI provider you chose, and nowhere else. Password fields are
 never sent. Your sign-ins are stored only on your phone. See [SECURITY.md](SECURITY.md).
+
+If you connect a Telegram bot, what you send it and the assistant's answers (with any files and screenshots)
+also pass through Telegram's servers: bot chats are not end-to-end encrypted. The bot's token is stored
+encrypted on the phone.
 
 ## License
 

@@ -2,7 +2,7 @@
 
 Status of WeiAssist (小维助手). Updated as work lands. For the long-term plan see [ROADMAP.md](ROADMAP.md).
 
-_Last updated: 2026-11-03_
+_Last updated: 2026-11-04_
 
 **Where things stand:** multiple concurrent sessions with saved history; a built-in shell backend (no
 computer, Shizuku or root needed after one pairing); a virtual display per phone session; live previews;
@@ -12,6 +12,8 @@ session's display (trusted displays on Android 13+); Pi 1.5.0 with GPT-6.1 Terra
 Chat and phone sessions can now run Linux commands in Termux with a `bash` tool (branch `feat/termux-bash`).
 Since 2026-11-03 (branch `feat/more-providers`): 11 of Pi's providers plus the user's own OpenAI-compatible
 servers, and messages can carry images, PDFs and text files.
+Since 2026-11-04 (branch `feat/telegram`): the user can talk to the assistant from Telegram, with files both ways
+and risky taps approved from the chat; tried with a real bot on the realme.
 
 ## Done
 
@@ -308,6 +310,30 @@ Open points from this work:
 - [ ] **Closing apps on switch:** apps are closed when the task ends, not when `open_app` switches to another app
   mid-task (a multi-app task may go back).
 
+### Telegram (2026-11-03 – 2026-11-04, branch `feat/telegram`)
+- **`:channels` module:** a `Channel` interface and `TelegramBot` (Bot API, long polling: outgoing HTTPS only).
+  `Gateway` (`:agent`): pairing with a one-time code (deep link), one session per private chat (`channel =
+  "telegram"`), commands `/new` `/stop` `/status` `/screen`, answers streamed by editing messages
+  (`TelegramHtml`: Markdown → Telegram HTML, split under 4096), steps in one status message. Settings card;
+  the service stays in the foreground while the bot is on. Token encrypted (`SecureStore`), never logged.
+- **Access levels:** only talk (Pi configured with `bash: false`), + Termux (default), + phone apps.
+- **Confirmations from the chat:** ✅/❌ inline buttons raced with the phone's card (`Confirmations.first`); Stop
+  withdraws both; payments (`Confirmations.isPayment`) only on the phone; 15 minutes unanswered = no.
+- **Files:** photos and documents in (albums as one message; also into Termux `inbox/`); `send_file` out
+  (pi-host `channel-tools.ts`); `/screen`. Termux ↔ app through `LoopbackTransfer` (one-shot HTTP endpoint on
+  127.0.0.1 with a random secret; the token never reaches Termux); Stop cancels a transfer under way.
+- **Verified on the realme with a real bot:** connected and paired; chat in English and Chinese; a BTC chart made in
+  Termux and sent to the chat (`btc_7_days.png`, 108 kB). Not yet tried from the chat: a phone task with ✅/❌,
+  photos and files sent to the bot, `/screen`.
+- **Fixed on the way:** the pairing code sent again (typed after the link) became the first task; "Connecting…"
+  until the first 50 s long poll returned, and a network error on the first request stopped the bot for good;
+  `tg_help` lost its line breaks (real newlines in a string resource collapse); the transfer listened on `::1`
+  (Android's `getLoopbackAddress()`) while Termux's curl called `127.0.0.1`; an interrupted session's row grew
+  tall (its label squeezed Continue into a one-letter column).
+- **Tests:** JVM 13 in `:channels` (Bot API client with a fake API), plus `TelegramHtml`, `ChatCommands`,
+  `Confirmations`, `LoopbackTransfer` (real sockets) in `:agent`; pi-host +3 (no bash, channel prompt and
+  `send_file`). Now JVM 108, pi-host 42.
+
 ## Next: real-world scenarios on the device
 
 Passed on the Xiaomi: Douban, Bilibili, Xiaohongshu, and shopping on Taobao, JD and Pinduoduo (also in parallel
@@ -357,7 +383,12 @@ Tested 2026-11-03 with `--ez mainOnly true` (YouTube: found the channel's subscr
 - [x] **More providers** (2026-11-03): see *Providers* above. Later: OAuth for OpenRouter, Copilot and others,
   each tried in the WebView; thinking levels for custom models (relays may reject the reasoning fields).
 - [ ] **Attachments, later:** HyperOS's file picker hides text files, so they can't be picked there; images are
-  kept in the Pi transcript (large conversations); other binary files can't reach Termux (its home is private).
+  kept in the Pi transcript (large conversations); other binary files picked in the app don't reach Termux yet
+  (files from Telegram do, through `LoopbackTransfer`: the same could serve the app's own attachments).
+- [ ] **Telegram, option "always reachable"** (designed, not scheduled; see ROADMAP 2b): start after reboot and app
+  update, sticky service while listening, tell the chat about an interrupted task, a background-health card, an
+  overnight measurement. Today the bot is silent after a reboot or update until the app is opened.
+- [ ] **Telegram, later:** voice messages, group chats, a second channel (Feishu/DingTalk or Discord).
 - [ ] **Readable provider errors:** 403/429 bodies (e.g. "Go subscription required", free-usage limits) are shown raw.
 - [ ] **Release workflow:** signed builds on tags. Not yet on GitHub: the user still has to pick the org and repo name.
 - [ ] **Instrumented tests** for PhoneActions on an emulator.
@@ -370,6 +401,10 @@ Tested 2026-11-03 with `--ez mainOnly true` (YouTube: found the channel's subscr
   `--ez mainOnly true|false` to run phone sessions on the phone's own screen (until the process restarts).
 - Debug: `--ez crashPi true` crashes Pi's renderer; `--ez killProcess true` ends the process (session recovery).
 - Never `am force-stop` the app on realme: that disables its accessibility service.
+- Installing a new build restarts the process: a task running then (also one started from Telegram) becomes
+  *Interrupted*. Check for running sessions before installing.
+- On the realme, Termux is a debuggable build: `adb shell run-as com.termux …` runs commands as Termux (e.g. its
+  `curl` in `files/usr/bin`), useful to test the Termux ↔ app path.
 - UI dumps of our own Compose screen can be stale; use screenshots to locate buttons.
 - Mock provider: `node tools/mock-openai.mjs` with `adb reverse tcp:8787 tcp:8787`, then the dev switch in the app
   (or `--ez mock true`). Scripts for devices: `settings`, `douban`, `browse_settings`, `browse_gmail`, `supervise`,
