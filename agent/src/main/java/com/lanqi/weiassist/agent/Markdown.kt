@@ -10,8 +10,11 @@ object Markdown {
     sealed interface Block
     data class Heading(val level: Int, val text: List<Span>) : Block
     data class Paragraph(val text: List<Span>) : Block
-    /** [marker] is "•" or the item's number ("1."); [depth] counts indentation levels. */
-    data class Item(val marker: String, val depth: Int, val text: List<Span>)
+    /**
+     * [marker] is "•" or the item's number ("1."); [depth] counts indentation levels. [code]: fenced blocks indented
+     * under the item (a command for that step), shown below its text.
+     */
+    data class Item(val marker: String, val depth: Int, val text: List<Span>, val code: List<Code> = emptyList())
     data class ListBlock(val items: List<Item>) : Block
     data class Code(val text: String) : Block
     data class Quote(val blocks: List<Block>) : Block
@@ -94,7 +97,21 @@ object Markdown {
                         val l = lines[i]
                         val b = bullet.find(l); val n = numbered.find(l)
                         val m = b ?: n
-                        if (m != null && !rule.matches(l)) {
+                        if (l.startsWith(" ") && items.isNotEmpty() && fence.containsMatchIn(l.trimStart())) {
+                            // A code block inside the item: its lines lose the fence's indentation.
+                            val indent = l.length - l.trimStart().length
+                            val mark = fence.find(l.trimStart())!!.groupValues[1]
+                            val code = mutableListOf<String>()
+                            i++
+                            while (i < lines.size && !lines[i].trimStart().startsWith(mark)) {
+                                val c = lines[i++]
+                                val lead = c.length - c.trimStart().length
+                                code += c.substring(minOf(lead, indent))
+                            }
+                            i++ // the closing fence (or past the end while streaming)
+                            val last = items.removeAt(items.lastIndex)
+                            items += last.copy(code = last.code + Code(code.joinToString("\n")))
+                        } else if (m != null && !rule.matches(l)) {
                             val depth = m.groupValues[1].replace("\t", "    ").length / 2
                             items += Item(if (b != null) "•" else "${n!!.groupValues[2]}.", depth, inline(m.groupValues[3]))
                             i++
@@ -149,8 +166,11 @@ object Markdown {
             // Escapes: \* \_ \` \| …
             if (c == '\\' && i + 1 < s.length && s[i + 1] in "\\`*_{}[]()#+-.!|~>") { plain.append(s[i + 1]); i += 2; continue }
             if (c == '`') {
-                val end = s.indexOf('`', i + 1)
-                if (end > i + 1) { emit(); out += style.copy(text = s.substring(i + 1, end), code = true); i = end + 1; continue }
+                val code = codeSpan(s, i)
+                if (code != null) { emit(); out += style.copy(text = code.first, code = true); i = code.second; continue }
+                // An unclosed run stays text, all of it (not one backtick at a time, which could pair with a later one).
+                var n = i; while (n < s.length && s[n] == '`') n++
+                plain.append(s, i, n); i = n; continue
             }
             if (s.startsWith("**", i) || s.startsWith("__", i)) {
                 val mark = s.substring(i, i + 2)
@@ -185,6 +205,33 @@ object Markdown {
         emit()
     }
 
+    /** Shell names models put after an opening ``` that is written inline (```sh mkdir …```): not part of the command. */
+    private val shellTag = Regex("^(?:sh|bash|shell|zsh|console|terminal)\\s+")
+
+    /**
+     * Code opened by the run of backticks at [start]: it ends at the next run of the same length (so `` a`b `` and
+     * ```…``` work). Returns the code and where the text after it starts, or null if it is not closed.
+     * As in CommonMark, one space just inside each end is dropped; a fence-style ``` written inline loses its shell tag.
+     */
+    private fun codeSpan(s: String, start: Int): Pair<String, Int>? {
+        var n = start; while (n < s.length && s[n] == '`') n++
+        val len = n - start
+        var k = n
+        while (k < s.length) {
+            val open = s.indexOf('`', k).takeIf { it >= 0 } ?: return null
+            var e = open; while (e < s.length && s[e] == '`') e++
+            if (e - open == len) {
+                var code = s.substring(n, open)
+                if (code.isBlank()) return null
+                if (code.length >= 2 && code.startsWith(' ') && code.endsWith(' ')) code = code.substring(1, code.length - 1)
+                if (len >= 3) code = code.trim().replace(shellTag, "")
+                return code to e
+            }
+            k = e
+        }
+        return null
+    }
+
     /** Neighbouring spans with the same style become one. */
     private fun merge(spans: List<Span>): List<Span> {
         val out = mutableListOf<Span>()
@@ -204,7 +251,7 @@ object Markdown {
     private fun plainBlock(b: Block): String = when (b) {
         is Heading -> spans(b.text)
         is Paragraph -> spans(b.text)
-        is ListBlock -> b.items.joinToString("\n") { "${it.marker} ${spans(it.text)}" }
+        is ListBlock -> b.items.joinToString("\n") { item -> (listOf("${item.marker} ${spans(item.text)}") + item.code.map { it.text }).joinToString("\n") }
         is Code -> b.text
         is Quote -> b.blocks.joinToString("\n") { plainBlock(it) }
         is Table -> (listOf(b.header) + b.rows).joinToString("\n") { r -> r.joinToString(" · ") { spans(it) } }

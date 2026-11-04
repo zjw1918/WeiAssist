@@ -442,8 +442,7 @@ private fun TurnFooter(turn: ChatBlock.Turn, run: RunStats?, now: Long, onStats:
     if (!copyable && run == null) return
     Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         if (copyable) {
-            val copied = stringResource(R.string.copied)
-            IconButton(onClick = { copy(ctx, text); Toast.makeText(ctx, copied, Toast.LENGTH_SHORT).show() }, modifier = Modifier.size(32.dp)) {
+            IconButton(onClick = { copyText(ctx, text) }, modifier = Modifier.size(32.dp)) {
                 AppIcon(R.drawable.ic_copy, stringResource(R.string.copy), Modifier.size(16.dp), tint = c.onSurfaceVariant)
             }
         }
@@ -464,8 +463,10 @@ private fun TurnFooter(turn: ChatBlock.Turn, run: RunStats?, now: Long, onStats:
     }
 }
 
-private fun copy(ctx: Context, text: String) {
-    (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("answer", text))
+/** Put [text] on the clipboard and say so. */
+fun copyText(ctx: Context, text: String) {
+    (ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("text", text))
+    Toast.makeText(ctx, ctx.getString(R.string.copied), Toast.LENGTH_SHORT).show()
 }
 
 // ---- sheets ------------------------------------------------------------------------------------------
