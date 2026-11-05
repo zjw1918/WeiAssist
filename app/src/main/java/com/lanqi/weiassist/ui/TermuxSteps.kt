@@ -32,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -44,6 +45,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.lanqi.weiassist.R
 import com.lanqi.weiassist.agent.Termux
+import kotlinx.coroutines.launch
 
 /** A setup step's state, as its icon shows it. */
 enum class StepState { Pending, Running, Done, Failed }
@@ -81,8 +83,9 @@ fun rememberTermuxView(termux: Termux): TermuxView {
  * on its way. [onPermission] re-reads the state after the permission dialog; [onRecheck] asks Termux again.
  */
 @Composable
-fun TermuxSteps(local: TermuxLocal, problem: String?, asking: Boolean, onPermission: () -> Unit, onRecheck: () -> Unit) {
+fun TermuxSteps(termux: Termux, local: TermuxLocal, problem: String?, asking: Boolean, onPermission: () -> Unit, onRecheck: () -> Unit) {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     fun open(intent: Intent) = runCatching { ctx.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
     // Once denied, Android may not ask again: then the button opens this app's permission settings.
     var denied by remember { mutableStateOf(false) }
@@ -99,7 +102,16 @@ fun TermuxSteps(local: TermuxLocal, problem: String?, asking: Boolean, onPermiss
                 else -> null
             },
         ) {
-            if (!local.runnable) FilledTonalButton(onClick = { open(Intent(Intent.ACTION_VIEW, Uri.parse(TERMUX_DOWNLOAD))) }) { Text(stringResource(R.string.termux_download)) }
+            if (!local.runnable) {
+                FilledTonalButton(onClick = { open(Intent(Intent.ACTION_VIEW, Uri.parse(TERMUX_DOWNLOAD))) }) { Text(stringResource(R.string.termux_download)) }
+                // GitHub is slow or blocked in some places (mainland China): F-Droid's build from a mirror there.
+                var resolving by remember { mutableStateOf(false) }
+                TextButton(enabled = !resolving, onClick = {
+                    resolving = true
+                    scope.launch { open(Intent(Intent.ACTION_VIEW, Uri.parse(termux.mirrorApkUrl()))); resolving = false }
+                }) { Text(stringResource(R.string.termux_download_mirror)) }
+                Text(stringResource(R.string.termux_download_mirror_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
         }
         GroupDivider()
         Step(stringResource(R.string.termux_step_permission), if (local.permitted) StepState.Done else StepState.Pending) {

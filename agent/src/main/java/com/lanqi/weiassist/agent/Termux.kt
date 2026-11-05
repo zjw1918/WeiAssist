@@ -329,6 +329,19 @@ class Termux(context: Context) {
         }
     }
 
+    /**
+     * Where to download Termux when GitHub is slow or blocked (mainland China): F-Droid's build on the Tsinghua mirror of
+     * F-Droid, at the version F-Droid suggests (its stable one). If f-droid.org doesn't answer either, a known version.
+     */
+    suspend fun mirrorApkUrl(): String = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val code = runCatching {
+            val c = java.net.URL(FDROID_API).openConnection() as java.net.HttpURLConnection
+            c.connectTimeout = 6_000; c.readTimeout = 6_000
+            try { org.json.JSONObject(c.inputStream.bufferedReader().readText()).getInt("suggestedVersionCode") } finally { c.disconnect() }
+        }.getOrNull() ?: FALLBACK_VERSION_CODE
+        "$FDROID_MIRROR/com.termux_$code.apk"
+    }
+
     /** Why bash can't run now (for the model and Settings), or null when it can. */
     fun setupProblem(): String? = when {
         !installed() -> "Termux is not installed, so bash is not available. Tell the user: install Termux (from F-Droid or GitHub), then\n$SETUP"
@@ -387,6 +400,10 @@ class Termux(context: Context) {
         private const val HOME = "/data/data/com.termux/files/home"
         internal const val RESULT_OK = -1 // Activity.RESULT_OK: Termux's "no error"
         private const val INSTALL_SEC = 30 * 60L
+        private const val FDROID_API = "https://f-droid.org/api/v1/packages/com.termux"
+        private const val FDROID_MIRROR = "https://mirrors.tuna.tsinghua.edu.cn/fdroid/repo"
+        /** Termux 0.118.3, F-Droid's stable build in November 2026: used only when f-droid.org can't be reached. */
+        private const val FALLBACK_VERSION_CODE = 1002
         const val NO_ANSWER = "No answer from Termux. Open Termux once, and allow it to run in the background."
 
         /** [inspect]'s output (key=value lines). Pure, for tests. */

@@ -69,7 +69,7 @@ fun TermuxSetupScreen(termux: Termux, onClose: () -> Unit) {
             )
 
             TermuxSteps(
-                local, problem = i?.problem, asking = local.sendable && i == null && !installing,
+                termux, local, problem = i?.problem, asking = local.sendable && i == null && !installing,
                 onPermission = view.refresh, onRecheck = { asks++ },
             )
 
