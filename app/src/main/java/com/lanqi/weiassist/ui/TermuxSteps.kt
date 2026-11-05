@@ -13,6 +13,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -153,7 +154,7 @@ fun TermuxSteps(termux: Termux, local: TermuxLocal, problem: String?, asking: Bo
                 var copied by remember { mutableStateOf(false) }
                 SelectionContainer { Text(ALLOW_COMMAND, fontFamily = FontFamily.Monospace, fontSize = 12.sp) }
                 Text(problem!!, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     FilledTonalButton(onClick = {
                         ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Termux", ALLOW_COMMAND))
                         copied = true
@@ -226,7 +227,7 @@ fun StorageStep(local: TermuxLocal) {
         if (local.installed && !local.storage) {
             var copied by remember { mutableStateOf(false) }
             SelectionContainer { Text(STORAGE_COMMAND, fontFamily = FontFamily.Monospace, fontSize = 12.sp) }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 FilledTonalButton(onClick = {
                     open(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", Termux.PACKAGE, null)))
                 }) { Text(stringResource(R.string.termux_app_info)) }
