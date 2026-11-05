@@ -331,6 +331,9 @@
     <string name="trigger_team">团队消息</string>
     <string name="trigger_job">后台任务状态更新</string>
     <string name="trigger_other">收到状态更新</string>
+    <plurals name="run_subagents">
+        <item quantity="other">%d 个子智能体</item>
+    </plurals>
     <string name="dsh_setup_title">设置 DeepSeek Harness</string>
     <string name="dsh_setup_row_hint">在 Termux 中安装、更新或检查</string>
     <string name="dsh_setup_intro">DeepSeek Harness 运行在 Termux 里的一个小型 Ubuntu 系统中。此设置会在那里安装 Ubuntu、Node.js 和 DeepSeek Harness，需要约 1.5 GB 可用空间，下载几百 MB，耗时 10–30 分钟，请连接 Wi-Fi 并保持充电。可以离开此页面，设置会在 Termux 中继续进行。</string>
