@@ -215,6 +215,17 @@ class SessionManager(
     /** An interrupted session (the app's process ended mid-task) picks up where it was. */
     suspend fun continueTask(id: String) = send(id, strings.continueTask())
 
+    /** Where session [id] keeps its files (attachments, and files the agent gave the user); deleted with it. */
+    fun filesDir(id: String): java.io.File = store.attachmentsDir(id)
+
+    /** Show a file the agent gave the user (send_file, already in [filesDir]) in session [id]'s chat. False: it is gone. */
+    suspend fun addFile(id: String, file: Attachment, caption: String): Boolean {
+        loadLive(id) ?: return false
+        val now = System.currentTimeMillis()
+        update(id) { it.copy(items = it.items + ChatItem.File(file, caption), summary = it.summary.copy(updatedAt = now)) }
+        return true
+    }
+
     private fun start(id: String) {
         val s = live[id]?.value ?: return
         if (s.pendingTask == null && s.pendingAttachments.isEmpty()) return

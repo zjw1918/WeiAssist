@@ -324,4 +324,12 @@
     <string name="engine_pi_info">Built in (Pi %1$s)</string>
     <string name="engine_ready">Set up in Termux</string>
     <string name="engine_checking">Checking…</string>
+    <string name="file_open">Open</string>
+    <string name="file_save">Save…</string>
+    <string name="file_saved">Saved</string>
+    <string name="file_save_failed">Couldn\'t save the file: %1$s</string>
+    <string name="file_no_app">No app on this phone opens %1$s files.</string>
+    <string name="file_missing">This file is no longer on the phone.</string>
+    <string name="file_fetching">Getting %1$s…</string>
+    <string name="file_fetch_failed">Couldn\'t get the file: %1$s</string>
 </resources>

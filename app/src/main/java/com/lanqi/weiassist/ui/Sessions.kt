@@ -55,6 +55,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -499,6 +500,8 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
     var rename by rememberSaveable { mutableStateOf(false) }
     var delete by rememberSaveable { mutableStateOf(false) }
     val s = session?.summary
+    val sessionId = s?.id
+    val fileLinks: ((String) -> Unit)? = remember(sessionId) { sessionId?.let { id -> { link: String -> vm.openFileLink(id, link) } } }
     Scaffold(
         contentWindowInsets = WindowInsets(0),
         topBar = {
@@ -573,11 +576,17 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
                 }
                 val onProcess = { key: String -> processOf = key }
                 val onStats = { key: String -> statsOf = key }
+                // Links in answers to files in the session's Termux folder: tap to get the file and open it.
+                val onFileLink = fileLinks
                 // Keyed by session too: state kept per row stays with its session.
-                items(body, key = { "${session.id}:${it.key}" }, contentType = { it.contentType }) { e -> ChatEntryView(e, session, onProcess, onStats) }
+                items(body, key = { "${session.id}:${it.key}" }, contentType = { it.contentType }) { e ->
+                    CompositionLocalProvider(LocalFileLinks provides onFileLink) { ChatEntryView(e, session, onProcess, onStats) }
+                }
                 if (liveFooter != null) {
                     items(streamBlocks.size, key = { "${session.id}:${liveFooter.key}:s$it" }, contentType = { streamBlocks[it].javaClass }) { i ->
-                        MarkdownBlock(streamBlocks[i], Modifier.padding(top = LINE_GAP).fillMaxWidth().padding(horizontal = 2.dp))
+                        CompositionLocalProvider(LocalFileLinks provides onFileLink) {
+                            MarkdownBlock(streamBlocks[i], Modifier.padding(top = LINE_GAP).fillMaxWidth().padding(horizontal = 2.dp))
+                        }
                     }
                     item(key = "${session.id}:${liveFooter.key}", contentType = liveFooter.contentType) { ChatEntryView(liveFooter, session, onProcess, onStats) }
                 }

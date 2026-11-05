@@ -41,4 +41,10 @@ class AttachmentsReducerTest {
         val item = ChatItem.User("hi", attachments = listOf(pic, doc))
         assertEquals(item, SessionStore.itemFrom(SessionStore.itemJson(item)))
     }
+
+    @Test fun `a file given to the user is saved and read back, with and without a caption`() {
+        val xlsx = Attachment("report.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "/data/x/report.xlsx", 4096)
+        listOf(ChatItem.File(xlsx, "This week's numbers"), ChatItem.File(xlsx))
+            .forEach { assertEquals(it, SessionStore.itemFrom(SessionStore.itemJson(it))) }
+    }
 }

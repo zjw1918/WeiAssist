@@ -83,6 +83,7 @@ class SessionStore(root: File) {
                 .also { if (i.attachments.isNotEmpty()) it.put("attachments", JSONArray(i.attachments.map(Attachment::toJson))) }
             is ChatItem.Assistant -> JSONObject().put("k", "assistant").put("text", i.text)
             is ChatItem.Error -> JSONObject().put("k", "error").put("text", i.text)
+            is ChatItem.File -> JSONObject().put("k", "file").put("file", i.file.toJson()).also { if (i.caption.isNotEmpty()) it.put("caption", i.caption) }
             is ChatItem.Step -> JSONObject().put("k", "step").put("tool", i.tool).put("detail", i.detail)
                 .put("ok", i.ok ?: JSONObject.NULL).put("result", i.result).also { if (i.screen > 0) it.put("screen", i.screen) }
             is ChatItem.Thinking -> JSONObject().put("k", "thinking").put("text", i.text).put("ms", i.ms)
@@ -102,6 +103,7 @@ class SessionStore(root: File) {
             }, Attachment.listFrom(o.optJSONArray("attachments")))
             "assistant" -> ChatItem.Assistant(o.getString("text"))
             "error" -> ChatItem.Error(o.getString("text"))
+            "file" -> ChatItem.File(Attachment.fromJson(o.getJSONObject("file")), o.optString("caption"))
             "step" -> ChatItem.Step(o.getString("tool"), o.optString("detail"), if (o.isNull("ok")) null else o.getBoolean("ok"),
                 // Only the first line is shown (a few builds kept whole screens here).
                 o.optString("result").lineSequence().first().take(80), o.optInt("screen"))
