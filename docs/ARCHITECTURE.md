@@ -4,6 +4,7 @@ WeiAssist is an Android app that lets an LLM agent operate the phone.
 The agent harness is **[Pi](https://github.com/earendil-works/pi)**: its LLM layer (`pi-ai`) and agent loop (`pi-agent-core`).
 We embed Pi **as published**: public package exports only, no patches, and upgrades with `npm run upgrade-pi`.
 Everything else adapts Android to what Pi expects.
+Pi is the first of possibly several **AI cores**: the app talks to it only through the core contract in `:core` (see [AI cores](#ai-cores)).
 
 ```
 ┌────────────────────────── :app (Compose UI) ───────────────────────────┐
@@ -13,17 +14,18 @@ Everything else adapts Android to what Pi expects.
 ┌────────────────────────── :agent ─┴─────────────────────────────────────┐
 │ AgentService   foreground while any session works · Stop all · results   │
 │                autoStart() of the shell backend                          │
-│ AgentController  owns PiEngine · account and model (AgentReducer)        │
+│ AgentController  owns the cores and ToolHost · account and model (AgentReducer) │
 │ SessionManager   every conversation: run · queue · pause · stop · delete │
-│ SessionReducer   pure (session, Pi message) → session      ← unit tests │
+│ SessionReducer   pure (session, core event) → session      ← unit tests │
 │ SessionStore     one meta / chat / transcript file per session           │
 └──────────────┬───────────────────────────────────────┬──────────────────┘
-               │ registerHostCall("phone" / "confirm") │
-┌───────── :pi-runtime ──────────────┐   ┌──────────── :phone ────────────┐
+               │ :core  AgentCore · CoreAccounts ·     │
+               │        ToolHost ("phone" / "confirm") │
+┌───────── :core-pi ─────────────────┐   ┌──────────── :phone ────────────┐
 │ PiEngine     hidden WebView = JS   │   │ AgentAccessibilityService       │
 │ NativeHttp   fetch() for Pi         │   │   read screen · tap · type ·    │
 │ LoopbackServer  node:http for OAuth │   │   scroll · keys · confirm card  │
-│ SecureStore  Keystore AES-GCM       │   │ PhoneActions (timeouts, pause)  │
+│ (SecureStore, in :core: Keystore)   │   │ PhoneActions (timeouts, pause)  │
 │ assets/pi/host.js ← built by Gradle │   └─────────────────────────────────┘
 └──────────────┬──────────────────────┘
                │ PiBridge.postMessage ⇄ PiHost.*(json)
@@ -62,6 +64,27 @@ All messages are JSON.
 | K→JS | `configure` (optionally with saved `messages`), `prompt` and `steer` (optionally with attachment `content` blocks), `abort`, `dispose`, all with `session` | Session commands |
 
 Tests: [pi-host/test](../pi-host/test) runs the shipped bundle against a fake Kotlin side that speaks this exact protocol.
+
+## AI cores
+
+An AI core is an agent harness that runs conversations. The app owns sessions, the UI, model settings and tools;
+a core owns its agent loop, context handling and transcript format. The contract is in `:core`:
+
+- **`AgentCore`:** one agent per session id: `configure` (model, tool set, bash, channel, saved transcript),
+  `prompt`, `steer`, `abort`, `dispose`, and `events`. Events use one vocabulary shared by all cores (`text_delta`,
+  `tool_start`, `assistant_end`, `idle`, `transcript`, …, listed in `AgentCore.kt`), so `SessionReducer` and the UI
+  don't know which core is talking. `CoreCapabilities` says what a core can't do (e.g. no streaming).
+- **`ToolHost`:** the app's handlers for tool calls (`gate`, `phone`, `bash`, `confirm`, `send_file`, `supervisor`),
+  registered once by `AgentController` and shared by every core.
+- **`CoreAccounts`:** sign-in, providers and the model catalog, for a core that keeps them (Pi). There is one
+  accounts core; other cores use the model chosen there.
+- **`CoreRegistry`:** the installed cores, and the default for new sessions. Each session records its core
+  (`core` in its meta file; sessions saved before this field ran on Pi), and keeps it for life: its transcript
+  (`<id>.<core>.json`) is in that core's format. A session whose core isn't installed shows an error instead of running.
+  A core's `runtime_restarted` ends only its own sessions' runs.
+
+`:core-pi` (`PiEngine`) is today's only core. Adding one is a module that implements `AgentCore` plus one
+entry in the registry; the [roadmap](ROADMAP.md#2-agent-capability) has the next steps and DeepSeek Harness as a candidate second core.
 
 ## The shell backend (`:shell`)
 
@@ -247,6 +270,6 @@ The threat model (prompt injection from screen content, sensitive apps) is track
 
 ## Building
 
-- **App:** `./gradlew assembleDebug`. `:pi-runtime` runs `buildPiHost<Variant>` (npm ci, tsc, esbuild) into generated assets, so you need Node from `.nvmrc`.
+- **App:** `./gradlew assembleDebug`. `:core-pi` runs `buildPiHost<Variant>` (npm ci, tsc, esbuild) into generated assets, so you need Node from `.nvmrc`.
 - **Tests:** `cd pi-host && npm test` for the bundle end to end; `./gradlew testDebugUnitTest` for the JVM tests.
 - **Mock provider:** `node tools/mock-openai.mjs` with `adb reverse tcp:8787 tcp:8787`, then the dev switch in the app.

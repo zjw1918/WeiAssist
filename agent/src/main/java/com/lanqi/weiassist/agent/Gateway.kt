@@ -11,7 +11,7 @@ import com.lanqi.weiassist.channels.Press
 import com.lanqi.weiassist.channels.Rich
 import com.lanqi.weiassist.channels.TelegramBot
 import com.lanqi.weiassist.phone.AgentAccessibilityService
-import com.lanqi.weiassist.pi.SecureStore
+import com.lanqi.weiassist.core.SecureStore
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope

@@ -17,7 +17,8 @@ android {
 }
 
 dependencies {
-    api(project(":pi-runtime"))
+    api(project(":core"))
+    implementation(project(":core-pi"))
     api(project(":phone"))
     api(project(":shell"))
     api(project(":channels"))

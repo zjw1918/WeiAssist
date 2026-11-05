@@ -117,6 +117,29 @@ class SessionReducerTest {
             .forEach { assertEquals(it, SessionStore.itemFrom(SessionStore.itemJson(it))) }
     }
 
+    @Test fun `a session keeps its core, and one saved before cores existed runs on Pi`() {
+        val s = SessionSummary("a1", "t", phone = false, status = SessionStatus.Idle, createdAt = 1, updatedAt = 2, core = "dsh")
+        assertEquals("dsh", SessionStore.summaryFrom(SessionStore.summaryJson(s)).core)
+        val old = SessionStore.summaryJson(s).apply { remove("core") }
+        assertEquals("pi", SessionStore.summaryFrom(old).core)
+    }
+
+    @Test fun `a session's files go, whichever core wrote its transcript`() {
+        val root = java.nio.file.Files.createTempDirectory("store").toFile()
+        try {
+            val store = SessionStore(root)
+            // Plain files: AtomicFile (the store's writer) is a stub in JVM tests. Its backup file counts too.
+            val dir = java.io.File(root, "sessions")
+            val mine = listOf("a1.meta.json", "a1.chat.json", "a1.pi.json", "a1.dsh.json", "a1.pi.json.bak").map { java.io.File(dir, it) }
+            val other = java.io.File(dir, "a10.pi.json")
+            (mine + other).forEach { it.writeText("[]") }
+            store.delete("a1")
+            mine.forEach { assertFalse(it.name, it.exists()) }
+            // A session whose id starts with the deleted one's is untouched.
+            assertTrue(other.exists())
+        } finally { root.deleteRecursively() }
+    }
+
     @Test fun `a message while working is queued, then delivered when Pi takes it`() {
         var s = SessionReducer.steered(running, "also the inbox", now = 2)
         assertEquals(ChatItem.User("also the inbox", Delivery.Queued), s.items.last())

@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSy
 
 // `node build.mjs --out <dir>` (Gradle passes its generated-assets dir); default for manual runs.
 const outArg = process.argv.indexOf("--out");
-const out = outArg > 0 ? `${process.argv[outArg + 1]}/pi` : "../pi-runtime/build/generated/pi-assets/manual/pi";
+const out = outArg > 0 ? `${process.argv[outArg + 1]}/pi` : "../core-pi/build/generated/pi-assets/manual/pi";
 const pi = JSON.parse(readFileSync("node_modules/@earendil-works/pi-agent-core/package.json", "utf8")).version;
 mkdirSync(out, { recursive: true });
 const result = await build({

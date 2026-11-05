@@ -3,6 +3,10 @@ package com.lanqi.weiassist.agent
 import android.content.Context
 import com.lanqi.weiassist.phone.AgentAccessibilityService
 import com.lanqi.weiassist.phone.PhoneActions
+import com.lanqi.weiassist.core.CoreAccounts
+import com.lanqi.weiassist.core.CoreEvent
+import com.lanqi.weiassist.core.CoreRegistry
+import com.lanqi.weiassist.core.ToolHost
 import com.lanqi.weiassist.pi.PiEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -19,14 +23,20 @@ import kotlinx.coroutines.launch
 import org.json.JSONObject
 
 /**
- * The agent, independent of any screen: owns the Pi runtime (PiEngine), the account and model choice
- * ([state]), and all conversations ([sessions]). Owned by [AgentService], so tasks keep running when
- * the user leaves the app.
+ * The agent, independent of any screen: owns the AI cores ([cores]: Pi for now), the tools they call
+ * ([tools]), the account and model choice ([state]), and all conversations ([sessions]). Owned by
+ * [AgentService], so tasks keep running when the user leaves the app.
  */
 class AgentController(context: Context) {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val pi = PiEngine(appContext, agentName = appContext.getString(R.string.agent_name))
+    /** The installed AI cores; a session runs on the one it was made with. */
+    private val cores = CoreRegistry(listOf(pi), defaultId = PiEngine.ID)
+    /** Sign-in, providers and the model catalog: Pi keeps them, and every core uses the model chosen there. */
+    private val accounts: CoreAccounts = pi
+    /** The app's side of every core's tool calls (registered below). */
+    private val tools = ToolHost()
     private val phone = PhoneActions(appContext)
     val termux = Termux(appContext)
     private val prefs = appContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
@@ -46,7 +56,7 @@ class AgentController(context: Context) {
 
     init {
         // Sent with Pi's init, so a custom provider in use is there before the first status.
-        pi.customProviders = { CustomProvider.listToJson(_customProviders.value) }
+        accounts.customProviders = { CustomProvider.listToJson(_customProviders.value) }
     }
 
     /** Dev builds: send model calls to the local mock server (tools/mock-openai.mjs). */
@@ -57,11 +67,12 @@ class AgentController(context: Context) {
     private val screens = DisplayScreenPool(shell)
 
     val sessions = SessionManager(
-        pi, SessionStore(appContext.filesDir), scope,
+        cores, SessionStore(appContext.filesDir), scope,
         object : SessionManager.Strings {
             override fun friendly(msg: String) = this@AgentController.friendly(msg)
             override fun runtimeRestarted() = appContext.getString(R.string.err_runtime_restarted)
             override fun continueTask() = appContext.getString(R.string.continue_task)
+            override fun missingCore(core: String) = appContext.getString(R.string.err_missing_core, core)
         },
         settings = { with(_state.value) { SessionManager.RunSettings(providerId, modelId, thinkingLevel, mockBaseUrl) } },
         screens = screens,
@@ -122,39 +133,39 @@ class AgentController(context: Context) {
     val loaded = kotlinx.coroutines.CompletableDeferred<Unit>()
 
     init {
-        // Pi's phone tools, its confirm hook and the pause gate (pi-host) are answered per session.
-        pi.registerHostCall("gate") { m -> sessions.gate(m.getString("session")) }
-        pi.registerHostCall("phone") { m ->
+        // Every core's tools, confirm hook and pause gate are answered here, per session.
+        tools.register("gate") { m -> sessions.gate(m.getString("session")) }
+        tools.register("phone") { m ->
             val id = m.optString("session")
             // Only the session holding a screen may act on it (see ScreenPool).
             val target = sessions.screenOf(id)
             when {
                 target == null -> "This task has no screen any more (the shell helper stopped, or another task took it). Stop and tell the user."
-                // Paused (or stopped) since Pi's gate let this call through: hold it here too.
+                // Paused (or stopped) since the gate let this call through: hold it here too.
                 !sessions.gate(id) -> "stopped by the user"
                 else -> phone.run(m, target) { sessions.isPaused(id) }
             }
         }
         // The bash tool (pi-host bash-tool.ts): commands run in Termux, in the session's own folder.
-        pi.registerHostCall("bash") { m ->
+        tools.register("bash") { m ->
             val id = m.optString("session")
             if (!sessions.gate(id)) "stopped by the user"
             else termux.run(id, m.getString("call"), m.getString("command"), m.optInt("timeout", 120))
         }
-        pi.registerHostCall("bash_kill") { m -> termux.kill(m.optString("session"), m.getString("call")); null }
+        tools.register("bash_kill") { m -> termux.kill(m.optString("session"), m.getString("call")); null }
         // send_file (pi-host channel-tools.ts): a file from the session's Termux folder to its chat.
-        pi.registerHostCall("send_file") { m ->
+        tools.register("send_file") { m ->
             val id = m.optString("session")
             val (ok, text) = if (!sessions.gate(id)) false to "Stopped by the user." else gateway.sendFile(id, m.getString("path"), m.optString("caption"))
             JSONObject().put("ok", ok).put("text", text)
         }
-        pi.registerHostCall("supervisor") { m ->
+        tools.register("supervisor") { m ->
             val caller = m.optString("session")
             // Only a supervisor session may manage the others.
             if (sessions.summary(caller)?.supervisor != true) "Only the supervisor may manage sessions."
             else commands.handle(caller, m.getString("action"), m.optJSONObject("args") ?: JSONObject())
         }
-        pi.registerHostCall("confirm") { m ->
+        tools.register("confirm") { m ->
             val fields = m.optJSONArray("typed")
             val detail = if (fields == null || fields.length() == 0) appContext.getString(R.string.confirm_nothing_typed)
             else (0 until fields.length()).joinToString("\n") { fields.getString(it) }
@@ -176,7 +187,8 @@ class AgentController(context: Context) {
                 timeoutMs = if (asks.size > 1) REMOTE_CONFIRM_MS else null,
             )
         }
-        scope.launch { pi.messages.collect(::onPi) }
+        cores.bind(tools)
+        scope.launch { cores.events.collect(::onCore) }
         // The shell helper came: queued phone sessions get displays. It went: so did its displays.
         scope.launch {
             shell.state.collect { st ->
@@ -211,13 +223,19 @@ class AgentController(context: Context) {
         }
     }
 
-    // ---- Pi → state -------------------------------------------------------------------------------
-    private fun onPi(m: JSONObject) {
+    // ---- cores → state ----------------------------------------------------------------------------
+    private fun onCore(e: CoreEvent) {
+        val m = e.message
         val session = m.optString("session")
         if (session.isNotEmpty()) {
             // A new run: whether it has left 小维助手 yet starts over (see PhoneActions.runStarted).
             if (m.optString("type") == "agent_start") phone.runStarted(session)
-            sessions.onPi(session, m)
+            sessions.onCoreEvent(e.core, session, m)
+            return
+        }
+        // App-wide events: account ones only from the accounts core; any core may restart.
+        if (e.core != pi.info.id) {
+            if (m.optString("type") == "runtime_restarted") sessions.onRuntimeRestarted(e.core)
             return
         }
         val before = _state.value
@@ -230,7 +248,7 @@ class AgentController(context: Context) {
                 loaded.await()
                 sessions.send(sessions.create(phone = false), appContext.getString(R.string.first_hello))
             }
-            Effect.RuntimeRestarted -> sessions.onRuntimeRestarted()
+            Effect.RuntimeRestarted -> sessions.onRuntimeRestarted(e.core)
             null -> Unit
         }
     }
@@ -242,18 +260,18 @@ class AgentController(context: Context) {
             val back = if (it.screen == Screen.Connected) Screen.Connected else Screen.Welcome
             it.copy(screen = Screen.SigningIn(provider, method, back), signIn = SignInState())
         }
-        scope.launch { pi.login(provider, method.type) }
+        scope.launch { accounts.login(provider, method.type) }
     }
 
     fun submitPrompt(value: String) {
         val p = _state.value.signIn.prompt ?: return
         if (value.isBlank()) return
         _state.update { it.copy(signIn = it.signIn.copy(prompt = null)) }
-        scope.launch { pi.answer(p.id, value.trim()) }
+        scope.launch { accounts.answer(p.id, value.trim()) }
     }
 
     fun reopenBrowser() { _state.value.signIn.authUrl?.let { _openInBrowser.tryEmit(it) } }
-    fun cancelSignIn() { scope.launch { pi.cancelLogin() } }
+    fun cancelSignIn() { scope.launch { accounts.cancelLogin() } }
 
     /** Copy a picked file in, ready to attach to a message (see Attachments). */
     suspend fun attach(uri: android.net.Uri): Attachment = Attachments.import(appContext, uri)
@@ -275,7 +293,7 @@ class AgentController(context: Context) {
             _state.update { it.copy(providerId = p.id, modelId = prefs.getString("modelId.${p.id}", null) ?: "") }
             persistModel()
         }
-        scope.launch { pi.setCustomProviders(json, p.id, k) }
+        scope.launch { accounts.setCustomProviders(json, p.id, k) }
     }
 
     /** Remove a custom provider and its saved key; if it was in use, Pi's next status moves to another. */
@@ -284,7 +302,7 @@ class AgentController(context: Context) {
         _customProviders.value = list
         val json = CustomProvider.listToJson(list)
         prefs.edit().putString("customProviders", json.toString()).remove("modelId.$id").apply()
-        scope.launch { pi.setCustomProviders(json) }
+        scope.launch { accounts.setCustomProviders(json) }
     }
 
     /**
@@ -292,7 +310,7 @@ class AgentController(context: Context) {
      * the key saved for [savedFor], if any. Returns (base URL to use, models).
      */
     suspend fun fetchCustomModels(baseUrl: String, key: String?, savedFor: String?): Pair<String, List<CustomModel>> {
-        val (base, listed) = CustomProvider.fetchModels(baseUrl, key?.ifBlank { null } ?: savedFor?.let(pi::savedApiKey))
+        val (base, listed) = CustomProvider.fetchModels(baseUrl, key?.ifBlank { null } ?: savedFor?.let(accounts::savedApiKey))
         val catalog = lookupCatalog(listed.map { it.id })
         return base to listed.map { CustomProvider.merge(it, catalog[it.id]) }
     }
@@ -304,7 +322,7 @@ class AgentController(context: Context) {
     }
 
     private suspend fun lookupCatalog(ids: List<String>): Map<String, CatalogModel> {
-        val o = runCatching { pi.lookupModels(ids) }.getOrElse { JSONObject() }
+        val o = runCatching { accounts.lookupModels(ids) }.getOrElse { JSONObject() }
         return o.keys().asSequence().associateWith { id ->
             val m = o.getJSONObject(id)
             CatalogModel(m.optInt("contextWindow"), m.optBoolean("images", true), m.optString("match"))
@@ -315,7 +333,7 @@ class AgentController(context: Context) {
     fun signOut() {
         sessions.stopAll()
         val id = _state.value.providerId
-        scope.launch { pi.logout(id) }
+        scope.launch { accounts.logout(id) }
     }
 
     /** Use another signed-in provider for new messages, with the model last used with it. */
@@ -359,14 +377,14 @@ class AgentController(context: Context) {
         sessions.stopAll()
     }
 
-    /** Debug builds only: simulate Pi's WebView renderer dying, to test recovery on a device. */
-    fun debugCrashRuntime() = pi.debugCrashRenderer()
+    /** Debug builds only: simulate the cores' runtimes dying (Pi's WebView renderer), to test recovery on a device. */
+    fun debugCrashRuntime() = cores.all.forEach { it.debugCrash() }
 
     /** Debug builds only: new phone sessions use the phone's own screen, as without the shell helper. */
     fun debugMainOnly(on: Boolean) { screens.debugMainOnly = on }
 
     fun destroy() {
-        pi.destroy()
+        cores.destroy()
         scope.cancel()
     }
 
