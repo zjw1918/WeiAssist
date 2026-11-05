@@ -143,6 +143,10 @@ entry in the registry.
   launch script blocked. `launchDsh` therefore starts a keepalive task that lasts as long as dsh's tmux session (Termux
   stays a foreground service, no wake lock), and the setup screen asks for Termux's battery use to be unrestricted
   (HyperOS freezes even foreground services of restricted apps).
+- **Ubuntu where Docker Hub is blocked:** proot-distro 5 pulls `ubuntu:latest` from Docker Hub (mainland China blocks
+  it). It also installs a plain rootfs tarball, so the script can take Ubuntu's own `ubuntu-base` from
+  mirrors.tuna.tsinghua.edu.cn, checked against its `SHA256SUMS`: first with the app's China mirrors switch, else as
+  the fallback. With the switch, `apt` in Ubuntu uses Tsinghua's `ubuntu-ports` too. proot-distro 4 can't do this.
 - **The bridge** (`dsh-host/src/index.ts`) is the dsh counterpart of `pi-host`. It is mounted by the profile
   patch `dsh-host/profile/cordis.patch.yml`, which turns off only the one-shot runner, the titler (the app titles
   sessions) and dsh's coding-agent persona, and declares the model routes.

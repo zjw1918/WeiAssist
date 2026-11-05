@@ -71,12 +71,37 @@ if ! command -v proot-distro > /dev/null || ! command -v tmux > /dev/null; then
 		[ -n "$ok" ] || { echo "No Termux mirror could install proot-distro and tmux."; exit 3; }
 	fi
 fi
-proot-distro --version 2> /dev/null | head -1 || true
 
 step ubuntu "Ubuntu (proot-distro)"
 # Ask proot-distro itself whether Ubuntu is there: newer versions keep containers elsewhere than installed-rootfs/.
+# proot-distro 5 pulls ubuntu:latest from Docker Hub, which mainland China blocks. Ubuntu's own minimal rootfs
+# (ubuntu-base) is on Chinese university mirrors: proot-distro 5 installs a plain rootfs tarball as well. With the
+# app's China mirrors that comes first, otherwise it is the fallback. proot-distro 4 only installs its own tarballs.
+cn=; case "$NODE_MIRROR" in *npmmirror*) cn=1 ;; esac
+# Its version from Termux's package database (proot-distro 5 has no --version).
+pd_major="$(dpkg-query -W -f='${Version}' proot-distro 2> /dev/null | cut -d. -f1)"
+echo "proot-distro ${pd_major:-?}.x"
+ubuntu_from_mirror() {
+	[ "${pd_major:-0}" -ge 5 ] 2> /dev/null || { echo "proot-distro ${pd_major:-?} can't install Ubuntu from a mirror."; return 1; }
+	base=https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cdimage/ubuntu-base/releases/26.04/release
+	sums="$(curl -fsSL --retry 2 "$base/SHA256SUMS")" || return 1
+	f="$(printf '%s\n' "$sums" | grep -o 'ubuntu-base-[0-9.]*-base-arm64\.tar\.gz' | sort -V | tail -1)"
+	[ -n "$f" ] || return 1
+	echo "Downloading $f from mirrors.tuna.tsinghua.edu.cn"
+	curl -fL --retry 2 -o "$d/$f" "$base/$f" || return 1
+	(cd "$d" && printf '%s\n' "$sums" | grep " \*$f\$" | sha256sum -c -) || { rm -f "$d/$f"; return 1; }
+	# A container that doesn't log in (half made by a failed install) would block this name.
+	proot-distro remove ubuntu > /dev/null 2>&1 || true
+	proot-distro install --name ubuntu "$d/$f"; c=$?
+	rm -f "$d/$f"
+	return $c
+}
 if ! proot-distro login ubuntu -- true > /dev/null 2>&1; then
-	proot-distro install ubuntu
+	if [ -n "$cn" ]; then
+		ubuntu_from_mirror || { echo "The mirror didn't work; trying proot-distro's own source."; proot-distro install ubuntu; }
+	else
+		proot-distro install ubuntu || { echo "proot-distro's own source didn't work; trying Ubuntu from mirrors.tuna.tsinghua.edu.cn."; ubuntu_from_mirror; }
+	fi
 fi
 proot-distro login ubuntu -- sh -c '. /etc/os-release && echo "$PRETTY_NAME"'
 
@@ -85,6 +110,11 @@ in_ubuntu() { proot-distro login ubuntu --termux-home -- env NODE_VERSION="$NODE
 step node "Node $NODE_VERSION in Ubuntu"
 in_ubuntu '
 	if ! command -v node > /dev/null || [ "$(node -v)" != "$NODE_VERSION" ]; then
+		# With the China mirrors, Ubuntu'"'"'s packages too (ports.ubuntu.com is slow there). http: a minimal Ubuntu has no
+		# CA certificates yet; apt checks the packages'"'"' signatures itself.
+		case "$NODE_MIRROR" in *npmmirror*)
+			sed -i "s#http://ports.ubuntu.com/ubuntu-ports#http://mirrors.tuna.tsinghua.edu.cn/ubuntu-ports#g" /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list 2> /dev/null || true ;;
+		esac
 		command -v curl > /dev/null && command -v xz > /dev/null || { apt-get update -y && apt-get install -y curl ca-certificates xz-utils; }
 		curl -fsSL "$NODE_MIRROR/$NODE_VERSION/node-$NODE_VERSION-linux-arm64.tar.xz" | tar -xJ -C /usr/local --strip-components=1
 	fi
