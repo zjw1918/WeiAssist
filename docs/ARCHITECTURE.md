@@ -128,7 +128,10 @@ entry in the registry.
   (`configured.skipped`, e.g. `bash`). Every call of the session's tree, dsh's own tools and its subagents'
   included, goes through dsh's `tools/pre-execute` → `before_tool`, so pause, Stop, the step limit and the user's
   OK cover them. A subagent's calls show as the session's steps (`↳ todo_write`), and Stop cancels its
-  subagents too.
+  subagents too. dsh's subagents run in the background, and dsh wakes the session's agent when they report back,
+  so a session works while its agent or any subagent does: the bridge sends one `agent_start` when the first starts
+  and one `idle` when the last stops. An `agent_start` on an idle session is a run the core started by itself, and
+  the app runs it like any other, unless the user had stopped that session.
 - **No sandbox on the phone:** dsh confines its bash and file tools with bubblewrap or Landlock, and neither works
   in proot on Android. So the phone launcher runs dsh in `danger-full-access` (a choice the user made): they run
   unconfined in Ubuntu, with Termux's home (and so `~/sessions`) as `/root`. That is the access the app's own Termux

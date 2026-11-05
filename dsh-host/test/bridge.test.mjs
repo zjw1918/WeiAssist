@@ -212,8 +212,12 @@ test("a subagent's calls go through the app's before_tool and show as steps of i
 	app.send({ type: "prompt", session: id("sub"), text: "plan [[script:delegate]]" });
 	// Subagents run in the background: the session answers at once, and its subagent works on.
 	await app.waitFor("assistant_end", (m) => m.session === id("sub") && m.text === "delegated", 60_000);
-	await app.waitFor("tool_end", (m) => m.session === id("sub") && m.tool === "↳ todo_write", 30_000);
+	const childEnd = await app.waitFor("tool_end", (m) => m.session === id("sub") && m.tool === "↳ todo_write", 30_000);
 	assert.deepEqual(checked, [["subagent", false], ["todo_write", true]]);
+	// The session works until its subagent is done too: no idle while it ran (the app would end the task, and its
+	// gate would refuse the subagent's calls as "stopped").
+	const at = app.messages.indexOf(childEnd);
+	assert.ok(!app.messages.slice(0, at).some((m) => m.type === "idle" && m.session === id("sub")), "idle came while the subagent worked");
 	const steps = app.messages.filter((m) => m.type === "tool_start" && m.session === id("sub")).map((m) => m.tool);
 	assert.deepEqual(steps, ["subagent", "↳ todo_write"]);
 	const child = app.messages.find((m) => m.type === "tool_end" && m.session === id("sub") && m.tool === "↳ todo_write");

@@ -161,7 +161,10 @@ class AgentController(context: Context) {
             val summary = sessions.summary(id)
             val call = m.optString("call")
             val verdict = when {
-                !sessions.gate(id) -> block("Stopped by the user.")
+                !sessions.gate(id) -> block(
+                    // Say which: the user stopped it, or its task is over (not the user's doing).
+                    if (sessions.stoppedByUser(id)) "Stopped by the user." else "This session's task has ended, so nothing may run now.",
+                )
                 summary?.phone == true ->
                     phoneTools.check(id, tool, m.optJSONObject("args") ?: JSONObject()) { c -> confirmTap(id, c) }?.let(::block)
                 // The supervisor may start a few sessions per request; past that it is told to ask (the run goes on).
