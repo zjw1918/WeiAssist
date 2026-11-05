@@ -59,10 +59,15 @@ interface Live {
 	 * does: its subagents run in the background, and dsh wakes the session's agent when they report back.
 	 */
 	running: Set<string>;
+	/** Waiting to say idle: until dsh's own test says the work is over (see settle). */
+	settling?: boolean;
 }
 
 const textOf = (content: readonly any[] | undefined) =>
 	(content ?? []).filter((b) => b?.type === "text").map((b) => b.text).join("");
+
+/** Notices dsh wakes or steers a session's agent with (dsh-client-ui-chat shows them as the turn's trigger). */
+const TRIGGERS = new Set(["subagent-settled", "agent-message", "team-message", "tool-jobs"]);
 
 /** The image formats dsh's attachment store takes. */
 const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
@@ -270,12 +275,9 @@ export class Bridge {
 		const kind = c.tools ?? "chat";
 		// The app's tools dsh keeps: those it has no tool of its own for (its own bash stays, see setup).
 		const kept = new Set(specs.filter((t) => this.ctx.tools.get(t.name) === undefined).map((t) => t.name));
-		// A prompt section for a tool counts when the session has it: the app's tool, kept; or, for a tool the app
-		// doesn't offer, dsh's own (its subagents). Not for an app tool dsh replaces: its bash isn't the app's.
-		const has = (tool: string) => kept.has(tool) || (!specs.some((t) => t.name === tool) && this.ctx.tools.get(tool) !== undefined);
 		const prompt = c.systemPrompt
 			?? (c.promptSections?.length
-				? c.promptSections.filter((p) => !p.forTool || has(p.forTool)).map((p) => p.text).join("").trim()
+				? c.promptSections.filter((p) => !p.forTool || kept.has(p.forTool)).map((p) => p.text).join("").trim()
 				: DEFAULT_PROMPTS[kind]!.replace("{name}", "WeiAssist"));
 		// Tools and prompt are set up with the Agent; when they change, the Agent is replaced (the log stays).
 		const shape = JSON.stringify({ specs, prompt });
@@ -444,6 +446,37 @@ export class Bridge {
 		return createUserMessage({ content: blocks, source: { kind: "user" } });
 	}
 
+	/**
+	 * Nothing of the session runs: say idle once the work is really over, as dsh's own hosts decide it (dsh-headless,
+	 * dsh-acp): the agent is idle, waitForChildren finds no subagent left to wait for, and nothing happened since.
+	 * A subagent that just finished hands its result to the agent a moment later, and that wakes it for another turn:
+	 * idle before that would end the app's run while dsh goes on.
+	 */
+	private async settle(session: string, s: Live) {
+		if (s.settling) return;
+		s.settling = true;
+		try {
+			const subagents = this.ctx.get("subagents") as { waitForChildren(agent: unknown): Promise<boolean> } | undefined;
+			while (true) {
+				await s.agent.whenIdle();
+				const seq = s.agent.session.seq;
+				const children = await subagents?.waitForChildren(s.agent);
+				// Woken again (a result came in): it says idle when that work is over.
+				if (s.running.size > 0 || this.sessions.get(session) !== s) return;
+				if (!children && s.agent.status === "idle" && s.agent.session.seq === seq) break;
+			}
+		} catch (e) {
+			say(`settle ${session}: ${e instanceof Error ? e.message : String(e)}`);
+		} finally {
+			s.settling = false;
+		}
+		if (s.running.size > 0 || this.sessions.get(session) !== s) return;
+		// dsh keeps the conversation in its own log: the app saves a marker and asks for it back by id.
+		this.send({ type: "transcript", session, messages: [{ dsh: session }] });
+		this.send({ type: "idle", session });
+		saveCompileCache();
+	}
+
 	// ---- dsh → the app's events -------------------------------------------------------------------
 
 	private listen() {
@@ -480,12 +513,7 @@ export class Bridge {
 			if (on) s.running.add(own); else s.running.delete(own);
 			const now = s.running.size > 0;
 			if (!was && now) this.send({ type: "agent_start", session });
-			if (was && !now) {
-				// dsh keeps the conversation in its own log: the app saves a marker and asks for it back by id.
-				this.send({ type: "transcript", session, messages: [{ dsh: session }] });
-				this.send({ type: "idle", session });
-				saveCompileCache();
-			}
+			if (was && !now) void this.settle(session, s);
 		};
 		ctx.on("agent/status", ({ agent, status }: any) => running(agent, status === "running"));
 		ctx.on("agent/disposed", ({ agent }: any) => running(agent, false));
@@ -555,6 +583,9 @@ export class Bridge {
 				case "user/message":
 					// The user's message is in the conversation (a steered one: delivered).
 					if (d.source?.kind === "user") this.send({ type: "message_end", session, role: "user", text: textOf(d.content) });
+					// dsh woke the agent with a notice (its subagent finished or wrote, a job ended): the app shows it where
+					// the agent's reply to it starts, as dsh's own chat does.
+					else if (TRIGGERS.has(d.source?.kind)) this.send({ type: "trigger", session, source: d.source.kind, text: textOf(d.content) });
 					break;
 				case "turn/start":
 					s.stop = false; // a new run starts clean

@@ -14,6 +14,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -79,7 +82,7 @@ sealed interface ChatBlock {
 
     /**
      * One run of the agent: its [process] (reasoning, steps, what it said between steps), then its [answer]
-     * (what it said after its own last step, and any errors), then what it took ([stats]; null for runs saved before
+     * (the text after its last step, and any errors), then what it took ([stats]; null for runs saved before
      * the app counted them, and for the run in progress, see [live]).
      */
     data class Turn(
@@ -107,21 +110,21 @@ fun chatBlocks(items: List<ChatItem>, busy: Boolean): List<ChatBlock> {
     val turn = mutableListOf<ChatItem>()
     fun close(stats: RunStats?, live: Boolean) {
         if (turn.isEmpty() && stats == null && !live) return
-        // The answer is what the agent said after its own last step. Its reasoning after that, and its subagents'
-        // steps (↳) as they report back, don't push an answer into the process: with subagents the agent may answer,
-        // then remark on a late result; the answer must stay in view.
-        val last = turn.indexOfLast { it is ChatItem.Step && !it.tool.startsWith(SUBAGENT_STEP) }
-        val after = { it: ChatItem -> it is ChatItem.Thinking || it is ChatItem.Step }
+        // The answer is the text after the agent's own last step or reasoning. Its subagents' steps (↳) go on in the
+        // background after it answered: they belong to the process, but don't push the answer into it.
+        val sub = { it: ChatItem -> it is ChatItem.Step && it.tool.startsWith(SUBAGENT_STEP) }
+        val last = turn.indexOfLast { (it is ChatItem.Step || it is ChatItem.Thinking) && !sub(it) }
         // Errors and files given to the user are part of the answer, wherever they came in the run.
-        val process = turn.filterIndexed { i, it -> (i <= last || after(it)) && it !is ChatItem.Error && it !is ChatItem.File }
-        val answer = turn.filterIndexed { i, it -> it is ChatItem.Error || it is ChatItem.File || (i > last && !after(it)) }
+        val process = turn.filterIndexed { i, it -> (i <= last || sub(it)) && it !is ChatItem.Error && it !is ChatItem.File }
+        val answer = turn.filterIndexed { i, it -> it is ChatItem.Error || it is ChatItem.File || (i > last && !sub(it)) }
         out += ChatBlock.Turn("t:${if (start < 0) items.size else start}", process, answer, stats, live)
         turn.clear(); start = -1
     }
     items.forEachIndexed { i, item ->
         when (item) {
-            is ChatItem.User -> {
-                // A message typed while it works (steering) splits the run's process around it, as it happened.
+            // A message typed while it works (steering) splits the run's process around it, as it happened. So does a
+            // notice the core woke its agent with (a subagent finished): what follows is the agent's reply to it.
+            is ChatItem.User, is ChatItem.Trigger -> {
                 close(null, false)
                 out += ChatBlock.Message("m:$i", item)
             }
@@ -197,7 +200,7 @@ fun chatEntries(blocks: List<ChatBlock>): List<ChatEntry> {
 fun ChatEntryView(e: ChatEntry, session: SessionState, onProcess: (String) -> Unit, onStats: (String) -> Unit) {
     val m = Modifier.padding(top = e.gap)
     when (e) {
-        is ChatEntry.Message -> UserMessage(e.item, m)
+        is ChatEntry.Message -> if (e.item is ChatItem.Trigger) TriggerCard(e.item, m) else UserMessage(e.item, m)
         is ChatEntry.Header -> TurnHeader(e.turn, session, onProcess, m)
         is ChatEntry.LiveSteps -> LiveProcess(e.turn, session, m)
         is ChatEntry.Answer -> MarkdownBlock(e.block, m.fillMaxWidth().padding(horizontal = 2.dp))
@@ -627,5 +630,38 @@ private fun StatRow(label: String, value: String, sub: Boolean = false) {
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(label, style = MaterialTheme.typography.bodyMedium, color = if (sub) c.outline else c.onSurfaceVariant, modifier = Modifier.weight(1f))
         Text(value, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp), color = if (sub) c.outline else c.onSurface)
+    }
+}
+
+/**
+ * What woke the agent (DeepSeek Harness: a subagent finished, or wrote to it): a quiet card where the agent's reply to
+ * it starts, as dsh's own chat shows it. Tap to read the notice itself.
+ */
+@Composable
+private fun TriggerCard(item: ChatItem.Trigger, modifier: Modifier = Modifier) {
+    val c = MaterialTheme.colorScheme
+    var open by rememberSaveable(item) { mutableStateOf(false) }
+    val (icon, title) = when (item.source) {
+        "subagent-settled" -> R.drawable.ic_check_circle to R.string.trigger_subagent
+        "agent-message" -> R.drawable.ic_forum to R.string.trigger_agent
+        "team-message" -> R.drawable.ic_forum to R.string.trigger_team
+        "tool-jobs" -> R.drawable.ic_terminal to R.string.trigger_job
+        else -> R.drawable.ic_sparkle to R.string.trigger_other
+    }
+    Column(
+        modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.surfaceContainer)
+            .clickable(enabled = item.text.isNotBlank()) { open = !open }.padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AppIcon(icon, null, Modifier.size(16.dp), tint = c.onSurfaceVariant)
+            Spacer(Modifier.width(10.dp))
+            Text(stringResource(title), style = MaterialTheme.typography.bodyMedium, color = c.onSurfaceVariant, modifier = Modifier.weight(1f))
+            if (item.text.isNotBlank()) AppIcon(R.drawable.ic_chevron_right, null,
+                Modifier.size(16.dp).rotate(if (open) 90f else 0f), tint = c.onSurfaceVariant)
+        }
+        if (open) Text(
+            item.text.trim(), style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 17.sp),
+            color = c.onSurfaceVariant, modifier = Modifier.padding(start = 26.dp, top = 8.dp).heightIn(max = 240.dp).verticalScroll(rememberScrollState()),
+        )
     }
 }

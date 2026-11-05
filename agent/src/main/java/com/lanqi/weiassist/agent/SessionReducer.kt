@@ -61,6 +61,9 @@ object SessionReducer {
         // when its background subagents report back. It is a run like any other (busy: its calls pass the gate).
         "agent_start" -> if (s.busy) s else s.copy(error = null, streaming = "", run = RunStats(now))
             .status(SessionStatus.Running, now).trace("the core started work by itself")
+        // The core woke its agent with a notice (DeepSeek Harness: a subagent finished or wrote): what follows answers it.
+        "trigger" -> s.endThinking(null, now).add(ChatItem.Trigger(m.optString("source"), m.optString("text")), now)
+            .trace("woken · ${m.optString("source")}")
         // Pi took a steered message into the conversation: it is delivered.
         "message_end" -> if (m.optString("role") == "user") s.delivered(m.optString("text")) else s
         // A transcript is persisted by the manager; it doesn't change what the user sees.
