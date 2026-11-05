@@ -250,11 +250,11 @@ test("tool arguments reach Kotlin intact and never clobber the bridge request id
 	const calls = [];
 	const host = await startHost({
 		credentials: apiKeyCredentials,
-		hostCalls: { phone: (m) => { calls.push(m); return m.action === "tap" ? `tapped [${m.args.id}]` : "app: x"; } },
+		// Kotlin's PhoneTools answers an action with its result and the screen it left.
+		hostCalls: { phone: (m) => { calls.push(m); return `tapped [${m.args.id}]\n\nScreen now:\napp: x`; } },
 	});
 	await phoneRun(host, "tap");
-	assert.deepEqual(calls.map((c) => c.action), ["tap", "read_screen"]); // the action, then the screen it left
-	assert.equal(calls[0].action, "tap");
+	assert.deepEqual(calls.map((c) => c.action), ["tap"]);
 	assert.deepEqual(calls[0].args, { id: 51 }); // the element id travels inside args …
 	assert.match(calls[0].id, /^k\d+$/); // … so the bridge's own request id survives (the Gmail hang)
 	const end = host.messages.find((m) => m.type === "tool_end" && m.tool === "tap");
@@ -262,52 +262,38 @@ test("tool arguments reach Kotlin intact and never clobber the bridge request id
 	assert.equal(end.output, "tapped [51]\n\nScreen now:\napp: x");
 });
 
-const sendScreen = 'app: com.google.android.gm\n[1] EditText "Subject" editable\n[2] ImageButton (Send) clickable\n';
-
-test("a tap on Send waits for the user's confirmation (Pi's beforeToolCall)", async () => {
-	const confirms = [];
+test("Kotlin's before_tool sees every tool call with its arguments, and allowing lets it run", async () => {
+	const checks = [];
 	const taps = [];
 	const host = await startHost({
 		credentials: apiKeyCredentials,
 		hostCalls: {
-			phone: (m) => (m.action === "read_screen" ? sendScreen : (taps.push(m.args.id), "tapped")),
-			confirm: (m) => { confirms.push(m); return true; },
+			before_tool: (m) => { checks.push([m.session, m.tool, m.args]); return null; },
+			phone: (m) => (m.action === "read_screen" ? "app: x" : (taps.push(m.args.id), "tapped")),
 		},
 	});
 	await phoneRun(host, "send");
-	assert.equal(confirms.length, 1);
-	assert.equal(confirms[0].label, "Send");
+	assert.deepEqual(checks, [["s1", "read_screen", {}], ["s1", "tap", { id: 2 }]]);
 	assert.deepEqual(taps, [2], "allowed: the tap happened");
 });
 
-test("declining the confirmation blocks the tap and stops the task", async () => {
+test("a call before_tool blocks never reaches the phone, and ends the task", async () => {
 	const taps = [];
 	const host = await startHost({
 		credentials: apiKeyCredentials,
 		hostCalls: {
-			phone: (m) => (m.action === "read_screen" ? sendScreen : (taps.push(m.args.id), "tapped")),
-			confirm: () => false,
+			before_tool: (m) => (m.tool === "tap" ? { block: true, terminate: true, reason: "The user declined this action. Stop and tell the user." } : null),
+			phone: (m) => (m.action === "read_screen" ? "app: x" : (taps.push(m.args.id), "tapped")),
 		},
 	});
+	const before = mock.requests.length;
 	await phoneRun(host, "send");
 	assert.deepEqual(taps, [], "declined: Kotlin was never asked to tap");
 	const end = host.messages.find((m) => m.type === "tool_end" && m.tool === "tap");
 	assert.equal(end.isError, true);
-});
-
-test("a coordinate tap on a buy button also needs confirmation", async () => {
-	const confirms = [];
-	const taps = [];
-	const host = await startHost({
-		credentials: apiKeyCredentials,
-		hostCalls: {
-			phone: (m) => (m.action === "label_at" ? "立即购买" : (taps.push(m.args), "tapped")),
-			confirm: (m) => { confirms.push(m.label); return false; },
-		},
-	});
-	await phoneRun(host, "buy_at");
-	assert.deepEqual(confirms, ["立即购买"]);
-	assert.deepEqual(taps, [], "declined: no tap");
+	assert.match(end.output, /declined/);
+	// Ended: the model was not asked again after the blocked tap.
+	assert.equal(mock.requests.length - before, 2, "the read_screen turn and the tap turn, nothing after");
 });
 
 test("old screens are pruned from the model's context, the latest two are kept", async () => {
@@ -332,7 +318,8 @@ test("actions return the screen they leave; older ones keep their result, not th
 	let n = 0;
 	const host = await startHost({
 		credentials: apiKeyCredentials,
-		hostCalls: { phone: (m) => (m.action === "read_screen" ? `app: x\n[1] TextView "screen ${++n}"` : `did ${m.action}`) },
+		// As Kotlin's PhoneTools: an action's result, then the screen it left.
+		hostCalls: { phone: (m) => `${m.action === "read_screen" ? "" : `did ${m.action}\n\nScreen now:\n`}app: x\n[1] TextView "screen ${++n}"` },
 	});
 	await phoneRun(host, "actions");
 	const outputs = JSON.parse(mock.requests.at(-1).body).input.filter((i) => i.type === "function_call_output").map((i) => JSON.stringify(i.output));
@@ -482,14 +469,14 @@ test("a paused session waits at the gate before its next action, and Stop at the
 	const taps = [];
 	const host = await startHost({
 		credentials: apiKeyCredentials,
-		hostCalls: { gate: () => new Promise((r) => { open = r; }), phone: (m) => { taps.push(m.action); return "tapped"; } },
+		hostCalls: { before_tool: () => new Promise((r) => { open = r; }), phone: (m) => { taps.push(m.action); return "tapped"; } },
 	});
 	await configure(host, "p", { phone: true });
 	host.call("prompt", { session: "p", text: "do it [[script:tap]]" });
 	await host.waitFor("tool_start", (m) => m.session === "p");
 	await new Promise((r) => setTimeout(r, 100));
 	assert.deepEqual(taps, [], "paused: nothing happens on the phone");
-	open(false); // the user stopped it while paused
+	open({ block: true, terminate: true, reason: "Stopped by the user." }); // the user stopped it while paused
 	await host.waitFor("idle", (m) => m.session === "p");
 	assert.deepEqual(taps, [], "stopped: the tap never happened");
 });

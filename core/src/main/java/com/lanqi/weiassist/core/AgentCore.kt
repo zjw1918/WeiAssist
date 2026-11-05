@@ -24,8 +24,9 @@ import org.json.JSONObject
  * - App-wide (no `session`): `runtime_restarted`, plus account events from a core that is also [CoreAccounts]
  *   (`status`, `auth_*`, `login_*`).
  *
- * **Tools** run in the app: a core asks [ToolHost] (`gate` before every tool call, then `phone`, `bash`,
- * `confirm`, …) and gives the answer to its model.
+ * **Tools** run in the app. A core asks [ToolHost] `before_tool` before every tool call: null to go on, or
+ * { block, terminate, reason }. That covers the pause gate and the phone tools' safety checks, including
+ * asking the user. Then it asks `phone`, `bash`, … and gives the answer to its model.
  */
 interface AgentCore {
     val info: CoreInfo

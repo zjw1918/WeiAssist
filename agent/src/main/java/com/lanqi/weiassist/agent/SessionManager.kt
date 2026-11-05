@@ -236,6 +236,7 @@ class SessionManager(
             // Read now: messages typed while the core was being set up joined the task (see send).
             val now = live[id]?.value?.takeIf { it.busy } ?: return@launch
             val task = now.pendingTask ?: if (now.pendingAttachments.isNotEmpty()) "" else return@launch
+            onTaskStarted(id)
             core.prompt(id, UserInput(task, Attachments.content(now.pendingAttachments)))
             prompted += id
         }
@@ -246,6 +247,9 @@ class SessionManager(
      * [files]: the user asked to delete its files in Termux too.
      */
     var onEnded: (id: String, deleted: Boolean, files: Boolean) -> Unit = { _, _, _ -> }
+
+    /** Told just before a session's core is given a new task: per-task tool state starts over (see PhoneTools). */
+    var onTaskStarted: (id: String) -> Unit = {}
 
     /** Stop the session's task (its core aborts the run); a queued task is dropped. */
     fun stop(id: String) {

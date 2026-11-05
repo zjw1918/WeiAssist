@@ -20,7 +20,7 @@ Pi is the first of possibly several **AI cores**: the app talks to it only throu
 │ SessionStore     one meta / chat / transcript file per session           │
 └──────────────┬───────────────────────────────────────┬──────────────────┘
                │ :core  AgentCore · CoreAccounts ·     │
-               │        ToolHost ("phone" / "confirm") │
+               │        ToolHost (before_tool · phone) │
 ┌───────── :core-pi ─────────────────┐   ┌──────────── :phone ────────────┐
 │ PiEngine     hidden WebView = JS   │   │ AgentAccessibilityService       │
 │ NativeHttp   fetch() for Pi         │   │   read screen · tap · type ·    │
@@ -31,7 +31,7 @@ Pi is the first of possibly several **AI cores**: the app talks to it only throu
                │ PiBridge.postMessage ⇄ PiHost.*(json)
 ┌───────── pi-host/ (TypeScript, bundled by esbuild) ──────────────────────┐
 │ host.ts       one Pi Agent per session + Models (login, streamSimple)    │
-│ phone-tools.ts  PhoneSession: AgentTools + confirm hook, per session     │
+│ phone-tools.ts  PhoneSession: the phone tools' schemas → "phone"         │
 │ native-fetch.ts · shims/ (node:http, node:crypto) · bridge.ts            │
 │ node_modules/@earendil-works/pi-ai, pi-agent-core (pinned, unmodified)   │
 └──────────────────────────────────────────────────────────────────────────┘
@@ -58,7 +58,7 @@ All messages are JSON.
 | JS→K | `credentials_changed` | Pi's credential store was written. Kotlin persists it encrypted. |
 | JS→K | `fetch` / `fetch_abort` | Native HTTP for Pi (no CORS). The reply streams back as `fetchHead`, `fetchChunk`, `fetchEnd` or `fetchError`. |
 | JS→K | `http_listen` / `http_close` / `http_response` | The `node:http` shim. Pi's OAuth callback server runs on a real loopback socket. |
-| JS→K | any registered host call (`gate`, `phone`, `confirm`), with `session` | `bridgeCall(type, …)`, answered with `PiHost.reply(id, ok, value)`. Tool arguments are nested under `args`. `gate` runs before every tool call and holds a paused session. |
+| JS→K | any registered host call (`before_tool`, `phone`, `bash`, …), with `session` | `bridgeCall(type, …)`, answered with `PiHost.reply(id, ok, value)`. Tool arguments are nested under `args`. `before_tool` runs before every tool call (Pi's `beforeToolCall`): it holds a paused session and runs the phone safety checks, answering null or `{ block, terminate, reason }`. |
 | K→JS | `init` (with the user's `customProviders`), `status`, `login`, `answer`, `cancelLogin`, `logout`, `setCustomProviders` | App-wide commands |
 | K→JS | `lookupModels` (synchronous: its return value comes back through `evaluateJavascript`) | Pi's catalog entries for model ids (custom providers' context windows) |
 | K→JS | `configure` (optionally with saved `messages`), `prompt` and `steer` (optionally with attachment `content` blocks), `abort`, `dispose`, all with `session` | Session commands |
@@ -74,8 +74,13 @@ a core owns its agent loop, context handling and transcript format. The contract
   `prompt`, `steer`, `abort`, `dispose`, and `events`. Events use one vocabulary shared by all cores (`text_delta`,
   `tool_start`, `assistant_end`, `idle`, `transcript`, …, listed in `AgentCore.kt`), so `SessionReducer` and the UI
   don't know which core is talking. `CoreCapabilities` says what a core can't do (e.g. no streaming).
-- **`ToolHost`:** the app's handlers for tool calls (`gate`, `phone`, `bash`, `confirm`, `send_file`, `supervisor`),
+- **`ToolHost`:** the app's handlers for tool calls (`before_tool`, `phone`, `bash`, `send_file`, `supervisor`),
   registered once by `AgentController` and shared by every core.
+- **`PhoneTools`** (`:phone`): what the phone tools do and the checks before them, the same for every core. It keeps
+  each task's last screen, typed fields and step count. An action returns its result and the screen it leaves.
+  `before_tool` asks the user about irreversible taps (and blind ones after typing into a hidden field), and stops a
+  task after 120 actions. A core only declares the tools to its model, and may prune old screens from its context
+  (they follow `PhonePolicy.SCREEN_NOW`).
 - **`CoreAccounts`:** sign-in, providers and the model catalog, for a core that keeps them (Pi). There is one
   accounts core; other cores use the model chosen there.
 - **`CoreRegistry`:** the installed cores, and the default for new sessions. Each session records its core
@@ -161,7 +166,7 @@ run side by side. A session runs until its task ends or the user stops it; leavi
   moves it there. So `open_app` refuses an app another *running* session has open, and a single-task app
   the user has in front of them, and checks afterwards that the app landed on the session's display
   (`DisplayTasks` parses `dumpsys activity activities`).
-- **Pause:** Pi's `beforeToolCall` asks Kotlin's `gate` before every tool call; a paused session waits
+- **Pause:** Pi's `beforeToolCall` asks Kotlin's `before_tool` before every tool call; a paused session waits
   there, and a phone action already waiting gives way. Stop aborts the session's Agent.
 
 ## Live previews
@@ -220,7 +225,7 @@ what they mean). Like OpenClaw's and Hermes Agent's gateways, but on the phone a
   talk and run Termux commands (default), or also use the phone's apps (a phone session; needs the
   accessibility service, else it falls back to Termux and says so). A chat whose conversation may do something
   else than the current choice gets a new one.
-- **Confirming from the chat:** with phone tasks, Pi's `confirm` host call asks on the phone's overlay card *and*
+- **Confirming from the chat:** with phone tasks, the confirmation (`before_tool`, `PhoneTools`) asks on the phone's overlay card *and*
   in the chat (✅/❌ inline buttons, `callback_query`); `Confirmations.first` takes the first answer and withdraws
   the other question, and a stopped task withdraws both. Only a paired account, in that chat, can answer, and only
   a question still open (a nonce per question). Payment-like buttons (`Confirmations.isPayment`) can only be
@@ -260,7 +265,7 @@ background apps within about 30 s. They ignore foreground services and the batte
 
 ## Safety model
 
-1. **Irreversible actions:** a tap on Send/Pay/Delete-like labels goes through Pi's `beforeToolCall` hook, which shows an overlay card. Declining blocks the tap and ends the run.
+1. **Irreversible actions:** a tap on Send/Pay/Delete-like labels goes through `before_tool` (`PhoneTools.check`, the same for every core), which shows an overlay card. Declining blocks the tap and ends the run.
 2. **Our own screen:** the agent never operates WeiAssist itself. While the user looks at it, phone actions pause (`open_app` excepted).
 3. **Password fields:** never sent to the model.
 4. **Kill switch:** Stop on a session (or Stop all in the notification) aborts Pi's run and releases paused actions.

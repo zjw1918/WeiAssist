@@ -378,13 +378,14 @@ function saveTranscript(id: string) {
 }
 
 /**
- * Before every tool call: wait while the session is paused (Kotlin answers "gate" when it may go on),
- * then the phone session's own checks (confirmation of risky taps, step limit).
+ * Before every tool call, Kotlin's "before_tool" (the same for every AI core): it waits while the session is
+ * paused, and for a phone session runs its safety checks (risky taps need the user's OK, the step limit).
+ * It answers null to go on, or why the call is blocked. Then the supervisor's own limits.
  */
 const beforeToolCall = (s: Session) => async (ctx: BeforeToolCallContext) => {
-	const go = await bridgeCall("gate", { session: s.id });
-	if (go === false) return { block: true, terminate: true, reason: "Stopped by the user." };
-	return (await s.supervisor?.limit(ctx)) ?? s.phone?.confirmRiskyTap(ctx);
+	const verdict = await bridgeCall("before_tool", { session: s.id, tool: ctx.toolCall.name, args: ctx.args });
+	if (verdict?.block) return { block: true, terminate: verdict.terminate !== false, reason: String(verdict.reason ?? "Blocked by the app.") };
+	return s.supervisor?.limit(ctx);
 };
 
 async function configure(cfg: Config) {
@@ -419,7 +420,7 @@ async function configure(cfg: Config) {
 		},
 		// Forwarded to providers for routing and prompt caching (OpenCode requires it as x-opencode-session).
 		sessionId: cfg.session,
-		// Pi's hook: the pause gate, then risky taps wait for the user's OK.
+		// Pi's hook: Kotlin's before_tool (pause gate, risky taps wait for the user's OK).
 		beforeToolCall: beforeToolCall(session),
 		// Pi's hook to shape the context per model call: drop old screens (see pruneOldScreens).
 		transformContext: phone ? pruneOldScreens : undefined,
@@ -460,7 +461,6 @@ async function prompt(id: string, text: string, attached?: Block[]) {
 	const s = need(id);
 	if (s.running) throw new Error("this session is already working");
 	s.running = true;
-	s.phone?.reset();
 	s.supervisor?.reset();
 	try {
 		if (needsCompaction(s.agent.state.messages, s.agent.state.model.contextWindow)) await compactSession(s);

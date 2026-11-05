@@ -1,117 +1,29 @@
-// Phone tools for Pi's Agent. Each tool is a plain Pi AgentTool whose execute() asks Kotlin's
-// AccessibilityService (AgentAccessibilityService.kt) to look at or act on the screen.
-// Risky taps (send, pay, delete…) go through Pi's beforeToolCall hook, which asks the user first.
-import type { AgentMessage, AgentTool, BeforeToolCallContext, BeforeToolCallResult } from "@earendil-works/pi-agent-core";
+// Phone tools for Pi's Agent: their names, descriptions and parameters. What they do and the safety checks
+// before them (risky taps need the user's OK, blind typing, the step limit) are the app's, the same for every
+// AI core: Kotlin's PhoneTools (phone/…/PhoneTools.kt), reached through the "phone" and "before_tool" host calls.
+import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import { arr, bool, int, num, obj, oneOf, opt, str } from "@earendil-works/pi-schema";
 import { bridgeCall } from "./bridge.ts";
 
 const text = (t: string) => ({ content: [{ type: "text" as const, text: t }], details: {} });
 
-const MAX_STEPS = 120;
-/** Separates an action's result from the screen it left (see PhoneSession.act and pruneScreens). */
+/** Separates an action's result from the screen it left (see pruneScreens). Must equal Kotlin's PhonePolicy.SCREEN_NOW. */
 export const SCREEN_NOW = "\n\nScreen now:\n";
 
-/** A readable name for an input field from its read_screen line: hint, text, description or view id. */
-function fieldName(line?: string) {
-	if (!line) return "field";
-	return line.match(/hint="([^"]*)"/)?.[1] || line.match(/"([^"]*)"/)?.[1] || line.match(/\(([^)]*)\)/)?.[1] || line.match(/id=(\S+)/)?.[1] || "field";
-}
-
-/**
- * The phone tools of one session. Each session has its own screen memory, typed fields and step count,
- * and every request carries the session id, so Kotlin routes it to that session's display and gates.
- */
+/** The phone tools of one session. Every request carries the session id, so Kotlin routes it to that session's display. */
 export class PhoneSession {
-	/** Labels of the elements in the last screen read, by id, so the confirm hook knows what a tap hits. */
-	private lastScreen = new Map<number, string>();
-	/** What the agent typed during this task, shown in the confirmation. */
-	private typed: string[] = [];
-	/**
-	 * Text was typed blind in this task (type_text without an id): the app hides its screen (WeChat), so a
-	 * tap_at there has no label to judge. From then on, such a tap or an Enter asks first.
-	 */
-	private blindTyped = false;
-	/** Phone actions in this task; a runaway loop is stopped at MAX_STEPS. */
-	private steps = 0;
 	readonly tools: AgentTool<any>[];
 
 	constructor(readonly session: string) {
 		this.tools = makeTools(this);
 	}
 
-	/** Per task: step limit and the typed fields shown on the confirmation card. */
-	reset() {
-		this.lastScreen = new Map();
-		this.typed = [];
-		this.blindTyped = false;
-		this.steps = 0;
-	}
-
 	// Tool arguments are nested under `args`: spreading them would let a tool's own `id` (an element id)
 	// overwrite the bridge's request id, and the reply would never find its way back.
-	phone(action: string, args: Record<string, unknown> = {}, signal?: AbortSignal) {
+	async phone(tool: string, args: Record<string, unknown> = {}, signal?: AbortSignal) {
 		signal?.throwIfAborted(); // the user pressed Stop: don't start another action
-		return bridgeCall("phone", { session: this.session, action, args }) as Promise<string>;
+		return text((await bridgeCall("phone", { session: this.session, action: tool, args })) as string);
 	}
-
-	async readScreen(signal?: AbortSignal) {
-		const screen = await this.phone("read_screen", {}, signal);
-		this.lastScreen = new Map();
-		for (const line of screen.split("\n")) {
-			const m = line.match(/^\[(\d+)\]\s+(.*)$/);
-			if (m) this.lastScreen.set(Number(m[1]), m[2]);
-		}
-		return screen;
-	}
-
-	/** An action, then the screen it leaves (already settled in Kotlin): one model call instead of two. */
-	async act(action: string, args: Record<string, unknown>, signal?: AbortSignal) {
-		return this.withScreen(await this.phone(action, args, signal), signal);
-	}
-
-	async withScreen(result: string, signal?: AbortSignal) {
-		signal?.throwIfAborted();
-		return text(`${result}${SCREEN_NOW}${await this.readScreen(signal)}`);
-	}
-
-	noteTyped(id: number | undefined, value: string) {
-		this.typed.push(`${id === undefined ? "field" : fieldName(this.lastScreen.get(id))}: ${value}`);
-		if (id === undefined) this.blindTyped = true;
-	}
-
-	/**
-	 * Pi's beforeToolCall hook:
-	 * - a tap (by id or by coordinates) on something irreversible needs the user's OK;
-	 * - a runaway task is stopped after MAX_STEPS phone actions (notes don't count).
-	 * Long texts are content (an email subject in a list), not a command, so only short labels count.
-	 */
-	confirmRiskyTap = async ({ toolCall, args }: BeforeToolCallContext): Promise<BeforeToolCallResult | undefined> => {
-		if (toolCall.name !== "note" && ++this.steps > MAX_STEPS) {
-			return { block: true, terminate: true, reason: `Step limit (${MAX_STEPS}) reached. Stop and report what you have done and found so far.` };
-		}
-		const a = args as any;
-		let label = "";
-		let blind = false;
-		let typed = this.typed;
-		if (toolCall.name === "tap") label = labelOf(this.lastScreen.get(a.id) ?? "");
-		else if (toolCall.name === "tap_at") {
-			label = await this.phone("label_at", { x: a.x, y: a.y });
-			blind = this.blindTyped && !label.trim();
-		} else if (toolCall.name === "press_key" && a.key === "enter" && this.blindTyped) {
-			blind = true;
-		} else if (toolCall.name === "type_text" && a.submit === true && (a.id === undefined || this.blindTyped)) {
-			// Typing and pressing Enter in one call: the text isn't noted yet (execute does that), so add it to the card.
-			typed = [...this.typed, `${a.id === undefined ? "field" : fieldName(this.lastScreen.get(a.id))}: ${a.text}`];
-			blind = true;
-		} else return undefined;
-		if (!blind && !riskyLabel(label)) return undefined;
-		// Kotlin words the card in the user's language; we pass the button label (none when the app hides it) and what was typed.
-		const ok = await bridgeCall("confirm", { session: this.session, label, blind, typed });
-		if (!ok) return { block: true, reason: "The user declined this action. Stop and tell the user.", terminate: true };
-		// blindTyped stays set: nothing can tell whether the allowed tap hit Send (a moved button, a miss), so
-		// every unreadable tap after blind typing asks until the task ends.
-		return undefined;
-	};
 }
 
 const makeTools = (s: PhoneSession): AgentTool<any>[] => [
@@ -121,7 +33,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		description: "Open an installed app by its name or package name, e.g. \"Gmail\" or \"com.google.android.gm\".",
 		parameters: obj({ app: str({ description: "App name or package name" }) }),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => s.act("open_app", { app: p.app }, signal),
+		execute: async (_id, p: any, signal) => s.phone("open_app", { app: p.app }, signal),
 	},
 	{
 		name: "read_screen",
@@ -132,7 +44,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 			"leaves, so you rarely need this.",
 		parameters: obj({}),
 		executionMode: "sequential",
-		execute: async (_id, _p, signal) => text(await s.readScreen(signal)),
+		execute: async (_id, _p, signal) => s.phone("read_screen", {}, signal),
 	},
 	{
 		name: "tap",
@@ -140,7 +52,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		description: "Tap the element with this id from the latest screen.",
 		parameters: obj({ id: int() }),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => s.act("tap", { id: p.id }, signal),
+		execute: async (_id, p: any, signal) => s.phone("tap", { id: p.id }, signal),
 	},
 	{
 		name: "tap_at",
@@ -148,7 +60,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		description: "Tap a screen point (pixels, as in read_screen's @x,y or a screenshot scaled to the screen size). Use when read_screen has no element for what you need.",
 		parameters: obj({ x: int(), y: int() }),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => s.act("tap_at", { x: p.x, y: p.y }, signal),
+		execute: async (_id, p: any, signal) => s.phone("tap_at", { x: p.x, y: p.y }, signal),
 	},
 	{
 		name: "long_press",
@@ -156,7 +68,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		description: "Long-press the element with this id (e.g. to open a context menu).",
 		parameters: obj({ id: int() }),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => s.act("long_press", { id: p.id }, signal),
+		execute: async (_id, p: any, signal) => s.phone("long_press", { id: p.id }, signal),
 	},
 	{
 		name: "swipe",
@@ -170,7 +82,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 			fraction: opt(num()),
 		}),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => s.act("swipe", { direction: p.direction, fraction: p.fraction ?? 0.6 }, signal),
+		execute: async (_id, p: any, signal) => s.phone("swipe", { direction: p.direction, fraction: p.fraction ?? 0.6 }, signal),
 	},
 	{
 		name: "screenshot",
@@ -181,7 +93,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		parameters: obj({}),
 		executionMode: "sequential",
 		execute: async (_id, _p, signal) => {
-			const data = await s.phone("screenshot", {}, signal);
+			const data = (await s.phone("screenshot", {}, signal)).content[0].text;
 			// Anything but a base64 JPEG ("/9j/…") is a message for the model (an error, paused, stopped, no app
 			// open yet): sent as an image it would make the provider reject the whole request.
 			if (!data.startsWith("/9j/")) return text(data);
@@ -204,10 +116,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 			"type_text without id; it puts the text (any language) at the cursor of the focused field. Check with a screenshot, then tap_at the app's Send button.",
 		parameters: obj({ id: opt(int()), text: str(), submit: opt(bool({ description: "Press Enter after typing" })) }),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => {
-			s.noteTyped(p.id, p.text);
-			return s.act("type_text", { id: p.id, text: p.text, submit: p.submit === true }, signal);
-		},
+		execute: async (_id, p: any, signal) => s.phone("type_text", { id: p.id, text: p.text, submit: p.submit === true }, signal),
 	},
 	{
 		name: "scroll",
@@ -218,7 +127,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 			direction: oneOf(["forward", "backward"]),
 		}),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => s.act("scroll", { id: p.id ?? -1, direction: p.direction }, signal),
+		execute: async (_id, p: any, signal) => s.phone("scroll", { id: p.id ?? -1, direction: p.direction }, signal),
 	},
 	{
 		name: "press_key",
@@ -226,7 +135,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		description: "Press a key: back, home, recents, or enter (submits the focused text field, like the keyboard's Enter / Go / Search key).",
 		parameters: obj({ key: oneOf(["back", "home", "recents", "enter"]) }),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => s.act("press_key", { key: p.key }, signal),
+		execute: async (_id, p: any, signal) => s.phone("press_key", { key: p.key }, signal),
 	},
 	{
 		name: "wait",
@@ -234,11 +143,7 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		description: "Wait (milliseconds, max 5000) when something is still loading. Actions already wait for the screen to settle.",
 		parameters: obj({ ms: int() }),
 		executionMode: "sequential",
-		execute: async (_id, p: any, signal) => {
-			signal?.throwIfAborted();
-			await new Promise((r) => setTimeout(r, Math.min(Math.max(p.ms, 0), 5000)));
-			return s.withScreen("waited", signal);
-		},
+		execute: async (_id, p: any, signal) => s.phone("wait", { ms: p.ms }, signal),
 	},
 	{
 		name: "note",
@@ -251,18 +156,6 @@ const makeTools = (s: PhoneSession): AgentTool<any>[] => [
 		execute: async () => text("noted"),
 	},
 ];
-
-// Button labels that mean "irreversible", in English and Chinese UIs (social, mail, shopping, payment).
-const RISKY = new RegExp(
-	"^(send|post|publish|reply|pay|buy|buy now|checkout|check out|place order|submit order|confirm order|confirm payment|delete|remove|transfer|submit)\\b" +
-		"|^(发送|发布|回复|评论|支付|付款|立即支付|确认支付|确认付款|去支付|购买|立即购买|马上抢|下单|提交订单|确认订单|结算|去结算|删除|移除|转账|提交|确认收货)",
-	"i",
-);
-
-const riskyLabel = (label: string) => !!label && label.length <= 20 && RISKY.test(label.trim());
-
-/** The button's own words from a read_screen line: its text, else its description. */
-const labelOf = (line: string) => (line.match(/"([^"]*)"/)?.[1] || line.match(/\(([^)]*)\)/)?.[1] || "").trim();
 
 /**
  * Screens are big and only the latest ones matter: all but the latest [keep] screens (read_screen and
