@@ -107,6 +107,19 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** A link in session [id]'s answer to a file in its Termux folder: copy the file out, then open it. */
+    fun openFileLink(id: String, link: String) {
+        val c = controller.value ?: return
+        val app = getApplication<Application>()
+        val name = android.net.Uri.decode(link).trimEnd('/').substringAfterLast('/')
+        android.widget.Toast.makeText(app, app.getString(R.string.file_fetching, name), android.widget.Toast.LENGTH_SHORT).show()
+        viewModelScope.launch {
+            runCatching { c.fetchLinkedFile(id, link) }
+                .onSuccess { com.lanqi.weiassist.ui.openFile(app, it) }
+                .onFailure { android.widget.Toast.makeText(app, app.getString(R.string.file_fetch_failed, it.message ?: it.javaClass.simpleName), android.widget.Toast.LENGTH_LONG).show() }
+        }
+    }
+
     fun removeAttachment(a: Attachment, fromReply: Boolean) {
         (if (fromReply) replyAttachments else inputAttachments).remove(a)
         Attachments.discard(listOf(a))

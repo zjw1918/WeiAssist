@@ -80,6 +80,8 @@ sealed interface ChatItem {
      */
     data class Step(val tool: String, val detail: String, val ok: Boolean? = null, val result: String = "", val screen: Int = 0) : ChatItem
     data class Error(val text: String) : ChatItem
+    /** A file the agent gave the user (send_file), kept in the app with the session; [caption] as the model wrote it. */
+    data class File(val file: Attachment, val caption: String = "") : ChatItem
     /** The model's reasoning before an answer or a tool call: [text] is empty when the provider hides it. */
     data class Thinking(val text: String, val ms: Long) : ChatItem
     /** Ends a run (one task, from the user's message to idle): what it took. */

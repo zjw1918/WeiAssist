@@ -105,8 +105,9 @@ fun chatBlocks(items: List<ChatItem>, busy: Boolean): List<ChatBlock> {
     fun close(stats: RunStats?, live: Boolean) {
         if (turn.isEmpty() && stats == null && !live) return
         val last = turn.indexOfLast { it is ChatItem.Step || it is ChatItem.Thinking }
-        val process = turn.take(last + 1).filterNot { it is ChatItem.Error }
-        val answer = turn.filterIndexed { i, it -> it is ChatItem.Error || i > last }
+        // Errors and files given to the user are part of the answer, wherever they came in the run.
+        val process = turn.take(last + 1).filterNot { it is ChatItem.Error || it is ChatItem.File }
+        val answer = turn.filterIndexed { i, it -> it is ChatItem.Error || it is ChatItem.File || i > last }
         out += ChatBlock.Turn("t:${if (start < 0) items.size else start}", process, answer, stats, live)
         turn.clear(); start = -1
     }
@@ -144,6 +145,8 @@ sealed interface ChatEntry {
     /** One block (paragraph, list, code, table…) of an answer. */
     data class Answer(override val key: String, override val gap: Dp, val block: Markdown.Block) : ChatEntry
     data class Failure(override val key: String, override val gap: Dp, val text: String) : ChatEntry
+    /** A file the agent gave the user. */
+    data class File(override val key: String, override val gap: Dp, val item: ChatItem.File) : ChatEntry
     data class Footer(override val key: String, override val gap: Dp, val turn: ChatBlock.Turn) : ChatEntry
 
     /** Rows of one kind reuse each other's composition as they scroll in and out (like RecyclerView's view types). */
@@ -168,6 +171,7 @@ fun chatEntries(blocks: List<ChatBlock>): List<ChatEntry> {
                     when (item) {
                         is ChatItem.Assistant -> parsedMarkdown(item.text).forEachIndexed { j, block -> out += ChatEntry.Answer("${b.key}:a$i.$j", next(), block) }
                         is ChatItem.Error -> out += ChatEntry.Failure("${b.key}:e$i", next(), item.text)
+                        is ChatItem.File -> out += ChatEntry.File("${b.key}:f$i", next(), item)
                         else -> Unit
                     }
                 }
@@ -189,6 +193,7 @@ fun ChatEntryView(e: ChatEntry, session: SessionState, onProcess: (String) -> Un
         is ChatEntry.LiveSteps -> LiveProcess(e.turn, session, m)
         is ChatEntry.Answer -> MarkdownBlock(e.block, m.fillMaxWidth().padding(horizontal = 2.dp))
         is ChatEntry.Failure -> ErrorText(e.text, m)
+        is ChatEntry.File -> FileCard(e.item.file, e.item.caption, m)
         is ChatEntry.Footer -> TurnFooterRow(e.turn, session, onStats, m)
     }
 }

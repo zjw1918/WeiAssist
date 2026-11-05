@@ -222,7 +222,8 @@ val CodeStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.5.sp,
 private fun annotated(spans: List<Markdown.Span>): AnnotatedString {
     val colors = MaterialTheme.colorScheme
     val ctx = LocalContext.current
-    return remember(spans, colors, ctx) {
+    val files = LocalFileLinks.current
+    return remember(spans, colors, ctx, files) {
         buildAnnotatedString {
             spans.forEach { s ->
                 val style = SpanStyle(
@@ -235,6 +236,11 @@ private fun annotated(spans: List<Markdown.Span>): AnnotatedString {
                 val link = s.link
                 if (link != null && (link.startsWith("http://") || link.startsWith("https://"))) {
                     withLink(LinkAnnotation.Url(link, TextLinkStyles(SpanStyle(color = colors.primary, textDecoration = TextDecoration.Underline)))) {
+                        withStyle(style) { append(s.text) }
+                    }
+                } else if (link != null && files != null && isFileLink(link)) {
+                    // A file in the session's Termux folder, as models link what they made: tap to get it and open it.
+                    withLink(LinkAnnotation.Clickable("file", TextLinkStyles(SpanStyle(color = colors.primary, textDecoration = TextDecoration.Underline)), linkInteractionListener = { files(link) })) {
                         withStyle(style) { append(s.text) }
                     }
                 } else if (s.code && link == null) {

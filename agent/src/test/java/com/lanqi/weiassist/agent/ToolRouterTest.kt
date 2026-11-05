@@ -31,7 +31,8 @@ class ToolRouterTest {
     }
 
     @Test fun `each kind of session gets its own tools`() {
-        assertEquals(listOf("bash"), names(session()))
+        // send_file with Termux: to the messaging app's chat, or the app's.
+        assertEquals(listOf("bash", "send_file"), names(session()))
         assertEquals(emptyList<String>(), names(session(termux = false)))
         assertTrue(names(session(phone = true)).containsAll(listOf("open_app", "read_screen", "tap", "screenshot", "note", "bash")))
         assertEquals(listOf("bash", "send_file"), names(session(channel = "telegram")))

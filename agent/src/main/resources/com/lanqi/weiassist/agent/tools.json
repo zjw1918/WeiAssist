@@ -267,7 +267,7 @@
 			"name": "send_file",
 			"set": "send_file",
 			"label": "Send file",
-			"description": "Send a file from Termux to the user's chat: a picture, chart, PDF, audio, video or any file up to 50 MB (images up to 10 MB are shown as photos). The path is relative to this session's folder, or absolute.",
+			"description": "Give the user a file from Termux: a spreadsheet, document, picture, chart, PDF, audio, video or any file up to 50 MB. It appears in the user's chat as a file they can open or save (in a messaging app, images up to 10 MB are shown as photos). Use it whenever the user should get a file you made or found: naming its path or linking to it does not give it to them. The path is relative to this session's folder, or absolute.",
 			"parameters": {
 				"type": "object",
 				"properties": {

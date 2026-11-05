@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Files other apps may open when the user taps them in a chat (FileProvider): what the agent gave the user and
+     what users attached (each session's folder in attachments/), and files an answer links to (copied to linked/). -->
+<paths>
+    <files-path name="attachments" path="attachments/" />
+    <cache-path name="linked" path="linked/" />
+</paths>

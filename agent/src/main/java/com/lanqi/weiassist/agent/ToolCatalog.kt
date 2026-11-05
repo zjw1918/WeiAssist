@@ -19,7 +19,7 @@ object ToolCatalog {
 
     /**
      * The tools of a session: the supervisor's own (it doesn't operate the phone or run commands); phone tools
-     * for a phone session; bash with Termux; send_file with Termux in a messaging app.
+     * for a phone session; bash and send_file with Termux (send_file: to the messaging app's chat, or the app's).
      */
     fun forSession(s: SessionSummary): List<ToolSpec> {
         val sets = when {
@@ -27,7 +27,7 @@ object ToolCatalog {
             else -> buildSet {
                 if (s.phone) add(PHONE)
                 if (s.termux) add(BASH)
-                if (s.termux && s.channel != null) add(SEND_FILE)
+                if (s.termux) add(SEND_FILE)
             }
         }
         return entries.filter { it.set in sets }.map { it.spec }

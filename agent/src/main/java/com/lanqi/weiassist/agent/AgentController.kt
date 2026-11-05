@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.io.File
 
 /**
  * The agent, independent of any screen: owns the AI cores ([cores]: Pi for now), the tools they call
@@ -246,10 +247,48 @@ class AgentController(context: Context) {
             phone = phoneTools::call,
             bash = termux::run,
             bashKill = termux::kill,
-            sendFile = gateway::sendFile,
+            sendFile = ::sendFile,
             supervisor = commands::handle,
         )
     }
+
+    /**
+     * The send_file tool: to the messaging app's chat for a session there (Gateway), else into the app: the file is
+     * copied out of Termux into the session's own files and shown in its chat, to open or save.
+     */
+    private suspend fun sendFile(session: String, path: String, caption: String): Pair<Boolean, String> {
+        val p = termuxPath(path)
+        if (sessions.summary(session)?.channel != null) return gateway.sendFile(session, p, caption)
+        val name = p.trimEnd('/').substringAfterLast('/').ifEmpty { "file" }
+        val dest = File(sessions.filesDir(session), "${java.util.UUID.randomUUID().toString().take(8)}-$name")
+        dest.parentFile?.mkdirs()
+        termux.pull(session, p, dest, MAX_FILE)?.let { dest.delete(); return false to it }
+        // Stopped while it was copied: don't show it after all.
+        if (sessions.summary(session)?.status?.active != true) { dest.delete(); return false to "Stopped by the user; the file was not sent." }
+        val file = Attachment(name, mimeOf(name), dest.path, dest.length())
+        val shown = kotlinx.coroutines.withContext(Dispatchers.Main) { sessions.addFile(session, file, caption) }
+        if (!shown) { dest.delete(); return false to "This session no longer exists." }
+        return true to "Gave the user $name (${android.text.format.Formatter.formatShortFileSize(appContext, dest.length())}): it is in their chat now, to open or save."
+    }
+
+    /**
+     * A file a session's answer links to ([link]: relative to its Termux folder, ~/…, or file:…), copied out of Termux
+     * to open it. Its name is the file's own; throws with what went wrong.
+     */
+    suspend fun fetchLinkedFile(session: String, link: String): Attachment {
+        val path = termuxPath(android.net.Uri.decode(link.removePrefix("file://").removePrefix("file:")))
+        val name = path.trimEnd('/').substringAfterLast('/').ifEmpty { "file" }
+        val dir = File(appContext.cacheDir, "linked/${java.util.UUID.randomUUID().toString().take(8)}").apply { mkdirs() }
+        val dest = File(dir, name)
+        termux.pull(session, path, dest, MAX_FILE)?.let { dir.deleteRecursively(); throw IllegalStateException(it) }
+        return Attachment(name, mimeOf(name), dest.path, dest.length())
+    }
+
+    /** DeepSeek Harness sees Termux's home as /root (Ubuntu in proot): its paths there, as Termux's. */
+    private fun termuxPath(path: String): String = path.trim().let { if (it == "/root" || it.startsWith("/root/")) "~" + it.removePrefix("/root") else it }
+
+    private fun mimeOf(name: String) =
+        android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase()) ?: "application/octet-stream"
 
     private fun block(reason: String, terminate: Boolean = true) =
         JSONObject().put("block", true).put("terminate", terminate).put("reason", reason)
@@ -512,6 +551,8 @@ class AgentController(context: Context) {
         "insufficient_quota" in msg || "credit balance is too low" in msg || "429" in msg && "quota" in msg
 
     private companion object {
+        /** The largest file send_file or a file link copies out of Termux (as Telegram's limit). */
+        const val MAX_FILE = 50L * 1024 * 1024
         /** A question also asked in a chat goes unanswered this long: not allowed (the task doesn't hold its screen for ever). */
         const val REMOTE_CONFIRM_MS = 15 * 60_000L
         val HTTP_402 = Regex("""\b402\b""")
