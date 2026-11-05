@@ -338,6 +338,8 @@
     <string name="termux_check_again">Check again</string>
     <string name="termux_row_ready">Ready</string>
     <string name="termux_limited_note">Without Linux commands, some of the assistant\'s abilities are limited: looking things up on the web, working with files and data, writing and running code, and the DeepSeek Harness engine.</string>
+    <string name="termux_download_mirror">Download from the Tsinghua mirror</string>
+    <string name="termux_download_mirror_hint">If GitHub is slow or blocked: Termux\'s F-Droid build from mirrors.tuna.tsinghua.edu.cn. Later Termux updates must then come from F-Droid too.</string>
     <string name="termux_section">Termux</string>
     <string name="dsh_section_install">Installation</string>
     <string name="termux_step_app">Termux (GitHub or F-Droid build)</string>

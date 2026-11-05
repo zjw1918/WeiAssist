@@ -87,7 +87,7 @@ fun DshSetupScreen(vm: AppViewModel, termux: Termux, setup: DshSetup, onClose: (
             )
 
             TermuxSteps(
-                local, problem = status?.termuxProblem, asking = local.sendable && status == null,
+                termux, local, problem = status?.termuxProblem, asking = local.sendable && status == null,
                 onPermission = view.refresh, onRecheck = { status = null; view.refresh() },
             )
 

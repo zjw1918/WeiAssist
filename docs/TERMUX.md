@@ -31,6 +31,10 @@ Download the latest `termux-app_*_universal.apk` (or the one for your CPU, usual
 **[Termux's GitHub releases](https://github.com/termux/termux-app/releases/latest)**, or install Termux
 from [F-Droid](https://f-droid.org/packages/com.termux/).
 
+If GitHub is slow or blocked where you are, the setup screen's **Download from the Tsinghua mirror** gets F-Droid's
+build from [mirrors.tuna.tsinghua.edu.cn](https://mirrors.tuna.tsinghua.edu.cn/fdroid/repo/) (later Termux updates
+must then come from F-Droid too).
+
 > **Don't use the Google Play build.** It can't run commands for other apps. If you have it, uninstall
 > it first (its files are lost), then install the GitHub or F-Droid build. Builds from different sources
 > can't be installed over each other.
@@ -122,7 +126,7 @@ network work. When everything has a ✓, try it in a chat:
 最简单的方法是在应用里：**设置 → Linux 命令（Termux）→ 设置 Linux 命令**。它会逐项检查下面的步骤，显示缺少什么和对应的按钮，并能直接安装 `curl` 和 `tmux`。手动步骤如下：
 
 1. **从 GitHub 或 F-Droid 安装 Termux**：在 [Termux 的 GitHub 发布页](https://github.com/termux/termux-app/releases/latest)
-   下载 `termux-app_*_universal.apk`（或 `arm64-v8a` 版），或从 [F-Droid](https://f-droid.org/packages/com.termux/) 安装。
+   下载 `termux-app_*_universal.apk`（或 `arm64-v8a` 版），或从 [F-Droid](https://f-droid.org/packages/com.termux/) 安装。GitHub 太慢或无法访问时，可在设置页面点 **从清华镜像下载**，获取 F-Droid 版（以后更新 Termux 也需用 F-Droid 版）。
    **不要用 Google Play 版**，它不能替其他应用运行命令；如已安装，请先卸载（其中的文件会丢失）。
 2. **准备 Termux**：打开 Termux，等它初始化完成后运行：
 

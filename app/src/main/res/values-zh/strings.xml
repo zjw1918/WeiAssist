@@ -333,6 +333,8 @@
     <string name="termux_check_again">重新检查</string>
     <string name="termux_row_ready">可以使用</string>
     <string name="termux_limited_note">没有 Linux 命令，助手的部分能力会受限：上网查信息、处理文件和数据、编写和运行代码，以及 DeepSeek Harness 引擎。</string>
+    <string name="termux_download_mirror">从清华镜像下载</string>
+    <string name="termux_download_mirror_hint">GitHub 太慢或无法访问时使用：从 mirrors.tuna.tsinghua.edu.cn 下载 Termux 的 F-Droid 版。以后更新 Termux 也需要使用 F-Droid 版。</string>
     <string name="termux_section">Termux</string>
     <string name="dsh_section_install">安装</string>
     <string name="termux_step_app">Termux（GitHub 或 F-Droid 版）</string>
