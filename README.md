@@ -57,7 +57,7 @@ conversation keeps the engine it started with.
 
 ## What it can do
 
-![Four WeiAssist screens: a DeepSeek Harness session with three subagents researching in parallel; a card as each one finished, with the agent's reply, then the comparison table; Settings with the AI engine choice, Pi or DeepSeek Harness; and a Pi session answering the weather with curl in Termux](docs/images/showcase.png)
+![Four WeiAssist screens: a DeepSeek Harness session with three subagents researching in parallel; its answer once they are done, one comparison table; Settings with the AI engine choice, Pi or DeepSeek Harness; and a Pi session answering the weather with curl in Termux](docs/images/showcase.png)
 
 - **Many providers:** OpenAI, Anthropic, Google, DeepSeek, OpenRouter, xAI, Moonshot, Mistral, OpenCode, and any
   OpenAI-compatible server (Ollama, vLLM, LM Studio…).
