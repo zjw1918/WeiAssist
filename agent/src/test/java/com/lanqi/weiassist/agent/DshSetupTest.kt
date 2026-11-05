@@ -55,4 +55,15 @@ class DshSetupTest {
     @Test fun colorsRemoved() {
         assertEquals("[*] Installing", DshSetup.cleanLog("\u001B[1;34m[*]\u001B[0m Installing"))
     }
+
+    @Test fun installedVersion() {
+        assertEquals("0.2.3", DshSetup.parse("running=0\ninstalled=abc\ndsh=1\nversion=0.2.3\n--- log ---\n", "abc").version)
+        assertNull(DshSetup.parse("running=0\ninstalled=\ndsh=0\nversion=\n--- log ---\n", "abc").version)
+    }
+
+    @Test fun versionOrder() {
+        val sorted = listOf("0.2.1-rc.5", "0.2.2-alpha.3", "0.2.2-rc.1", "0.2.2-rc.2", "0.2.2-rc.10", "0.2.2", "0.2.10", "1.0.0")
+        sorted.zipWithNext().forEach { (a, b) -> assertTrue("$a < $b", DshSetup.compareVersions(a, b) < 0); assertTrue(DshSetup.compareVersions(b, a) > 0) }
+        assertEquals(0, DshSetup.compareVersions("0.2.2-rc.1", "v0.2.2-rc.1"))
+    }
 }

@@ -138,6 +138,12 @@ entry in the registry.
   `setup.log` (each step starts with `== [id]`, the run ends with `== [done]` or `== [failed] <code>`), `setup.pid`
   while it runs, and `installed` (a hash of the materials) when it worked. dsh counts as set up only with this APK's
   hash, so an app with a newer bridge asks for the setup again; done steps are skipped.
+- **dsh's version:** the script installs `DSH_TESTED` (the version the bridge and profile patch were tested with)
+  unless the app passes `DSH_VERSION`. The setup screen shows the installed version, checks npm's `latest`/`next`
+  tags on request and can install the newer one, with a warning, or go back to the tested one. The choice is kept
+  (`DshSetup.chosenVersion`), so a later setup doesn't quietly downgrade. The profile is version-agnostic (only
+  bundles and our patch), so a version change is just the npm install; the setup's check step catches a dsh that no
+  longer loads the bridge.
 - **Termux must not be frozen:** once a RUN_COMMAND ends, Termux is a cached background app, and HyperOS gave dsh
   almost no CPU (minutes to boot) or froze it outright (`do_freezer_trap`), even reading `/proc/<pid>/cmdline` in the
   launch script blocked. `launchDsh` therefore starts a keepalive task that lasts as long as dsh's tmux session (Termux

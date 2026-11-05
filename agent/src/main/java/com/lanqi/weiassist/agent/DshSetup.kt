@@ -9,6 +9,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.net.HttpURLConnection
+import java.net.URL
 import java.security.MessageDigest
 
 /**
@@ -19,9 +23,14 @@ import java.security.MessageDigest
  *
  * A setup is current when it ended with this APK's [stamp] (a hash of the materials): an app with a newer bridge asks
  * for the setup again (an update: only the changed parts take long).
+ *
+ * dsh's own version: by default the one this APK's bridge was tested with ([testedVersion], pinned in setup-proot.sh).
+ * The user may install a newer one from npm ([latestVersion], [start] with a version); the choice is kept
+ * ([chosenVersion]), so a later setup (an app update) doesn't quietly go back to the tested one.
  */
 class DshSetup(context: Context, private val termux: Termux, private val scope: CoroutineScope) {
     private val app = context.applicationContext
+    private val prefs = app.getSharedPreferences("dsh", Context.MODE_PRIVATE)
 
     /** The script's steps, in order, as its log names them ("== [id] …"). */
     enum class Step(val id: String) { Termux("termux"), Ubuntu("ubuntu"), Node("node"), Dsh("dsh"), Profile("profile"), Check("check") }
@@ -43,6 +52,8 @@ class DshSetup(context: Context, private val termux: Termux, private val scope: 
         val steps: Map<Step, StepState> = Step.entries.associateWith { StepState.Pending },
         /** The end of the last run's output, cleaned up for display. */
         val log: String = "",
+        /** The dsh version installed in Termux, or null if none. */
+        val version: String? = null,
     ) {
         val ready get() = termuxProblem == null && current
     }
@@ -53,6 +64,60 @@ class DshSetup(context: Context, private val termux: Termux, private val scope: 
 
     /** This APK's materials: the files the setup writes into Termux (assets dsh/<name>). */
     private val materials by lazy { FILES.associateWith { f -> app.assets.open("dsh/$f").use { it.readBytes().toString(Charsets.UTF_8) } } }
+
+    /** The dsh version this APK's bridge and profile patch were tested with (setup-proot.sh's DSH_TESTED). */
+    val testedVersion: String by lazy { TESTED_LINE.find(materials.getValue("setup-proot.sh"))!!.groupValues[1] }
+
+    /** The dsh version the user chose to install instead of [testedVersion], or null for the tested one. */
+    val chosenVersion: String? get() = prefs.getString(KEY_VERSION, null)?.takeIf { it != testedVersion }
+
+    /**
+     * The newest dsh release on npm (the higher of its `latest` and `next` tags; never alpha), or null if the registry
+     * can't be reached. [mirrors]: ask npmmirror.com.
+     */
+    suspend fun latestVersion(mirrors: Boolean): String? {
+        val tags = registryGet(mirrors, "-/package/@deepseek-ai/dsh/dist-tags")?.second ?: return null
+        return listOf("latest", "next").mapNotNull { tags.optString(it).ifBlank { null } }.maxWithOrNull(::compareVersions)
+    }
+
+    /** What npm says about a version the user typed. */
+    sealed interface Lookup {
+        /** It exists: this version (a tag such as `alpha` resolved to the version it names now). */
+        data class Found(val version: String) : Lookup
+        data object NotFound : Lookup
+        /** Not a version or a tag (only letters, digits, `.`, `-`, `+`, `_`). */
+        data object Invalid : Lookup
+        data object Unreachable : Lookup
+    }
+
+    /** Look [spec] (a version such as 0.2.1-rc.5, or a dist-tag) up on npm. [mirrors]: ask npmmirror.com. */
+    suspend fun lookUp(spec: String, mirrors: Boolean): Lookup {
+        val v = spec.trim().removePrefix("v").takeIf { SPEC.matches(it) } ?: return Lookup.Invalid
+        val (code, json) = registryGet(mirrors, "@deepseek-ai/dsh/$v") ?: return Lookup.Unreachable
+        return when {
+            code == 404 -> Lookup.NotFound
+            json?.optString("version").isNullOrBlank() -> Lookup.Unreachable
+            else -> Lookup.Found(json!!.getString("version"))
+        }
+    }
+
+    /** GET [path] from the npm registry: the status and, on 200, the JSON; null if it can't be reached. */
+    private suspend fun registryGet(mirrors: Boolean, path: String): Pair<Int, JSONObject?>? = withContext(Dispatchers.IO) {
+        try {
+            val registry = if (mirrors) "https://registry.npmmirror.com" else "https://registry.npmjs.org"
+            val c = URL("$registry/$path").openConnection() as HttpURLConnection
+            c.connectTimeout = 10_000; c.readTimeout = 10_000
+            try {
+                val code = c.responseCode
+                code to if (code == 200) JSONObject(c.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }) else null
+            } finally {
+                c.disconnect()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "npm registry $path", e)
+            null
+        }
+    }
 
     /** A hash of [materials]: the setup writes it to ~/.weiassist-dsh/installed when it worked. */
     val stamp: String by lazy {
@@ -83,6 +148,7 @@ class DshSetup(context: Context, private val termux: Termux, private val scope: 
             if [ -n "${'$'}{p}" ] && grep -q setup-proot "/proc/${'$'}{p}/cmdline" 2> /dev/null; then echo running=1; else echo running=0; fi
             echo "installed=${'$'}(cat "${'$'}{d}/installed" 2> /dev/null)"
             [ -x "${'$'}{d}/linux/run/node_modules/.bin/dsh" ] && command -v proot-distro > /dev/null && echo dsh=1 || echo dsh=0
+            echo "version=${'$'}(sed -n 's/^ *"version": *"\([^"]*\)".*/\1/p' "${'$'}{d}/linux/run/node_modules/@deepseek-ai/dsh/package.json" 2> /dev/null | head -1)"
             echo "$LOG_MARK"
             [ -f "${'$'}{d}/setup.log" ] && tail -c 12000 "${'$'}{d}/setup.log"
             exit 0
@@ -95,16 +161,20 @@ class DshSetup(context: Context, private val termux: Termux, private val scope: 
     /**
      * Write the materials into Termux and run the setup there, in the background (it goes on if the user leaves the
      * app). [mirrors]: download Node and dsh's packages from npmmirror.com (faster in mainland China).
+     * [version]: the dsh version to install from now on ([testedVersion] goes back to it); by default the last choice.
      * Returns false if a setup was already running.
      */
-    fun start(mirrors: Boolean): Boolean {
+    fun start(mirrors: Boolean, version: String? = chosenVersion): Boolean {
         if (!_launching.compareAndSet(false, true)) return false
+        val dsh = version?.takeIf { it != testedVersion }
+        prefs.edit().apply { if (dsh == null) remove(KEY_VERSION) else putString(KEY_VERSION, dsh) }.apply()
         scope.launch(Dispatchers.IO) {
             // The phone must not sleep halfway through the downloads (Termux runs it, but the CPU is the phone's).
             val awake = app.getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "weiassist:dsh-setup")
             awake.acquire(TIMEOUT_SEC * 1000L)
             try {
-                // $1… are the files' contents, never spliced into the script; $5 the stamp; $6, $7 the mirrors.
+                // $1… are the files' contents, never spliced into the script; $5 the stamp; $6, $7 the mirrors; $8 the
+                // dsh version (empty: the tested one).
                 val script = """
                     d="${'$'}{HOME}/.weiassist-dsh"; m="${'$'}{d}/materials"; mkdir -p "${'$'}{m}" || exit 97
                     p="${'$'}(cat "${'$'}{d}/setup.pid" 2> /dev/null)"
@@ -116,6 +186,7 @@ class DshSetup(context: Context, private val termux: Termux, private val scope: 
                     rm -f "${'$'}{d}/installed"
                     [ -n "${'$'}{6}" ] && export NODE_MIRROR="${'$'}{6}"
                     [ -n "${'$'}{7}" ] && export NPM_REGISTRY="${'$'}{7}"
+                    [ -n "${'$'}{8}" ] && export DSH_VERSION="${'$'}{8}"
                     exec bash "${'$'}{m}/setup-proot.sh" "${'$'}{m}" "${'$'}{5}"
                 """.trimIndent()
                 val args = arrayOf(
@@ -124,6 +195,7 @@ class DshSetup(context: Context, private val termux: Termux, private val scope: 
                     materials.getValue("package.json"), materials.getValue("cordis.patch.yml"), stamp,
                     if (mirrors) "https://npmmirror.com/mirrors/node" else "",
                     if (mirrors) "https://registry.npmmirror.com" else "",
+                    dsh.orEmpty(),
                 )
                 val r = termux.execute(args, TIMEOUT_SEC)
                 Log.i(TAG, "setup ended: exit ${r?.getInt("exitCode", -1)} ${r?.getString("errmsg").orEmpty()}")
@@ -144,6 +216,9 @@ class DshSetup(context: Context, private val termux: Termux, private val scope: 
         /** The longest a setup may run (slow networks: Ubuntu, Node and ~600 npm packages). */
         private const val TIMEOUT_SEC = 2 * 60 * 60L
         private const val LOG_MARK = "--- log ---"
+        private const val KEY_VERSION = "version"
+        private val SPEC = Regex("""[A-Za-z0-9][A-Za-z0-9._+-]{0,63}""")
+        private val TESTED_LINE = Regex("""(?m)^DSH_TESTED="([^"]+)"$""")
         const val NOT_SET_UP = "DeepSeek Harness is not set up yet: set it up in Settings → AI engine."
         private val STEP_LINE = Regex("""^== \[([a-z]+)](?: (.*))?$""")
         private val BLANK_LINES = Regex("""\n\s*\n(\s*\n)+""")
@@ -184,9 +259,38 @@ class DshSetup(context: Context, private val termux: Termux, private val scope: 
                 running = running, current = current,
                 outdated = !running && !current && (installed.isNotEmpty() || values["dsh"] == "1"),
                 failedCode = if (running || current) null else failed,
-                steps = steps, log = log,
+                steps = steps, log = log, version = values["version"]?.ifBlank { null },
             )
         }
+
+        /** Semver order, prereleases included (0.2.2-rc.1 < 0.2.2-rc.10 < 0.2.2 < 0.2.10). */
+        fun compareVersions(a: String, b: String): Int {
+            fun parts(s: String) = s.split('.').map { p -> p.toIntOrNull()?.let { Id(it, null) } ?: Id(null, p) }
+            fun cmp(x: List<Id>, y: List<Id>): Int {
+                for (i in 0 until minOf(x.size, y.size)) {
+                    val (xn, xs) = x[i]; val (yn, ys) = y[i]
+                    val c = when {
+                        xn != null && yn != null -> xn.compareTo(yn)
+                        xn != null -> -1 // numeric identifiers sort before others
+                        yn != null -> 1
+                        else -> xs!!.compareTo(ys!!)
+                    }
+                    if (c != 0) return c
+                }
+                return x.size.compareTo(y.size)
+            }
+            val (ar, ap) = a.trim().removePrefix("v").split('-', limit = 2).let { it[0] to it.getOrNull(1) }
+            val (br, bp) = b.trim().removePrefix("v").split('-', limit = 2).let { it[0] to it.getOrNull(1) }
+            cmp(parts(ar), parts(br)).let { if (it != 0) return it }
+            return when {
+                ap == null && bp == null -> 0
+                ap == null -> 1 // a release comes after its prereleases
+                bp == null -> -1
+                else -> cmp(parts(ap), parts(bp))
+            }
+        }
+
+        private data class Id(val n: Int?, val s: String?)
 
         /** Terminal output as text: colors removed, and a progress bar's redraws (\r) down to what it showed last. */
         internal fun cleanLog(s: String): String = s.replace(ANSI, "").split('\n') // lines() would split at \r too
