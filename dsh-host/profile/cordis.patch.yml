@@ -3,10 +3,18 @@
 # Sessions keep dsh's own capabilities (its tools, subagents, web, todo, plan mode, skills) and get the app's
 # tools (its catalog) on top; the bridge gates every call through the app.
 
-# No one-shot task: the bridge keeps the process alive while the app is connected. (headless-startup stays:
-# the sandbox policy reads its launch options.)
+# No one-shot task: the bridge keeps the process alive while the app is connected. headless-startup requires a
+# task (without one it fails and takes dsh's app context down), so it is off too, and the sandbox policy gets its
+# options here instead: the session folders are its writable workspace.
 - id: headless-runner
   disabled: true
+- id: headless-startup
+  disabled: true
+- id: sandbox-policy
+  inject: []
+  config:
+    mode: !!js process.env.DSH_PERMISSION_MODE ?? 'workspace-write'
+    workspaceRoot: !!js process.env.WEIASSIST_SESSIONS_DIR ?? process.cwd()
 
 # Model routes. A route's key comes from the env var the bridge sets from the app (WEIASSIST_KEY_<ROUTE>).
 - id: llm-pi-ai
