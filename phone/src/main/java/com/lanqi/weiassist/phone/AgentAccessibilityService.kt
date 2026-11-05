@@ -21,7 +21,7 @@ import kotlinx.coroutines.delay
 /**
  * The agent's eyes and hands in other apps. The user turns it on in Settings → Accessibility;
  * Android then lets it read the window content of the app in front and perform actions on it.
- * The cores' phone tools (Pi: pi-host/src/phone-tools.ts) reach it through the ToolHost → PhoneActions.
+ * The cores' phone tools reach it through the ToolHost → PhoneTools → PhoneActions.
  */
 class AgentAccessibilityService : AccessibilityService() {
 

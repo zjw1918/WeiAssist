@@ -13,7 +13,7 @@ Status legend: ✅ done · 🔨 next · ⬜ planned. Current status and todo: [P
 - ✅ **Sign-in:** ChatGPT subscription or an API key for any offered provider, through Pi's own `models.login`.
 - ✅ **Models:** model and thinking-level pickers filled from Pi.
 - ✅ **Phone tools:** Pi `AgentTool`s over an AccessibilityService (read screen, tap, type, scroll, keys, open app).
-- ✅ **Confirmation:** Send/Pay/Delete-like taps need the user's OK, via Pi's `beforeToolCall` and an overlay card.
+- ✅ **Confirmation:** Send/Pay/Delete-like taps need the user's OK, via the app's `before_tool` check (every core) and an overlay card.
 - ✅ **Background work:** the agent runs in a foreground service. Stop is in the notification, and results arrive by notification when the app isn't visible.
 - ✅ **Basic safety:** the agent never operates 小维助手 itself and pauses while the user looks at it. Password fields are never sent to the model.
 - ✅ **First real task:** "send an email with Gmail", end to end.
@@ -52,7 +52,7 @@ Status legend: ✅ done · 🔨 next · ⬜ planned. Current status and todo: [P
 - ✅ **Long tasks:** a visible step list; the user can steer mid-task (Pi's `steer`/follow-up queue).
 - ⬜ **Pluggable AI cores:** users choose the agent harness a new session runs on.
   - ✅ The core contract (`:core`: `AgentCore`, `ToolHost`, `CoreAccounts`, `CoreRegistry`); Pi behind it (`:core-pi`); each session records its core.
-  - ⬜ Phone-tool policy (screen memory, confirm judgment, blind typing, step limit) moved from `pi-host/src/phone-tools.ts` into Kotlin, so every core gets it.
+  - ✅ Phone-tool policy (screen memory, confirm judgment, blind typing, step limit) moved from `pi-host/src/phone-tools.ts` into Kotlin (`PhoneTools`), so every core gets it.
   - ⬜ One tool catalog (names, schemas, descriptions) shared by `pi-host` and other cores.
   - ⬜ A second core: [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`). It needs Node ≥ 24.9 (no WebView), so it would run as a Node process with our own dsh plugin (tools on `ctx.tools`, gate/confirm on `tools/pre-execute`, streaming from `agent/assistant-stream`). Its SDK and ACP servers send no live text and the SDK can't cancel. Blockers on Android: `process.platform` is `android`, so dsh's native `flock` throws; no Android builds of `sharp` and `node-pty`.
 

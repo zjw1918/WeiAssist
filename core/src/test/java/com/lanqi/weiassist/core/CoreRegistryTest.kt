@@ -77,11 +77,11 @@ class CoreRegistryTest {
 
     @Test fun `tool host answers registered calls only, once per type`() = runBlocking {
         val host = ToolHost()
-        host.register("gate") { m -> m.getString("session") == "s1" }
-        assertTrue(host.handles("gate"))
+        host.register("before_tool") { m -> m.getString("session") == "s1" }
+        assertTrue(host.handles("before_tool"))
         assertFalse(host.handles("phone"))
-        assertEquals(true, host.call("gate", JSONObject().put("session", "s1")))
-        assertTrue(runCatching { host.register("gate") { true } }.isFailure)
+        assertEquals(true, host.call("before_tool", JSONObject().put("session", "s1")))
+        assertTrue(runCatching { host.register("before_tool") { true } }.isFailure)
         assertTrue(runCatching { host.call("phone", JSONObject()) }.isFailure)
     }
 }

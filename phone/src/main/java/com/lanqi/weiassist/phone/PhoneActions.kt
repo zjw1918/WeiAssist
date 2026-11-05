@@ -6,7 +6,7 @@ import android.content.pm.PackageManager
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 
-/** Runs one Pi phone-tool request (see pi-host/src/phone-tools.ts) against the accessibility service. */
+/** Runs one raw phone action (for [PhoneTools], which every AI core's phone tools go through) against the accessibility service. */
 class PhoneActions(private val context: Context) {
     /** Bumped by [cancelWaits] (the user pressed Stop) so a paused action gives up. */
     private val generation = java.util.concurrent.atomic.AtomicInteger()

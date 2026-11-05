@@ -38,6 +38,8 @@ class AgentController(context: Context) {
     /** The app's side of every core's tool calls (registered below). */
     private val tools = ToolHost()
     private val phone = PhoneActions(appContext)
+    /** The phone tools' behavior and safety, for every core (see PhoneTools). */
+    private val phoneTools = com.lanqi.weiassist.phone.PhoneTools(::runPhone)
     val termux = Termux(appContext)
     private val prefs = appContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
@@ -81,8 +83,10 @@ class AgentController(context: Context) {
     init {
         screens.isActive = { id -> sessions.summary(id)?.status?.active == true }
         // Stop and Delete end the session's Termux jobs too; its files there are kept unless the user asked otherwise.
+        sessions.onTaskStarted = phoneTools::taskStarted
         sessions.onEnded = { id, deleted, files ->
             gateway.cancelTransfers(id)
+            if (deleted) phoneTools.forget(id)
             scope.launch { termux.cleanUp(id, deleted, files) }
         }
     }
@@ -133,18 +137,23 @@ class AgentController(context: Context) {
     val loaded = kotlinx.coroutines.CompletableDeferred<Unit>()
 
     init {
-        // Every core's tools, confirm hook and pause gate are answered here, per session.
-        tools.register("gate") { m -> sessions.gate(m.getString("session")) }
-        tools.register("phone") { m ->
-            val id = m.optString("session")
-            // Only the session holding a screen may act on it (see ScreenPool).
-            val target = sessions.screenOf(id)
-            when {
-                target == null -> "This task has no screen any more (the shell helper stopped, or another task took it). Stop and tell the user."
-                // Paused (or stopped) since the gate let this call through: hold it here too.
-                !sessions.gate(id) -> "stopped by the user"
-                else -> phone.run(m, target) { sessions.isPaused(id) }
+        // Every core's tools are answered here, per session.
+        // Before every tool call: the pause gate, then for a phone session its safety checks (PhoneTools.check).
+        // Answers null to go on, or { block, terminate, reason }.
+        tools.register("before_tool") { m ->
+            val id = m.getString("session")
+            val tool = m.optString("tool")
+            val reason = when {
+                !sessions.gate(id) -> "Stopped by the user."
+                sessions.summary(id)?.phone == true ->
+                    phoneTools.check(id, tool, m.optJSONObject("args") ?: JSONObject()) { c -> confirmTap(id, c) }
+                else -> null
             }
+            reason?.let { JSONObject().put("block", true).put("terminate", true).put("reason", it) }
+        }
+        // A phone tool (read_screen, tap, …): PhoneTools adds the screen an action leaves and remembers what it read.
+        tools.register("phone") { m ->
+            phoneTools.call(m.optString("session"), m.getString("action"), m.optJSONObject("args") ?: JSONObject())
         }
         // The bash tool (pi-host bash-tool.ts): commands run in Termux, in the session's own folder.
         tools.register("bash") { m ->
@@ -164,28 +173,6 @@ class AgentController(context: Context) {
             // Only a supervisor session may manage the others.
             if (sessions.summary(caller)?.supervisor != true) "Only the supervisor may manage sessions."
             else commands.handle(caller, m.getString("action"), m.optJSONObject("args") ?: JSONObject())
-        }
-        tools.register("confirm") { m ->
-            val fields = m.optJSONArray("typed")
-            val detail = if (fields == null || fields.length() == 0) appContext.getString(R.string.confirm_nothing_typed)
-            else (0 until fields.length()).joinToString("\n") { fields.getString(it) }
-            val id = m.optString("session")
-            val title = sessions.summary(id)?.title.orEmpty()
-            val head = if (m.optBoolean("blind")) appContext.getString(R.string.confirm_title_blind)
-            else appContext.getString(R.string.confirm_title, m.getString("label"))
-            val question = if (title.isBlank()) head else "$head\n· $title"
-            val payment = !m.optBoolean("blind") && Confirmations.isPayment(m.optString("label"))
-            // On the phone's card and, for a conversation from Telegram, in its chat: the first answer wins.
-            val asks = listOfNotNull<suspend () -> Boolean?>(
-                AgentAccessibilityService.instance?.let { card -> suspend { card.confirm(question, detail) } },
-                if (gateway.canAsk(id)) suspend { gateway.confirm(id, "$question\n\n$detail", payment) } else null,
-            )
-            if (asks.isEmpty()) false
-            else Confirmations.first(
-                // Stopped meanwhile: nobody needs to answer any more (the questions are withdrawn).
-                asks + suspend { sessions.summaries.first { l -> l.none { it.id == id && it.status.active } }; false },
-                timeoutMs = if (asks.size > 1) REMOTE_CONFIRM_MS else null,
-            )
         }
         cores.bind(tools)
         scope.launch { cores.events.collect(::onCore) }
@@ -221,6 +208,40 @@ class AgentController(context: Context) {
                     "settings put global settings_enable_monitor_phantom_procs false", 10_000)
             }.onFailure { android.util.Log.w("AgentController", "could not lift the child process limit", it) }
         }
+    }
+
+    /** One raw action on session [id]'s screen, for [phoneTools]. Only the session holding a screen may act on it (see ScreenPool). */
+    private suspend fun runPhone(id: String, action: String, args: JSONObject): String {
+        val target = sessions.screenOf(id)
+        return when {
+            target == null -> "This task has no screen any more (the shell helper stopped, or another task took it). Stop and tell the user."
+            // Paused (or stopped) since the gate let this call through: hold it here too.
+            !sessions.gate(id) -> "stopped by the user"
+            else -> phone.run(JSONObject().put("session", id).put("action", action).put("args", args), target) { sessions.isPaused(id) }
+        }
+    }
+
+    /**
+     * Ask the user to allow a tap on an irreversible button (or a blind one): on the phone's overlay card and,
+     * for a conversation from Telegram, in its chat. The first answer wins.
+     */
+    private suspend fun confirmTap(id: String, c: com.lanqi.weiassist.phone.PhoneTools.Confirmation): Boolean {
+        val detail = if (c.typed.isEmpty()) appContext.getString(R.string.confirm_nothing_typed) else c.typed.joinToString("\n")
+        val title = sessions.summary(id)?.title.orEmpty()
+        val head = if (c.blind) appContext.getString(R.string.confirm_title_blind)
+        else appContext.getString(R.string.confirm_title, c.label)
+        val question = if (title.isBlank()) head else "$head\n· $title"
+        val payment = !c.blind && Confirmations.isPayment(c.label)
+        val asks = listOfNotNull<suspend () -> Boolean?>(
+            AgentAccessibilityService.instance?.let { card -> suspend { card.confirm(question, detail) } },
+            if (gateway.canAsk(id)) suspend { gateway.confirm(id, "$question\n\n$detail", payment) } else null,
+        )
+        return if (asks.isEmpty()) false
+        else Confirmations.first(
+            // Stopped meanwhile: nobody needs to answer any more (the questions are withdrawn).
+            asks + suspend { sessions.summaries.first { l -> l.none { it.id == id && it.status.active } }; false },
+            timeoutMs = if (asks.size > 1) REMOTE_CONFIRM_MS else null,
+        )
     }
 
     // ---- cores → state ----------------------------------------------------------------------------

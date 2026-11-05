@@ -18,8 +18,8 @@ export function buildBundle() {
 }
 
 export async function startHost({ credentials = null, customProviders = [], hostCalls = {} } = {}) {
-	// Kotlin's pause gate: by default every session may go on.
-	hostCalls = { gate: () => true, ...hostCalls };
+	// Kotlin's before_tool (pause gate, phone safety checks): by default every tool call may go on.
+	hostCalls = { before_tool: () => null, ...hostCalls };
 	const messages = [];
 	const waiters = [];
 	const fetches = [];
