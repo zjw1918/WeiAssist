@@ -104,7 +104,10 @@ class AgentController(context: Context) {
     init {
         screens.isActive = { id -> sessions.summary(id)?.status?.active == true }
         // Stop and Delete end the session's Termux jobs too; its files there are kept unless the user asked otherwise.
-        sessions.onTaskStarted = { id -> phoneTools.taskStarted(id); creates.remove(id); allowed.removeIf { it.startsWith("$id/") } }
+        sessions.onTaskStarted = { id ->
+            phoneTools.taskStarted(id); creates.remove(id); allowed.removeIf { it.startsWith("$id/") }
+            if (worksInTermux(id)) termux.markFolder(id)
+        }
         sessions.onEnded = { id, deleted, files ->
             gateway.cancelTransfers(id)
             if (deleted) { phoneTools.forget(id); creates.remove(id) }
@@ -204,6 +207,8 @@ class AgentController(context: Context) {
         scope.launch(Dispatchers.IO) { Attachments.clearStaging(appContext) }
         scope.launch {
             sessions.load()
+            // DeepSeek Harness sessions from before they were marked (see worksInTermux).
+            sessions.summaries.value.filter { it.core == com.lanqi.weiassist.dsh.DshEngine.ID && !it.supervisor }.forEach { termux.markFolder(it.id) }
             loaded.complete(Unit)
             launch { gateway.start() }
             warmDsh()
@@ -498,6 +503,13 @@ class AgentController(context: Context) {
     private val _defaultEngine = MutableStateFlow(prefs.getString("core", null)?.takeIf { cores[it] != null } ?: PiEngine.ID)
     /** The AI core new sessions use (Settings). Each session keeps its own for good. */
     val defaultEngine: StateFlow<String> = _defaultEngine.asStateFlow()
+
+    /**
+     * A DeepSeek Harness session works in its Termux folder (~/sessions/<id>, /root/sessions/<id> in Ubuntu) with dsh's
+     * own bash and file tools, which this app never runs: it has that folder, for Delete to offer to remove, like a
+     * session that used the app's bash. The supervisor only manages sessions.
+     */
+    private fun worksInTermux(id: String) = sessions.summary(id)?.let { it.core == com.lanqi.weiassist.dsh.DshEngine.ID && !it.supervisor } == true
 
     /** The AI core new sessions use from now on ("pi", "dsh"), saved; unknown ids are ignored. */
     fun selectCore(id: String) {
