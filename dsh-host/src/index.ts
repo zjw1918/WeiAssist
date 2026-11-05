@@ -16,6 +16,7 @@ import { createMcpToolDefinition } from "@deepseek-ai/dsh-mcp-client";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { installModelSelection } from "@deepseek-ai/dsh-agent";
 import * as llmPiAi from "@deepseek-ai/dsh-llm-pi-ai";
+import { admitEncodedImages } from "@deepseek-ai/dsh-attachment";
 
 export const name = "weiassist-bridge";
 export const inject = ["agents", "llm", "sessions", "tools", "systemPrompt"];
@@ -61,6 +62,9 @@ interface Live {
 
 const textOf = (content: readonly any[] | undefined) =>
 	(content ?? []).filter((b) => b?.type === "text").map((b) => b.text).join("");
+
+/** The image formats dsh's attachment store takes. */
+const IMAGE_TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 
 /** Only for an app that sends no prompt (the app sends its own: Kotlin's Prompts). */
 const DEFAULT_PROMPTS: Record<string, string> = {
@@ -194,12 +198,15 @@ export class Bridge {
 		const run = async () => {
 			switch (m.type) {
 				case "configure": return this.configure(m);
-				case "prompt": return this.need(session!).agent.followup(this.userMessage(m.text, m.content));
+				case "prompt": {
+					const message = await this.userMessage(m.text, m.content);
+					return this.need(session!).agent.followup(message);
+				}
 				case "steer": {
 					const s = this.need(session!);
 					// Steering an idle agent would start a turn the app doesn't know of: hand it back, as Pi does.
 					if (s.agent.status !== "running") return this.send({ type: "steer_late", session, text: m.text });
-					return s.agent.steer(this.userMessage(m.text, m.content));
+					return s.agent.steer(await this.userMessage(m.text, m.content));
 				}
 				case "abort": return this.abort(session!);
 				case "dispose": return this.dispose(session!);
@@ -284,10 +291,12 @@ export class Bridge {
 			s = { handle, agent: handle.agent, shape, stop: false, calls: new Map(), skipped: this.lastSkipped, running: new Set() };
 			this.sessions.set(c.session, s);
 		}
-		// The session's model for its next steps (durable: dsh records the selection in the session's log).
-		s.agent.model.select(model);
+		// The session's model for its next steps, with the app's thinking level as the nearest effort the model offers
+		// (durable: dsh records the selection in the session's log).
+		const effort = await this.effortFor(route, c.modelId, c.thinkingLevel);
+		s.agent.model.select(effort ? { ...model, reasoningEffort: effort } : model);
 		this.send({
-			type: "configured", session: c.session, provider: route, model: c.modelId, thinkingLevel: c.thinkingLevel ?? "",
+			type: "configured", session: c.session, provider: route, model: c.modelId, thinkingLevel: effort ?? "",
 			baseUrl: c.baseUrl ?? "", skipped: s.skipped, resumeError: restored ? undefined : this.lastResumeError, auth: this.routeNames.has(route) ? "app" : null, messages: restored ? 1 : 0,
 		});
 	}
@@ -373,13 +382,45 @@ export class Bridge {
 		await s?.handle.dispose();
 	}
 
-	/** The app's message: typed text and attached content blocks (images aren't passed on yet: a note says so). */
-	private userMessage(text: string, content?: Block[]) {
+	/**
+	 * The effort for the app's thinking level on this model: the level itself when the model offers it, else the
+	 * nearest above it, else the highest (as the app picks a level for a model). None when the model offers none.
+	 */
+	private async effortFor(route: string, model: string, level?: string) {
+		if (!level) return undefined;
+		let offered: string[] = [];
+		try {
+			const info = await this.ctx.llm.resolveModelInfo(route, model);
+			offered = (info?.reasoning?.efforts ?? []).map((e: any) => String(e.id));
+		} catch { /* an unknown model: no efforts */ }
+		if (offered.length === 0) return undefined;
+		if (offered.includes(level)) return level;
+		const order = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
+		const ranked = offered.filter((e) => order.includes(e)).sort((a, b) => order.indexOf(a) - order.indexOf(b));
+		return ranked.find((e) => order.indexOf(e) > order.indexOf(level)) ?? ranked.at(-1) ?? offered[0];
+	}
+
+	/**
+	 * The app's message: typed text and attached content blocks. Images go into dsh's attachment store and the
+	 * message refers to them; one dsh can't take (another format, or refused) becomes a note the model can tell about.
+	 */
+	private async userMessage(text: string, content?: Block[]) {
 		const blocks: any[] = [];
 		if (text) blocks.push({ type: "text", text });
+		const images = (content ?? []).filter((b): b is Extract<Block, { type: "image" }> => b.type === "image" && IMAGE_TYPES.has(b.mimeType));
+		let refs: readonly unknown[] = [];
+		if (images.length) {
+			try {
+				refs = await admitEncodedImages(this.ctx.get("attachments"), images.map((b) => ({ data: b.data, mediaType: b.mimeType as any })));
+			} catch (e) {
+				say(`images: ${e instanceof Error ? e.message : String(e)}`);
+			}
+		}
+		let next = 0;
 		for (const b of content ?? []) {
 			if (b.type === "text") blocks.push({ type: "text", text: b.text });
-			else blocks.push({ type: "text", text: "<attachment>(an image: this engine can't pass images on yet; tell the user)</attachment>" });
+			else if (IMAGE_TYPES.has(b.mimeType) && refs[next] !== undefined) blocks.push({ type: "image", attachment: refs[next++] });
+			else blocks.push({ type: "text", text: `<attachment>(an image, ${b.mimeType}, that this engine couldn't take; tell the user)</attachment>` });
 		}
 		if (blocks.length === 0) blocks.push({ type: "text", text: "(empty message)" });
 		return createUserMessage({ content: blocks, source: { kind: "user" } });
