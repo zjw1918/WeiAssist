@@ -98,6 +98,7 @@ export const SCRIPTS = {
 	submit: [{ tool: "type_text", args: { id: 3, text: "example.com", submit: true } }, { tool: "press_key", args: { key: "enter" } }, { text: "submitted" }],
 	// DeepSeek Harness's own tools (an AI core's native capabilities): its bash, and a subagent that keeps a todo list.
 	dsh_bash: [{ tool: "bash", args: { description: "Print a greeting", command: "echo hi from dsh" } }, { text: "ran it" }],
+	dsh_where: [{ tool: "bash", args: { description: "Show the working folder", command: "pwd; echo made by dsh > from-dsh.txt; ls" } }, { text: "looked around" }],
 	delegate: [{ tool: "subagent", args: { description: "Keep a todo list", prompt: "Write the todo list [[script:child_todo]]" } }, { text: "delegated" }],
 	child_todo: [{ tool: "todo_write", args: { todos: [{ content: "Check the inbox", status: "pending" }] } }, { text: "listed" }],
 	douban: [
