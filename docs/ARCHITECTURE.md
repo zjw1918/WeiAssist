@@ -141,13 +141,17 @@ entry in the registry.
   after 3 minutes. A lost connection is `runtime_restarted`, and the bridge exits when the app goes away.
 - **Keys stay in the app** (`KeyProxy`, in `:core-dsh`). Whatever runs in Termux can read what dsh holds, so dsh
   holds no key. Its routes go to the app's loopback proxy (`WEIASSIST_PROXY_URL/<route>`), and its "key" for every
-  route is the proxy's token. The proxy refuses a request without the token, reaches only the configured routes
-  (each provider's real endpoint, with the API key saved with Pi's accounts; the dev mock), puts the key in place of
-  the token in whatever header carries it, and streams the answer back. Keys are read per request, so a new key
-  needs no restart. Whoever reads the token can still spend through the proxy while the app runs, but never learns
-  a key.
-- **Not yet:** subscription sign-ins (ChatGPT) and custom providers for dsh (the proxy would need Pi's current
-  token per request, and the profile a route per custom provider). The app's prompt section is a short placeholder (its prompts are still in `pi-host`).
+  route is the proxy's token. The proxy refuses a request without the token, reaches only the app's routes, puts
+  the key in place of the token in whatever header carries it, and streams the answer back. Whoever reads the token
+  can still spend through the proxy while the app runs, but never learns a key.
+- **The same providers as Pi, no settings of its own.** Before setting a session up, `DshEngine` asks Pi for the
+  providers usable now (`CoreAccounts.routes`: signed in, or custom with a key, each with its models from Pi's
+  catalog) and sends them as `routes` when they changed. The bridge mounts an `llm-pi-ai` of its own with them
+  (the profile's row is off), so a provider added or signed into in the app is a dsh route at once, with no restart.
+  Per request, the proxy asks Pi for that provider's current auth (`CoreAccounts.providerAuth`: an API key, or a
+  sign-in's access token that Pi refreshes when due; extra headers; the endpoint). A ChatGPT sign-in's token goes
+  to the same OpenAI endpoint as a key.
+- **Not yet:** the app's prompt section is a short placeholder (its prompts are still in `pi-host`).
   Attached images aren't passed on, and thinking levels aren't mapped. Routes are only openai, deepseek and the
   dev mock.
 

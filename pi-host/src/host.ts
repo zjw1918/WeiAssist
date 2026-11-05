@@ -542,7 +542,69 @@ function guard(id: string, fn: () => Promise<void>, session?: string) {
 }
 const arg = (json: string) => JSON.parse(json);
 
+// ---- other AI cores -------------------------------------------------------------------------------
+// Another AI core (DeepSeek Harness) uses the providers set up here, through the app's key proxy: it gets
+// them as routes, and the proxy asks for a provider's current key (a sign-in's token, refreshed by Pi) per request.
+
+/** The providers usable now (signed in, or custom with a key), each with its models, as routes for another core. */
+async function coreRoutes() {
+	const infos = await credentials.list();
+	const routes = [];
+	for (const p of models.getProviders()) {
+		const credential = infos.find((i) => i.providerId === p.id)?.type;
+		if (!credential) continue;
+		const ms = models
+			.getModels(p.id)
+			// A ChatGPT sign-in only reaches the models OpenAI offers to ChatGPT accounts (as in status()).
+			.filter((m) => !(p.id === "openai" && credential === "oauth") || SUBSCRIPTION_IDS.has(m.id));
+		if (ms.length === 0) continue;
+		const custom = customIds.has(p.id);
+		routes.push({
+			id: p.id,
+			name: p.name,
+			api: ms[0].api,
+			models: ms.map((m: any) => ({
+				id: m.id,
+				name: m.name,
+				contextWindow: m.contextWindow,
+				maxTokens: m.maxTokens,
+				input: [...m.input],
+				// A custom server's quirks (no "developer" role…); a catalog model's are known to the other core too.
+				...(custom && m.compat ? { compat: m.compat } : {}),
+			})),
+		});
+	}
+	return routes;
+}
+
+/** A provider's current auth for a request: its key (a sign-in's token, refreshed if due), headers and endpoint. */
+async function providerAuth(id: string) {
+	const p: any = models.getProvider(id);
+	if (!p) return null;
+	const r = await models.getAuth(id);
+	if (!r) return null;
+	return {
+		apiKey: r.auth.apiKey ?? null,
+		headers: r.auth.headers ?? {},
+		baseUrl: r.auth.baseUrl ?? p.baseUrl ?? models.getModels(id)[0]?.baseUrl ?? null,
+	};
+}
+
+const queries: Record<string, (a: any) => Promise<unknown>> = {
+	coreRoutes: () => coreRoutes(),
+	providerAuth: (a) => providerAuth(a.provider),
+};
+
 (globalThis as any).PiHost = {
+	/** An asynchronous question from Kotlin: answered with query_result {id, ok, value}. */
+	query: (json: string) => {
+		const a = arg(json);
+		const f = queries[a.fn];
+		(f ? f(a.args ?? {}) : Promise.reject(new Error(`no query ${a.fn}`))).then(
+			(value) => bridge({ type: "query_result", id: a.id, ok: true, value: value ?? null }),
+			(e) => bridge({ type: "query_result", id: a.id, ok: false, value: { message: e instanceof Error ? e.message : String(e) } }),
+		);
+	},
 	init: (json: string) =>
 		guard("init", async () => {
 			const a = arg(json);

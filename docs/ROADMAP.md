@@ -56,7 +56,7 @@ Status legend: ✅ done · 🔨 next · ⬜ planned. Current status and todo: [P
   - ✅ One tool catalog (`tools.json`: names, schemas, descriptions) the app hands every core, and one `tool` host call that runs them (`ToolRouter`).
   - 🚧 A second core: [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 0.2.2-rc.1, a prototype (see ARCHITECTURE, "DeepSeek Harness"). It works on a phone in Ubuntu (proot) in Termux: chat with live text, phone tools on a session's own display, screenshots as images, every call through the app's `before_tool` (a declined call is tested on a computer). Next:
     - ✅ a key proxy in the app, so dsh never holds API keys;
-    - subscription sign-ins and custom providers for dsh, through the same proxy;
+    - ✅ the same providers, keys, sign-ins and custom providers as Pi, through the same proxy (no dsh settings);
     - the app's prompts shared like the catalog;
     - attachments and thinking levels;
     - a setting to choose the core;

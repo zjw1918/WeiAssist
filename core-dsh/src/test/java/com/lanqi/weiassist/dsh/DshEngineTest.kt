@@ -10,6 +10,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -45,7 +46,7 @@ class DshEngineTest {
     private fun engine(onLaunch: (Map<String, String>) -> Unit): DshEngine =
         DshEngine(launch = { env -> onLaunch(env); null }, proxy = proxy, connectTimeoutMs = 5_000)
 
-    private val proxy = KeyProxy({ mapOf("openai" to KeyProxy.Route("https://api.openai.com/v1", "sk-test")) })
+    private val proxy = KeyProxy({ name -> if (name == "openai") KeyProxy.Route("https://api.openai.com/v1", "sk-test") else null })
 
     @Test fun `launches dsh with its port, secret and the key proxy, never a key, and is ready on hello with the secret`() = runBlocking {
         var dsh: FakeDsh? = null
@@ -55,9 +56,8 @@ class DshEngineTest {
         val hello = e.start()
         assertEquals(42, hello.getInt("pid"))
         assertEquals(e.secret, env[DshEngine.ENV_SECRET])
-        // dsh gets the proxy and its token for every route; the key stays in the app.
-        assertEquals(proxy.token, env["WEIASSIST_KEY_OPENAI"])
-        assertEquals(proxy.token, env["WEIASSIST_KEY_DEEPSEEK"])
+        // dsh gets the proxy and its token; the key stays in the app.
+        assertEquals(proxy.token, env[DshEngine.ENV_PROXY_KEY])
         assertTrue(env.getValue(DshEngine.ENV_PROXY).startsWith("http://127.0.0.1:"))
         assertFalse(env.values.any { "sk-test" in it })
         assertEquals(hello, e.start()) // connected: not launched again
@@ -85,6 +85,8 @@ class DshEngineTest {
         val e = engine { dsh = FakeDsh(it.getValue(DshEngine.ENV_PORT).toInt(), it.getValue(DshEngine.ENV_SECRET)) }
         val tap = ToolSpec("tap", "Tap", "Tap the element.", """{"type":"object","properties":{"id":{"type":"integer"}}}""")
         e.configure("s1", SessionConfig(ModelSelection("openai", "gpt", "low", "http://127.0.0.1:8787/v1"), SessionKind.Phone, listOf(tap)))
+        // The model routes come first (here only the mock server's: a session with a baseUrl), then the session.
+        assertTrue(dsh!!.next().getJSONObject("providers").has(DshEngine.MOCK_ROUTE))
         val cfg = dsh!!.next()
         assertEquals("configure", cfg.getString("type"))
         assertEquals("phone", cfg.getString("tools"))
@@ -135,8 +137,33 @@ class DshEngineTest {
         e.destroy()
     }
 
-    @Test fun `key env names match the bridge's`() {
-        assertEquals("WEIASSIST_KEY_OPENAI", DshEngine.keyEnv("openai"))
-        assertEquals("WEIASSIST_KEY_OPENCODE_GO", DshEngine.keyEnv("opencode-go"))
+    @Test fun `dsh gets the app's providers as routes through the proxy, before setup and only when they change`() = runBlocking {
+        var dsh: FakeDsh? = null
+        var models = JSONArray().put(JSONObject().put("id", "gpt-x").put("contextWindow", 400000).put("input", JSONArray().put("text")))
+        val e = DshEngine(
+            launch = { env -> dsh = FakeDsh(env.getValue(DshEngine.ENV_PORT).toInt(), env.getValue(DshEngine.ENV_SECRET)); null },
+            proxy = proxy,
+            routes = { JSONArray().put(JSONObject().put("id", "openai").put("name", "OpenAI").put("api", "openai-responses").put("models", models)) },
+            connectTimeoutMs = 5_000,
+        )
+        val config = SessionConfig(ModelSelection("openai", "gpt-x", "low"))
+        e.configure("s1", config)
+        val routes = dsh!!.next()
+        assertEquals("routes", routes.getString("type"))
+        val openai = routes.getJSONObject("providers").getJSONObject("openai")
+        assertEquals(DshEngine.ENV_PROXY_KEY, openai.getString("apiKeyEnv"))
+        assertTrue(openai.getString("baseURL").matches(Regex("http://127\\.0\\.0\\.1:\\d+/openai")))
+        assertEquals("gpt-x", openai.getJSONArray("models").getJSONObject(0).getString("id"))
+        assertEquals("configure", dsh!!.next().getString("type"))
+        e.configure("s2", config) // nothing changed: no routes again
+        assertEquals("configure", dsh!!.next().getString("type"))
+        models = JSONArray().put(JSONObject().put("id", "gpt-y"))
+        e.configure("s3", config.copy(model = config.model.copy(baseUrl = "http://127.0.0.1:8787/v1")))
+        val changed = dsh!!.next().getJSONObject("providers")
+        assertEquals("gpt-y", changed.getJSONObject("openai").getJSONArray("models").getJSONObject(0).getString("id"))
+        // Dev mode: the mock server stands in for the session's model, through the proxy too.
+        assertTrue(changed.getJSONObject(DshEngine.MOCK_ROUTE).getString("baseURL").endsWith("/mock"))
+        dsh!!.socket.close()
+        e.destroy()
     }
 }

@@ -16,6 +16,7 @@ import androidx.webkit.WebViewFeature
 import com.lanqi.weiassist.core.AgentCore
 import com.lanqi.weiassist.core.CoreAccounts
 import com.lanqi.weiassist.core.CoreInfo
+import com.lanqi.weiassist.core.ProviderAuth
 import com.lanqi.weiassist.core.SecureStore
 import com.lanqi.weiassist.core.SessionConfig
 import com.lanqi.weiassist.core.ToolHost
@@ -57,6 +58,8 @@ class PiEngine(context: Context, private val agentName: String) : AgentCore, Cor
     private val prefs = appContext.getSharedPreferences("pi", Context.MODE_PRIVATE)
     private var ready = CompletableDeferred<JSONObject>()
     private val httpReplies = ConcurrentHashMap<String, CompletableDeferred<LoopbackServer.HttpReply>>()
+    /** Answers to [query]s, by id. */
+    private val queries = ConcurrentHashMap<String, CompletableDeferred<JSONObject>>()
     private val loopback = LoopbackServer(scope, appContext.getString(R.string.pi_back_to_app, agentName)) { port, method, url ->
         val id = UUID.randomUUID().toString()
         val reply = CompletableDeferred<LoopbackServer.HttpReply>().also { httpReplies[id] = it }
@@ -124,6 +127,8 @@ class PiEngine(context: Context, private val agentName: String) : AgentCore, Cor
         loopback.closeAll()
         httpReplies.values.forEach { it.cancel() }
         httpReplies.clear()
+        queries.values.forEach { it.cancel() }
+        queries.clear()
         if (ready.isCompleted) ready = CompletableDeferred()
         _events.tryEmit(JSONObject().put("type", "runtime_restarted"))
         scope.launch { runCatching { start() }.onFailure { Log.e(TAG, "Pi did not restart", it) } }
@@ -150,6 +155,7 @@ class PiEngine(context: Context, private val agentName: String) : AgentCore, Cor
                     js("reply", result.put("ok", false).put("value", JSONObject().put("code", "EADDRINUSE").put("message", e.message)))
                 }
             }
+            "query_result" -> queries.remove(m.optString("id"))?.complete(m)
             "fetch" -> http.start(m)
             "fetch_abort" -> http.abort(m.getString("id"))
             "http_close" -> loopback.close(m.getInt("port"))
@@ -198,6 +204,32 @@ class PiEngine(context: Context, private val agentName: String) : AgentCore, Cor
             }
         }
         return runCatching { JSONObject(org.json.JSONTokener(raw).nextValue() as String) }.getOrDefault(JSONObject())
+    }
+
+    /** An asynchronous question to pi-host (PiHost.query): its value, or an exception with pi-host's message. */
+    private suspend fun query(fn: String, args: JSONObject = JSONObject()): Any? {
+        val id = UUID.randomUUID().toString()
+        val answer = CompletableDeferred<JSONObject>().also { queries[id] = it }
+        try {
+            call("query", JSONObject().put("id", id).put("fn", fn).put("args", args))
+            val r = withTimeoutOrNull(60_000) { answer.await() } ?: throw IllegalStateException("Pi did not answer $fn")
+            if (!r.optBoolean("ok")) throw IllegalStateException(r.optJSONObject("value")?.optString("message") ?: "$fn failed")
+            return r.opt("value").takeUnless { it == JSONObject.NULL }
+        } finally {
+            queries.remove(id)
+        }
+    }
+
+    override suspend fun routes(): org.json.JSONArray = query("coreRoutes") as? org.json.JSONArray ?: org.json.JSONArray()
+
+    override suspend fun providerAuth(provider: String): ProviderAuth? {
+        val o = query("providerAuth", JSONObject().put("provider", provider)) as? JSONObject ?: return null
+        val h = o.optJSONObject("headers")
+        return ProviderAuth(
+            apiKey = o.optString("apiKey").takeIf { it.isNotEmpty() && it != "null" },
+            headers = h?.keys()?.asSequence()?.associateWith { h.getString(it) }.orEmpty(),
+            baseUrl = o.optString("baseUrl").takeIf { it.isNotEmpty() && it != "null" },
+        )
     }
 
     /** The API key saved for [provider], if it signed in with one (e.g. to list a custom server's models). */

@@ -19,16 +19,22 @@ import kotlin.concurrent.thread
  * streams back as it comes.
  *
  * Not an open proxy: a request without the token is refused, and only the [routes] are reached. Keys are read on
- * every request, so a new key needs no dsh restart. Whoever reads the token can still spend through the proxy while
+ * every request (a sign-in's token is refreshed by its owner), so a new key or sign-in needs no dsh restart. Whoever reads the token can still spend through the proxy while
  * the app runs, but never learns a key.
  */
 class KeyProxy(
-    /** Each route's real endpoint and key, read per request (only routes with a key are reachable). */
-    private val routes: () -> Map<String, Route>,
+    /**
+     * A route's real endpoint and current key, asked per request (it may block, e.g. while a sign-in refreshes);
+     * null: no such route, or no key for it.
+     */
+    private val resolve: (route: String) -> Route?,
     private val log: (String) -> Unit = {},
 ) {
-    /** [upstream]: the route's base URL (e.g. https://api.openai.com/v1); [key]: what replaces the token. */
-    data class Route(val upstream: String, val key: String)
+    /**
+     * [upstream]: the route's base URL (e.g. https://api.openai.com/v1); [key]: what replaces the token (an API key, or
+     * a sign-in's access token); [headers]: any more the provider's auth needs.
+     */
+    data class Route(val upstream: String, val key: String, val headers: Map<String, String> = emptyMap())
 
     /** What dsh holds instead of keys. */
     val token: String = ByteArray(24).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
@@ -78,7 +84,7 @@ class KeyProxy(
         if (r.headers.none { (_, v) -> token in v } && token !in r.target) return respond(out, 403, "no token")
         val path = r.target.removePrefix("/")
         val routeName = path.substringBefore('/').substringBefore('?')
-        val route = routes()[routeName] ?: return respond(out, 404, "no route $routeName (or no key for it)")
+        val route = resolve(routeName) ?: return respond(out, 404, "no route $routeName (or no key for it)")
         val rest = path.removePrefix(routeName)
         val url = URL(route.upstream.trimEnd('/') + rest.replace(token, route.key))
         val c = url.openConnection() as HttpURLConnection
@@ -90,6 +96,7 @@ class KeyProxy(
             if (name.lowercase() in DROPPED_REQUEST) continue
             c.setRequestProperty(name, value.replace(token, route.key))
         }
+        route.headers.forEach { (name, value) -> c.setRequestProperty(name, value) }
         if (r.body.isNotEmpty()) {
             c.doOutput = true
             c.setFixedLengthStreamingMode(r.body.size)

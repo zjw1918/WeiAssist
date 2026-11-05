@@ -21,6 +21,7 @@ class KeyProxyTest {
     private lateinit var proxy: KeyProxy
     private lateinit var base: String
     private var key = "sk-real"
+    private var extra = emptyMap<String, String>()
 
     @Before fun setUp() {
         upstream = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
@@ -31,6 +32,7 @@ class KeyProxyTest {
                         "path" to ex.requestURI.toString(), "method" to ex.requestMethod, "body" to body,
                         "authorization" to (ex.requestHeaders.getFirst("Authorization") ?: ""),
                         "x-api-key" to (ex.requestHeaders.getFirst("x-api-key") ?: ""),
+                        "account" to (ex.requestHeaders.getFirst("x-account") ?: ""),
                     )
                 }
                 if (ex.requestURI.path.endsWith("/stream")) {
@@ -49,7 +51,7 @@ class KeyProxyTest {
             }
             start()
         }
-        proxy = KeyProxy({ mapOf("openai" to KeyProxy.Route("http://127.0.0.1:${upstream.address.port}/v1", key)) })
+        proxy = KeyProxy({ name -> if (name == "openai") KeyProxy.Route("http://127.0.0.1:${upstream.address.port}/v1", key, extra) else null })
         base = proxy.start()
     }
 
@@ -85,6 +87,12 @@ class KeyProxyTest {
     @Test fun `the token is replaced in whatever header the provider uses`() {
         request("/openai/messages", auth = null, header = "x-api-key" to proxy.token)
         assertEquals("sk-real", seen.single()["x-api-key"])
+    }
+
+    @Test fun `the provider's own auth headers go along`() {
+        extra = mapOf("x-account" to "acct-1")
+        request("/openai/responses")
+        assertEquals("acct-1", seen.single()["account"])
     }
 
     @Test fun `a key change applies to the next request`() {
