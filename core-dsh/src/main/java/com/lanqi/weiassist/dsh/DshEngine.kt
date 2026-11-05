@@ -38,14 +38,19 @@ import java.security.SecureRandom
  * - A lost connection is `runtime_restarted`: the app configures each session again (dsh resumes it from its own log),
  *   and the next command launches dsh again.
  *
- * dsh holds the model keys it is given ([keys], passed in its launch environment), so whatever else runs in Termux can
- * read them: a prototype's trade-off (a key proxy in the app would avoid it).
+ * dsh never holds a model key: its routes go through the app's [KeyProxy], which puts the key in, and dsh gets only
+ * the proxy's token (whatever else runs in Termux can read what dsh holds).
  */
 class DshEngine(
     /** Starts dsh with this environment (the bridge's port and secret, model keys); an error to show, or null. */
     private val launch: suspend (env: Map<String, String>) -> String?,
-    /** Model keys by provider route, put in dsh's launch environment (dsh reads them only at launch). */
-    private val keys: () -> Map<String, String> = { emptyMap() },
+    /**
+     * Keeps the model keys in the app: dsh's routes go through it, and dsh holds only its token. Null: no proxy (tests);
+     * then dsh's routes need keys of their own.
+     */
+    private val proxy: KeyProxy? = null,
+    /** The model routes the dsh profile declares (each gets the proxy's token as its key). */
+    private val routes: List<String> = listOf("openai", "deepseek", "mock"),
     private val log: (String) -> Unit = {},
     /** How long dsh may take to boot and connect (installing nothing, but loading ~600 packages on a phone). */
     private val connectTimeoutMs: Long = 180_000,
@@ -86,7 +91,11 @@ class DshEngine(
         val env = buildMap {
             put(ENV_PORT, srv.localPort.toString())
             put(ENV_SECRET, secret)
-            keys().forEach { (route, key) -> put(keyEnv(route), key) }
+            // Never a key: the proxy's address and its token, which only works through the proxy.
+            proxy?.let { p ->
+                put(ENV_PROXY, p.start())
+                routes.forEach { route -> put(keyEnv(route), p.token) }
+            }
         }
         launch(env)?.let { throw IllegalStateException(it) }
         log("dsh launched; waiting for it on port ${srv.localPort}")
@@ -198,6 +207,7 @@ class DshEngine(
 
     /** Ends dsh too: the bridge exits when its connection closes. */
     override fun destroy() {
+        proxy?.stop()
         connection?.close()
         runCatching { server?.close() }
         scope.cancel()
@@ -207,6 +217,8 @@ class DshEngine(
         const val ID = "dsh"
         const val ENV_PORT = "WEIASSIST_BRIDGE_PORT"
         const val ENV_SECRET = "WEIASSIST_BRIDGE_SECRET"
+        /** The key proxy's base URL; the profile's routes are `<it>/<route>`. */
+        const val ENV_PROXY = "WEIASSIST_PROXY_URL"
         private val HOST_CALLS = setOf("before_tool", "tool", "tool_cancel")
         /** Where the bridge connects (dsh-host: 127.0.0.1). */
         val LOOPBACK: InetAddress = InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))

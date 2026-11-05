@@ -35,7 +35,7 @@ class AgentController(context: Context) {
     /** DeepSeek Harness, run in Termux (a prototype: chosen for new sessions with the debug extra `--es core dsh`). */
     private val dsh = com.lanqi.weiassist.dsh.DshEngine(
         launch = { env -> termux.launchDsh(env) },
-        keys = ::dshKeys,
+        proxy = com.lanqi.weiassist.dsh.KeyProxy(::dshRoutes, log = { android.util.Log.w("DshEngine", it) }),
         log = { android.util.Log.d("DshEngine", it) },
     )
     /** The installed AI cores; a session runs on the one it was made with. */
@@ -427,12 +427,14 @@ class AgentController(context: Context) {
     fun selectCore(id: String) { if (cores[id] != null) cores.defaultId = id }
 
     /**
-     * Model keys for dsh's launch environment, by provider route: the API keys saved with Pi's accounts, and a dummy
-     * one for the dev mock server's route. dsh reads them only at launch.
+     * Where dsh's model routes really go, with the key the app's key proxy puts in (read per request): the API keys
+     * saved with Pi's accounts, for the providers dsh's profile declares; in dev mode the mock server.
      */
-    private fun dshKeys(): Map<String, String> = buildMap {
-        _state.value.providers.forEach { p -> accounts.savedApiKey(p.id)?.let { put(p.id, it) } }
-        put("mock", "mock")
+    private fun dshRoutes(): Map<String, com.lanqi.weiassist.dsh.KeyProxy.Route> = buildMap {
+        DSH_UPSTREAMS.forEach { (route, upstream) ->
+            accounts.savedApiKey(route)?.let { put(route, com.lanqi.weiassist.dsh.KeyProxy.Route(upstream, it)) }
+        }
+        mockBaseUrl?.let { put("mock", com.lanqi.weiassist.dsh.KeyProxy.Route(it, "mock")) }
     }
 
     /** Debug builds only: new phone sessions use the phone's own screen, as without the shell helper. */
@@ -465,5 +467,7 @@ class AgentController(context: Context) {
         /** A question also asked in a chat goes unanswered this long: not allowed (the task doesn't hold its screen for ever). */
         const val REMOTE_CONFIRM_MS = 15 * 60_000L
         val HTTP_402 = Regex("""\b402\b""")
+        /** The real endpoints of the model routes dsh's profile declares (as in Pi's catalog). */
+        val DSH_UPSTREAMS = mapOf("openai" to "https://api.openai.com/v1", "deepseek" to "https://api.deepseek.com")
     }
 }

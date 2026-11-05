@@ -16,20 +16,23 @@
     mode: !!js process.env.DSH_PERMISSION_MODE ?? 'workspace-write'
     workspaceRoot: !!js process.env.WEIASSIST_SESSIONS_DIR ?? process.cwd()
 
-# Model routes. A route's key comes from the env var the bridge sets from the app (WEIASSIST_KEY_<ROUTE>).
+# Model routes. With the app, they go through its key proxy (WEIASSIST_PROXY_URL/<route>), which puts the real key
+# in: dsh's "key" (WEIASSIST_KEY_<ROUTE>) is only the proxy's token. dsh never holds a model key.
 - id: llm-pi-ai
   config:
     providers:
       openai:
         apiKeyEnv: WEIASSIST_KEY_OPENAI
+        baseURL: !!js "process.env.WEIASSIST_PROXY_URL ? process.env.WEIASSIST_PROXY_URL + '/openai' : 'https://api.openai.com/v1'"
       deepseek:
         apiKeyEnv: WEIASSIST_KEY_DEEPSEEK
+        baseURL: !!js "process.env.WEIASSIST_PROXY_URL ? process.env.WEIASSIST_PROXY_URL + '/deepseek' : 'https://api.deepseek.com'"
       # The app's dev mock server (tools/mock-openai.mjs, adb reverse tcp:8787).
       mock:
         displayName: WeiAssist mock
         apiKeyEnv: WEIASSIST_KEY_MOCK
         api: openai-responses
-        baseURL: !!js process.env.WEIASSIST_MOCK_URL ?? 'http://127.0.0.1:8787/v1'
+        baseURL: !!js "process.env.WEIASSIST_PROXY_URL ? process.env.WEIASSIST_PROXY_URL + '/mock' : (process.env.WEIASSIST_MOCK_URL ?? 'http://127.0.0.1:8787/v1')"
         models:
           - id: gpt-6.1-terra
             name: Mock

@@ -139,9 +139,15 @@ entry in the registry.
 - **Lifecycle:** the first task launches dsh (about 30 s to boot on a realme RMX2121; later tasks take about a
   second). If dsh dies at once, the end of its log is the session's error; if it never connects, the task ends
   after 3 minutes. A lost connection is `runtime_restarted`, and the bridge exits when the app goes away.
-- **Not yet:** keys go to dsh in its launch environment and command line, which anything running in Termux can
-  read (the model's own bash commands included): a key proxy in the app should replace that. A key change
-  needs a dsh restart. The app's prompt section is a short placeholder (its prompts are still in `pi-host`).
+- **Keys stay in the app** (`KeyProxy`, in `:core-dsh`). Whatever runs in Termux can read what dsh holds, so dsh
+  holds no key. Its routes go to the app's loopback proxy (`WEIASSIST_PROXY_URL/<route>`), and its "key" for every
+  route is the proxy's token. The proxy refuses a request without the token, reaches only the configured routes
+  (each provider's real endpoint, with the API key saved with Pi's accounts; the dev mock), puts the key in place of
+  the token in whatever header carries it, and streams the answer back. Keys are read per request, so a new key
+  needs no restart. Whoever reads the token can still spend through the proxy while the app runs, but never learns
+  a key.
+- **Not yet:** subscription sign-ins (ChatGPT) and custom providers for dsh (the proxy would need Pi's current
+  token per request, and the profile a route per custom provider). The app's prompt section is a short placeholder (its prompts are still in `pi-host`).
   Attached images aren't passed on, and thinking levels aren't mapped. Routes are only openai, deepseek and the
   dev mock.
 
