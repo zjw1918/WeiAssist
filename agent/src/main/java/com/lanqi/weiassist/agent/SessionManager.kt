@@ -1,7 +1,12 @@
 package com.lanqi.weiassist.agent
 
 import android.util.Log
-import com.lanqi.weiassist.pi.PiEngine
+import com.lanqi.weiassist.core.AgentCore
+import com.lanqi.weiassist.core.CoreRegistry
+import com.lanqi.weiassist.core.ModelSelection
+import com.lanqi.weiassist.core.SessionConfig
+import com.lanqi.weiassist.core.ToolSet
+import com.lanqi.weiassist.core.UserInput
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -18,16 +23,17 @@ import org.json.JSONObject
 import java.util.UUID
 
 /**
- * All conversations. Each session is its own Pi Agent in the one Pi runtime, so sessions run side by
- * side and keep running when their screen is closed; they end when their task is done or the user
- * stops them. Main thread only (state changes), with disk work on one background lane.
+ * All conversations. Each session is an agent in the AI core it was made with ([SessionSummary.core], see
+ * [CoreRegistry]), so sessions run side by side and keep running when their screen is closed; they end when
+ * their task is done or the user stops them. Main thread only (state changes), with disk work on one
+ * background lane.
  *
  * Memory: every session's [SessionSummary] is kept (small). A session's chat ([SessionState]) is in
- * memory only while it is busy or open on screen ([attach]); otherwise it is on disk only. Pi's
- * transcript lives inside Pi while the session's Agent exists, and on disk.
+ * memory only while it is busy or open on screen ([attach]); otherwise it is on disk only. The core's
+ * transcript lives inside the core while the session's agent exists, and on disk.
  */
 class SessionManager(
-    private val pi: PiEngine,
+    private val cores: CoreRegistry,
     private val store: SessionStore,
     private val scope: CoroutineScope,
     private val strings: Strings,
@@ -40,6 +46,8 @@ class SessionManager(
         fun friendly(msg: String): String
         fun runtimeRestarted(): String
         fun continueTask(): String
+        /** The session was made by AI core [core], which this build doesn't have. */
+        fun missingCore(core: String): String
     }
 
     private val io = Dispatchers.IO.limitedParallelism(1)
@@ -51,8 +59,8 @@ class SessionManager(
     private val live = HashMap<String, MutableStateFlow<SessionState>>()
     /** How many screens show each session ([attach]/[detach]). */
     private val watchers = HashMap<String, Int>()
-    /** Pi Agent settings per session in the current runtime; a session not in here has no Agent yet. */
-    private val configured = HashMap<String, String>()
+    /** Agent settings per session in its core's current runtime; a session not in here has no agent yet. */
+    private val configured = HashMap<String, SessionConfig>()
     private val paused = HashMap<String, MutableStateFlow<Boolean>>()
     /** Bumped per session when the user stops it, so a gate waiting in a paused session gives up. */
     private val stops = HashMap<String, Int>()
@@ -62,8 +70,8 @@ class SessionManager(
     /** Sessions the user left while they worked: their apps close as soon as the task ends. */
     private val leftWhileBusy = HashSet<String>()
     /**
-     * Sessions whose task Pi has been given (PiHost.prompt called) and not yet ended: only these can be
-     * steered. Calls to Pi run in order, so a steer after the prompt always finds Pi's run.
+     * Sessions whose task their core has been given (prompt called) and not yet ended: only these can be
+     * steered. Calls to a core run in order, so a steer after the prompt always finds its run.
      */
     private val prompted = HashSet<String>()
     private val pendingWrites = HashMap<String, Job>()
@@ -116,7 +124,7 @@ class SessionManager(
 
     private fun evictIfUnused(id: String) {
         val s = live[id]?.value ?: return
-        // A steered message still queued may come back from Pi (steer_late) and start the next task.
+        // A steered message still queued may come back from its core (steer_late) and start the next task.
         if (s.busy || (watchers[id] ?: 0) > 0 || s.items.any { (it as? ChatItem.User)?.delivery == Delivery.Queued }) return
         flush(s)
         live.remove(id)
@@ -141,10 +149,15 @@ class SessionManager(
      * A new, empty session. [phone] = it may operate the phone; [supervisor] = it manages the others;
      * [channel] = it is a chat in that messaging app (see Gateway); [termux] = it may run Linux commands.
      */
-    fun create(phone: Boolean, title: String = "", supervisor: Boolean = false, channel: String? = null, termux: Boolean = true): String {
+    fun create(
+        phone: Boolean, title: String = "", supervisor: Boolean = false, channel: String? = null, termux: Boolean = true,
+        /** The AI core that runs it; the user's choice for new sessions by default. */
+        core: String = cores.defaultId,
+    ): String {
+        require(cores[core] != null) { "no core $core" }
         val now = System.currentTimeMillis()
         val id = UUID.randomUUID().toString().substring(0, 8)
-        val summary = SessionSummary(id, title, phone && !supervisor, SessionStatus.Idle, now, now, supervisor = supervisor, channel = channel, termux = termux)
+        val summary = SessionSummary(id, title, phone && !supervisor, SessionStatus.Idle, now, now, supervisor = supervisor, channel = channel, termux = termux, core = core)
         live[id] = MutableStateFlow(SessionState(summary))
         publish(summary)
         scope.launch(io) { store.saveSummary(summary) }
@@ -153,7 +166,7 @@ class SessionManager(
 
     /**
      * The user's message to a session: start (or queue) a task. While the session works, the message
-     * steers it instead (Pi reads it after the current turn). False if the session is unknown.
+     * steers it instead (its core reads it after the current step). False if the session is unknown.
      */
     suspend fun send(id: String, text: String, attachments: List<Attachment> = emptyList()): Boolean {
         if (text.isBlank() && attachments.isEmpty()) return false
@@ -162,11 +175,11 @@ class SessionManager(
         val files = withContext(io) { Attachments.keep(attachments, store.attachmentsDir(id)) }
         if (flow.value.busy) {
             val now = System.currentTimeMillis()
-            // Pi hasn't been given this task yet (it waits for a screen, or is being set up): the message joins it.
+            // The core hasn't been given this task yet (it waits for a screen, or is being set up): the message joins it.
             if (id !in prompted) update(id) { SessionReducer.joinTask(it, text.trim(), now, files) }
             else {
                 update(id) { SessionReducer.steered(it, text.trim(), now, files) }
-                pi.steer(id, text.trim(), Attachments.content(files))
+                coreOf(id)?.steer(id, UserInput(text.trim(), Attachments.content(files)))
             }
             return true
         }
@@ -183,12 +196,12 @@ class SessionManager(
         return true
     }
 
-    /** Pi's run ended just before the steered [text] reached it: send it as the next task. */
+    /** The core's run ended just before the steered [text] reached it: send it as the next task. */
     private fun lateSteer(id: String, text: String) {
         val s = live[id]?.value ?: return
         if (s.busy) { // a new task started meanwhile: steer that one
             val files = s.items.firstOrNull { it is ChatItem.User && it.delivery == Delivery.Queued && it.text == text }?.let { (it as ChatItem.User).attachments }.orEmpty()
-            if (id in prompted) scope.launch { pi.steer(id, text, Attachments.content(files)) } else Log.w(TAG, "late steer for $id dropped: next task not started")
+            if (id in prompted) scope.launch { coreOf(id)?.steer(id, UserInput(text, Attachments.content(files))) } else Log.w(TAG, "late steer for $id dropped: next task not started")
             return
         }
         val canRun = !s.summary.phone || screens.acquire(id) != null
@@ -204,23 +217,26 @@ class SessionManager(
         val s = live[id]?.value ?: return
         if (s.pendingTask == null && s.pendingAttachments.isEmpty()) return
         if (s.status == SessionStatus.Queued) update(id) { SessionReducer.withStatus(it, SessionStatus.Running, System.currentTimeMillis()) }
+        val core = coreOf(id) ?: run {
+            // Made by a core this build doesn't have: its transcript means nothing to another one.
+            update(id) { SessionReducer.reduce(it, JSONObject().put("type", "error").put("message", strings.missingCore(s.summary.core)), System.currentTimeMillis()) }
+            finished(id)
+            return
+        }
         scope.launch {
             val (provider, model, thinking, mock) = settings()
-            val phone = s.summary.phone
-            val tools = when { s.summary.supervisor -> "supervisor"; phone -> "phone"; else -> null }
-            val bash = s.summary.termux
-            val channel = s.summary.channel
-            val config = listOf(provider, model, thinking, mock, tools, bash, channel).joinToString("|")
+            val tools = when { s.summary.supervisor -> ToolSet.Supervisor; s.summary.phone -> ToolSet.Phone; else -> ToolSet.Chat }
+            val config = SessionConfig(ModelSelection(provider, model, thinking, mock), tools, bash = s.summary.termux, channel = s.summary.channel)
             if (configured[id] != config) {
-                // First use in this runtime: give Pi the saved conversation back.
-                val history = if (id !in configured) withContext(io) { store.loadTranscript(id) } else null
-                pi.configure(id, provider, model, thinking, mock, tools = tools, messages = history, bash = bash, channel = channel)
+                // First use in this runtime: give the core the saved conversation back.
+                val history = if (id !in configured) withContext(io) { store.loadTranscript(id, core.info.id) } else null
+                core.configure(id, config.copy(history = history))
                 configured[id] = config
             }
-            // Read now: messages typed while Pi was being set up joined the task (see send).
+            // Read now: messages typed while the core was being set up joined the task (see send).
             val now = live[id]?.value?.takeIf { it.busy } ?: return@launch
             val task = now.pendingTask ?: if (now.pendingAttachments.isNotEmpty()) "" else return@launch
-            pi.prompt(id, task, Attachments.content(now.pendingAttachments))
+            core.prompt(id, UserInput(task, Attachments.content(now.pendingAttachments)))
             prompted += id
         }
     }
@@ -231,7 +247,7 @@ class SessionManager(
      */
     var onEnded: (id: String, deleted: Boolean, files: Boolean) -> Unit = { _, _, _ -> }
 
-    /** Stop the session's task (Pi's Agent.abort); a queued task is dropped. */
+    /** Stop the session's task (its core aborts the run); a queued task is dropped. */
     fun stop(id: String) {
         val s = live[id]?.value ?: return
         if (!s.busy) return
@@ -241,7 +257,7 @@ class SessionManager(
         prompted -= id
         paused[id]?.value = false
         queue.remove(id)
-        if (s.status != SessionStatus.Queued) scope.launch { pi.abort(id) }
+        if (s.status != SessionStatus.Queued) coreOf(id)?.let { c -> scope.launch { c.abort(id) } }
         update(id) { SessionReducer.stopped(it, System.currentTimeMillis()) }
         endScreen(id) // kept a while if the user is on its page: they may correct the task and go on
     }
@@ -269,25 +285,28 @@ class SessionManager(
         else summary(id)?.let { s -> s.copy(title = title.trim()).also { publish(it); scope.launch(io) { store.saveSummary(it) } } }
     }
 
-    /** Remove the session for good: stop it, drop its Agent, delete its files ([termuxFiles]: its Termux folder too). */
+    /** Remove the session for good: stop it, drop its agent, delete its files ([termuxFiles]: its Termux folder too). */
     fun delete(id: String, termuxFiles: Boolean = false) {
+        val core = coreOf(id) // read before the session is forgotten
         stop(id)
         onEnded(id, true, termuxFiles)
         screens.release(id)
         live.remove(id); watchers.remove(id); leftWhileBusy.remove(id); paused.remove(id); stops.remove(id); configured.remove(id)
         pendingWrites.remove(id)?.cancel()
         _summaries.update { l -> l.filterNot { it.id == id } }
-        scope.launch { pi.dispose(id) }
+        core?.let { c -> scope.launch { c.dispose(id) } }
         scope.launch(io) { store.delete(id) }
     }
 
-    // ---- from Pi --------------------------------------------------------------------------------------
+    // ---- from the cores -------------------------------------------------------------------------------
 
-    /** Pi's message about session [id]. */
-    fun onPi(id: String, m: JSONObject) {
+    /** Core [core]'s event about session [id] (see AgentCore.events). */
+    fun onCoreEvent(core: String, id: String, m: JSONObject) {
+        val owner = live[id]?.value?.summary?.core ?: summary(id)?.core
+        if (owner != core) { Log.w(TAG, "$core sent ${m.optString("type")} for $id, which runs on $owner"); return }
         if (m.optString("type") == "transcript") {
             val messages = m.optJSONArray("messages") ?: JSONArray()
-            scope.launch(io) { runCatching { store.saveTranscript(id, messages) }.onFailure { Log.e(TAG, "transcript $id not saved", it) } }
+            scope.launch(io) { runCatching { store.saveTranscript(id, core, messages) }.onFailure { Log.e(TAG, "transcript $id not saved", it) } }
             return
         }
         if (live[id] == null) { Log.w(TAG, "message for a session not in memory: $id ${m.optString("type")}"); return }
@@ -297,22 +316,26 @@ class SessionManager(
         if (wasBusy && !live[id]!!.value.busy) finished(id)
     }
 
-    /** The runtime died: every Agent is gone. Running tasks end; the next message restores each conversation. */
-    fun onRuntimeRestarted() {
-        configured.clear()
-        prompted.clear()
+    /**
+     * Core [core]'s runtime died: its agents are gone. Its running tasks end; the next message restores each
+     * conversation. Sessions on other cores are untouched.
+     */
+    fun onRuntimeRestarted(core: String) {
+        val ours = _summaries.value.filter { it.core == core }.map { it.id }.toSet()
+        configured.keys.retainAll { it !in ours }
+        prompted.removeAll(ours)
         val now = System.currentTimeMillis()
-        live.keys.toList().forEach { id ->
+        live.keys.filter { it in ours }.forEach { id ->
             val wasBusy = live[id]!!.value.busy
             update(id) { SessionReducer.runtimeLost(it, strings.runtimeRestarted(), now) }
             if (wasBusy) finished(id)
         }
-        queue.clear()
+        queue.removeAll(ours)
     }
 
     /**
-     * Pi's beforeToolCall gate: suspends while the session is paused. False = the user stopped it
-     * (or it no longer exists), so Pi ends the run.
+     * The gate a core asks before every tool call: suspends while the session is paused. False = the user
+     * stopped it (or it no longer exists), so the core ends the run.
      */
     suspend fun gate(id: String): Boolean {
         val gen = stops[id] ?: 0
@@ -322,6 +345,9 @@ class SessionManager(
     }
 
     fun isPaused(id: String) = paused[id]?.value == true
+
+    /** The core that runs session [id], or null if it is unknown or its core isn't installed. */
+    private fun coreOf(id: String): AgentCore? = (live[id]?.value?.summary ?: summary(id))?.core?.let { cores[it] }
 
     /** The screen session [id] operates now, if it holds one. */
     fun screenOf(id: String) = screens.target(id)
@@ -362,7 +388,7 @@ class SessionManager(
             if (live[next]?.value?.status !in setOf(SessionStatus.Queued, SessionStatus.Paused)) { queue.removeFirst(); continue }
             if (screens.acquire(next) == null) return
             queue.removeFirst()
-            // A paused one keeps the screen; Pi's gate holds it before its first action until resumed.
+            // A paused one keeps the screen; the gate holds it before its first action until resumed.
             start(next)
         }
     }
@@ -403,7 +429,7 @@ class SessionManager(
         }
     }
 
-    /** What a session's Pi Agent is set up with: the provider, model and thinking level in use, and dev builds' mock server. */
+    /** What a session's agent is set up with: the provider, model and thinking level in use, and dev builds' mock server. */
     data class RunSettings(val provider: String, val model: String, val thinking: String, val mock: String?)
 
     companion object { private const val TAG = "Sessions" }

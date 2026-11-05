@@ -21,6 +21,7 @@
     <string name="confirm_title_blind">小维助手要点一个它看不清的位置（可能会发送已输入的内容）</string>
     <string name="confirm_nothing_typed">（这次没有输入内容）</string>
     <string name="err_runtime_restarted">小维助手的引擎刚刚重启，这个任务中断了，请再试一次。</string>
+    <string name="err_missing_core">这个对话由 AI 引擎“%1$s”创建，当前版本的应用没有这个引擎。</string>
     <string name="notif_stop_all">全部停止</string>
     <plurals name="notif_running_many">
         <item quantity="other">%1$d 个任务进行中</item>

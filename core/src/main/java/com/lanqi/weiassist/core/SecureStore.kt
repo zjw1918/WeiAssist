@@ -1,4 +1,4 @@
-package com.lanqi.weiassist.pi
+package com.lanqi.weiassist.core
 
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
@@ -11,10 +11,10 @@ import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
 /**
- * Pi's credentials (API key, or ChatGPT access/refresh tokens) at rest: one file in app-private storage,
+ * Secrets (a core's credentials, a bot token) at rest: one file in app-private storage,
  * AES-GCM encrypted with a key that lives in the Android Keystore and never leaves it.
  */
-class SecureStore(context: Context, name: String = "pi-credentials") {
+class SecureStore(context: Context, name: String) {
     private val file = File(context.noBackupFilesDir, "$name.bin")
     private val alias = "weiassist.$name"
 

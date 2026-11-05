@@ -9,7 +9,8 @@ import java.io.File
  * Sessions on disk, three files each, so nothing is read before it is needed:
  * - `<id>.meta.json`: the [SessionSummary] (all of them are read at start, for the list);
  * - `<id>.chat.json`: what the user sees ([ChatItem]s), read when the session is opened;
- * - `<id>.pi.json`: Pi's transcript, read only when Pi needs the conversation back.
+ * - `<id>.<core>.json`: the transcript of the core that runs it (`<id>.pi.json` for Pi), in that core's own
+ *   format, read only when the core needs the conversation back.
  * Writes are atomic (AtomicFile): a process killed mid-write leaves the previous version. Call from a
  * background thread; [SessionManager] serialises writes per session.
  */
@@ -35,11 +36,12 @@ class SessionStore(root: File) {
     fun saveItems(id: String, items: List<ChatItem>) =
         write(file(id, "chat"), JSONArray().apply { items.forEach { put(itemJson(it)) } }.toString())
 
-    fun loadTranscript(id: String): JSONArray? = read(file(id, "pi"))?.let { runCatching { JSONArray(it) }.getOrNull() }
-    fun saveTranscript(id: String, messages: JSONArray) = write(file(id, "pi"), messages.toString())
+    fun loadTranscript(id: String, core: String): JSONArray? = read(file(id, core))?.let { runCatching { JSONArray(it) }.getOrNull() }
+    fun saveTranscript(id: String, core: String, messages: JSONArray) = write(file(id, core), messages.toString())
 
     fun delete(id: String) {
-        listOf("meta", "chat", "pi").forEach { file(id, it).delete() }
+        // Every file of the session, whichever core wrote its transcript.
+        dir.listFiles { f -> f.name.startsWith("$id.") }.orEmpty().forEach { it.delete() }
         attachmentsDir(id).deleteRecursively()
     }
 
@@ -63,6 +65,7 @@ class SessionStore(root: File) {
             .put("error", s.error).put("app", s.app ?: JSONObject.NULL).put("supervisor", s.supervisor)
             .also { if (s.channel != null) it.put("channel", s.channel) }
             .also { if (!s.termux) it.put("termux", false) }
+            .put("core", s.core)
 
         fun summaryFrom(o: JSONObject) = SessionSummary(
             id = o.getString("id"), title = o.optString("title"), phone = o.optBoolean("phone"),
@@ -71,6 +74,7 @@ class SessionStore(root: File) {
             error = o.optBoolean("error"), app = o.optString("app").takeIf { it.isNotEmpty() && it != "null" },
             supervisor = o.optBoolean("supervisor"), channel = o.optString("channel").ifEmpty { null },
             termux = o.optBoolean("termux", true),
+            core = o.optString("core").ifEmpty { SessionSummary.DEFAULT_CORE },
         )
 
         fun itemJson(i: ChatItem): JSONObject = when (i) {

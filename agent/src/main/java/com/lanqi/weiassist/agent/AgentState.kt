@@ -134,7 +134,14 @@ data class SessionSummary(
     val channel: String? = null,
     /** It may run Linux commands in Termux (the bash tool); false for a chat that may only talk. */
     val termux: Boolean = true,
-)
+    /** The AI core that runs it (see CoreRegistry); fixed for the session's life, as transcripts don't carry over. */
+    val core: String = DEFAULT_CORE,
+) {
+    companion object {
+        /** Sessions saved before there was a choice of core ran on Pi. */
+        const val DEFAULT_CORE = "pi"
+    }
+}
 
 /** A whole session: kept in memory while it runs or is on screen, else only on disk. */
 data class SessionState(

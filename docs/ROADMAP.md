@@ -21,11 +21,12 @@ Status legend: ✅ done · 🔨 next · ⬜ planned. Current status and todo: [P
 ## 1. Foundation (make it solid before making it big)
 
 - ✅ **Modules:**
-  - `:pi-runtime` (WebView host, bridge, native fetch, loopback, credential store);
+  - `:core` (the engine-neutral AI-core contract: `AgentCore`, `ToolHost`, `CoreRegistry`, `SecureStore`);
+  - `:core-pi` (Pi's core: WebView host, bridge, native fetch, loopback, credential store);
   - `:agent` (controller, state, service);
   - `:phone` (accessibility tools);
   - `:app` (UI).
-  Clear boundaries and separate tests. `:pi-runtime` knows nothing about phones; features plug in through `registerHostCall`.
+  Clear boundaries and separate tests. `:core-pi` knows nothing about phones; tools plug in through the shared `ToolHost`.
 - ✅ **Reproducible build:** Gradle builds the Pi bundle from source (`buildPiHost<Variant>`, Node per `.nvmrc`). Nothing generated is committed.
 - ✅ **Tests:**
   - pure `AgentReducer` with JVM tests;
@@ -49,6 +50,11 @@ Status legend: ✅ done · 🔨 next · ⬜ planned. Current status and todo: [P
 - ✅ **Providers:** 11 of Pi's (OpenAI, DeepSeek, OpenCode, Anthropic, Google, OpenRouter, xAI, Moonshot, Mistral) and the user's own OpenAI-compatible servers, with per-model context detection.
 - ✅ **Attachments:** images, PDFs (as page images) and text files in messages, with a full-screen image viewer.
 - ✅ **Long tasks:** a visible step list; the user can steer mid-task (Pi's `steer`/follow-up queue).
+- ⬜ **Pluggable AI cores:** users choose the agent harness a new session runs on.
+  - ✅ The core contract (`:core`: `AgentCore`, `ToolHost`, `CoreAccounts`, `CoreRegistry`); Pi behind it (`:core-pi`); each session records its core.
+  - ⬜ Phone-tool policy (screen memory, confirm judgment, blind typing, step limit) moved from `pi-host/src/phone-tools.ts` into Kotlin, so every core gets it.
+  - ⬜ One tool catalog (names, schemas, descriptions) shared by `pi-host` and other cores.
+  - ⬜ A second core: [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`). It needs Node ≥ 24.9 (no WebView), so it would run as a Node process with our own dsh plugin (tools on `ctx.tools`, gate/confirm on `tools/pre-execute`, streaming from `agent/assistant-stream`). Its SDK and ACP servers send no live text and the SDK can't cancel. Blockers on Android: `process.platform` is `android`, so dsh's native `flock` throws; no Android builds of `sharp` and `node-pty`.
 
 ## 2b. Reach it from messaging apps
 

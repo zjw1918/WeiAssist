@@ -135,7 +135,7 @@ data class CustomProvider(
 
         /**
          * A model's settings from what is known, best first: the server's own figures, then Pi's catalog entry
-         * for that id ([catalog], from PiEngine.lookupModels), then defaults (128K, reads images).
+         * for that id ([catalog], from CoreAccounts.lookupModels), then defaults (128K, reads images).
          */
         fun merge(server: ServerModel, catalog: CatalogModel?): CustomModel {
             val ctx = server.contextWindow.takeIf { it > 0 } ?: catalog?.contextWindow ?: 0
