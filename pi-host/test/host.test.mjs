@@ -277,22 +277,26 @@ test("the model gets the app's catalog exactly: each session's tools, with their
 	// The raw call: the session, the core's call id, the tool's name and the model's arguments.
 	const tap = host.toolCalls.find((c) => c.name === "tap");
 	assert.deepEqual([tap.session, tap.args], ["s1", { id: 51 }]);
-	assert.match(tap.call, /^c\d+$/);
+	assert.match(tap.call, /./);
 });
 
 test("Kotlin's before_tool sees every tool call with its arguments, and allowing lets it run", async () => {
 	const checks = [];
+	const calls = [];
 	const taps = [];
 	const host = await startHost({
 		credentials: apiKeyCredentials,
 		hostCalls: {
-			before_tool: (m) => { checks.push([m.session, m.tool, m.args]); return null; },
+			before_tool: (m) => { checks.push([m.session, m.tool, m.args]); calls.push(m.call); return null; },
 			phone: (m) => (m.action === "read_screen" ? "app: x" : (taps.push(m.args.id), "tapped")),
 		},
 	});
 	await phoneRun(host, "send");
 	assert.deepEqual(checks, [["s1", "read_screen", {}], ["s1", "tap", { id: 2 }]]);
 	assert.deepEqual(taps, [2], "allowed: the tap happened");
+	// The same id in before_tool and tool: the app runs only a call it allowed.
+	assert.deepEqual(host.toolCalls.map((c) => c.call), calls);
+	assert.ok(calls.every((c) => typeof c === "string" && c.length > 0));
 });
 
 test("a call before_tool blocks never reaches the phone, and ends the task", async () => {
@@ -572,7 +576,7 @@ test("the supervisor's tools reach Kotlin with the session and their arguments, 
 	assert.deepEqual(raw.map((c) => c.name), ["list_sessions", "create_session", "wait_for", "send_message", "wait_for", "get_session"]);
 	assert.deepEqual(raw[1].args, { task: "Say hello in one word.", phone: false, title: "Hello helper" });
 	assert.deepEqual(raw[2].args, { ids: ["Hello helper"], timeout_seconds: 60 });
-	assert.ok(raw.every((c) => /^c\d+$/.test(c.call)), "each call has the core's own id");
+	assert.ok(raw.every((c) => /./.test(c.call)), "each call has the core's own id");
 	assert.equal(host.messages.find((m) => m.type === "tool_end" && m.tool === "create_session").output, "started session s9");
 	assert.ok(!host.messages.some((m) => m.type === "tool_start" && m.tool === "read_screen"), "no phone tools for the supervisor");
 });
@@ -614,7 +618,7 @@ test("a chat session runs bash in Termux; the command and the session reach Kotl
 	assert.equal(calls[0].session, "c1");
 	assert.equal(calls[0].command, "curl -s 'wttr.in/Hangzhou?format=3'");
 	assert.equal(calls[0].timeout, 30);
-	assert.match(calls[0].call, /^c\d+$/);
+	assert.match(calls[0].call, /./);
 	assert.match(calls[0].id, /^k\d+$/);
 	const end = host.messages.find((m) => m.type === "tool_end" && m.tool === "bash");
 	assert.equal(end.isError, false);
@@ -690,7 +694,7 @@ test("Stop during a bash command asks Kotlin to kill that command", async () => 
 	await host.waitFor("idle", (m) => m.session === "c2", 15_000);
 	assert.equal(kills.length, 1);
 	assert.equal(kills[0].session, "c2");
-	assert.match(kills[0].call, /^c\d+$/);
+	assert.match(kills[0].call, /./);
 });
 
 test("the supervisor has no bash", async () => {

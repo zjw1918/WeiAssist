@@ -224,6 +224,22 @@ class SessionManager(
             return
         }
         scope.launch {
+            // A core that can't start or take the task (dsh didn't come up in Termux) ends the task with why.
+            try { runTask(id, s, core) } catch (e: Throwable) {
+                if (e is kotlinx.coroutines.CancellationException && e !is kotlinx.coroutines.TimeoutCancellationException) throw e
+                Log.w(TAG, "${core.info.id} could not run $id", e)
+                val msg = if (e is kotlinx.coroutines.TimeoutCancellationException) "${core.info.name} did not start in time." else e.message ?: e.javaClass.simpleName
+                if (live[id]?.value?.busy == true) {
+                    update(id) { SessionReducer.reduce(it, JSONObject().put("type", "error").put("message", msg), System.currentTimeMillis(), strings::friendly) }
+                    finished(id)
+                }
+            }
+        }
+    }
+
+    /** Give session [id]'s core its task: set its agent up if needed, then prompt it. */
+    private suspend fun runTask(id: String, s: SessionState, core: AgentCore) {
+        run {
             val (provider, model, thinking, mock) = settings()
             val kind = when { s.summary.supervisor -> SessionKind.Supervisor; s.summary.phone -> SessionKind.Phone; else -> SessionKind.Chat }
             val config = SessionConfig(
@@ -237,8 +253,8 @@ class SessionManager(
                 configured[id] = config
             }
             // Read now: messages typed while the core was being set up joined the task (see send).
-            val now = live[id]?.value?.takeIf { it.busy } ?: return@launch
-            val task = now.pendingTask ?: if (now.pendingAttachments.isNotEmpty()) "" else return@launch
+            val now = live[id]?.value?.takeIf { it.busy } ?: return
+            val task = now.pendingTask ?: if (now.pendingAttachments.isNotEmpty()) "" else return
             onTaskStarted(id)
             core.prompt(id, UserInput(task, Attachments.content(now.pendingAttachments)))
             prompted += id

@@ -385,7 +385,7 @@ function saveTranscript(id: string) {
  * It answers null to go on, or why the call is blocked (the supervisor's limits are there too).
  */
 const beforeToolCall = (s: Session) => async (ctx: BeforeToolCallContext) => {
-	const verdict = await bridgeCall("before_tool", { session: s.id, tool: ctx.toolCall.name, args: ctx.args });
+	const verdict = await bridgeCall("before_tool", { session: s.id, call: ctx.toolCall.id, tool: ctx.toolCall.name, args: ctx.args });
 	if (verdict?.block) return { block: true, terminate: verdict.terminate !== false, reason: String(verdict.reason ?? "Blocked by the app.") };
 	return undefined;
 };

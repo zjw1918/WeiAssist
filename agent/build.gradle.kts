@@ -19,6 +19,7 @@ android {
 dependencies {
     api(project(":core"))
     implementation(project(":core-pi"))
+    implementation(project(":core-dsh"))
     api(project(":phone"))
     api(project(":shell"))
     api(project(":channels"))

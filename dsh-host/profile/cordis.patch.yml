@@ -1,0 +1,73 @@
+# WeiAssist's dsh profile patch (dsh 0.2.2-rc.1: dsh --profile weiassist, created from the shipped headless template).
+# dsh runs as one of the app's AI cores: the bridge plugin connects to the app and runs its sessions.
+# Sessions get exactly the app's tools (its catalog), so dsh's own model-facing tools are off.
+
+# No one-shot task: the bridge keeps the process alive while the app is connected.
+- id: headless-runner
+  disabled: true
+- id: headless-startup
+  disabled: true
+
+# Model routes. A route's key comes from the env var the bridge sets from the app (WEIASSIST_KEY_<ROUTE>).
+- id: llm-pi-ai
+  config:
+    providers:
+      openai:
+        apiKeyEnv: WEIASSIST_KEY_OPENAI
+      deepseek:
+        apiKeyEnv: WEIASSIST_KEY_DEEPSEEK
+      # The app's dev mock server (tools/mock-openai.mjs, adb reverse tcp:8787).
+      mock:
+        displayName: WeiAssist mock
+        apiKeyEnv: WEIASSIST_KEY_MOCK
+        api: openai-responses
+        baseURL: !!js process.env.WEIASSIST_MOCK_URL ?? 'http://127.0.0.1:8787/v1'
+        models:
+          - id: gpt-6.1-terra
+            name: Mock
+            contextWindow: 128000
+            # Phone tasks send screenshots: without this dsh keeps images from the model.
+            input: [text, image]
+
+- id: tool-bash
+  disabled: true
+- id: tool-pwsh
+  disabled: true
+- id: tool-jobs
+  disabled: true
+- id: tool-fs
+  disabled: true
+- id: tool-fs-search
+  disabled: true
+- id: tool-skill
+  disabled: true
+- id: tool-subagent
+  disabled: true
+- id: tool-subagent-fork
+  disabled: true
+- id: tool-subagent-control
+  disabled: true
+- id: tool-workflow
+  disabled: true
+- id: tool-todo
+  disabled: true
+- id: tool-goal
+  disabled: true
+- id: tool-web
+  disabled: true
+- id: tool-working-directory
+  disabled: true
+- id: mcp-resources
+  disabled: true
+# The app titles its sessions itself; dsh's titler would make a model request of its own.
+- id: session-title
+  disabled: true
+- id: session-title-llm
+  disabled: true
+# Plan mode adds its own model-facing tool (exit_plan_mode).
+- id: plan-mode
+  disabled: true
+
+- insert:
+    - id: weiassist-bridge
+      name: '@weiassist/dsh-bridge'

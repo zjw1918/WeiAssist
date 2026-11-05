@@ -1,0 +1,21 @@
+{
+  "name": "@weiassist/dsh-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WeiAssist's bridge into DeepSeek Harness: the app's sessions as dsh agents, its tools, and its events (an AI core, like pi-host is for Pi)",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js"
+  },
+  "files": [
+    "lib"
+  ],
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node build.mjs && node --test --test-concurrency=1 test/*.test.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12"
+  }
+}
