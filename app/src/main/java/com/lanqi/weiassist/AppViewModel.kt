@@ -248,8 +248,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (openId.value in ids) open(null)
         withAgent { ids.forEach { sessions.delete(it, termuxFiles) } }
     }
-    /** Whether any of [ids] has a folder in Termux, so deleting can offer to remove it too. */
-    fun hasTermuxFiles(ids: Collection<String>) = termux?.let { t -> ids.any(t::hasFolder) } == true
+    /**
+     * Whether deleting [ids] offers to remove their Termux folders too: always when Termux is installed, whatever the
+     * engine or kind of session (dsh's own tools, or the user, may have made one); the user judges.
+     */
+    fun hasTermuxFiles(ids: Collection<String>) = ids.isNotEmpty() && termux?.installed() == true
     fun stopAll() = withAgent { stopAll() }
 
     // ---- the supervisor ---------------------------------------------------------------------------
