@@ -157,6 +157,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Whether DeepSeek Harness can run now, and if not, why (Settings' words). */
     suspend fun dshReadiness(): com.lanqi.weiassist.agent.DshSetup.Readiness? = controller.value?.dshSetup?.readiness()
 
+    /** Brings DeepSeek Harness's setup up to date when another version of the app made it (an app update). */
+    suspend fun updateDshIfOutdated(): Boolean = controller.value?.dshSetup?.updateIfOutdated() == true
+
     /** Sets DeepSeek Harness up in Termux, for its setup screen. */
     val dshSetup get() = controller.value?.dshSetup
 

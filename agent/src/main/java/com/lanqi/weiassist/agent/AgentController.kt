@@ -220,7 +220,12 @@ class AgentController(context: Context) {
     private fun warmDsh() {
         scope.launch(Dispatchers.IO) {
             // An app update with a new bridge: bring dsh's setup up to date by itself, whichever engine is the default.
-            if (termux.installed()) runCatching { dshSetup.updateIfOutdated() }.onFailure { android.util.Log.w("DshSetup", "update: ${it.message}") }
+            // Just after the app (re)starts, Termux may not answer yet (it starts, or the system froze it): ask again.
+            if (termux.installed()) for (attempt in 1..3) {
+                val r = runCatching { dshSetup.readiness() }.getOrNull()
+                if (r !is DshSetup.Readiness.Termux && r != null) { if (r == DshSetup.Readiness.Outdated) dshSetup.updateIfOutdated(); break }
+                kotlinx.coroutines.delay(10_000)
+            }
             if (cores.defaultId != com.lanqi.weiassist.dsh.DshEngine.ID) return@launch
             if (dshSetup.problem() != null) return@launch
             runCatching { dsh.start() }.onFailure { android.util.Log.w("DshEngine", "warm-up: ${it.message}") }

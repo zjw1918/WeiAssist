@@ -166,7 +166,8 @@ class DshSetup(context: Context, private val termux: Termux, private val scope: 
      * (the bridge must match the app). A first setup is the user's to start. Returns whether it started one.
      */
     suspend fun updateIfOutdated(): Boolean {
-        if (readiness() != Readiness.Outdated) return false
+        val r = readiness()
+        if (r != Readiness.Outdated) { Log.i(TAG, "no automatic update: $r"); return false }
         Log.i(TAG, "set up by another version of the app: updating")
         return start(defaultMirrors())
     }

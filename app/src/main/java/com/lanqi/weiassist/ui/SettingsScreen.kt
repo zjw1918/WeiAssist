@@ -145,6 +145,9 @@ private fun EngineSection(vm: AppViewModel, s: AgentState, openDshSetup: () -> U
         while (true) {
             engines.forEach { e -> problems[e.id] = vm.engineProblem(e.id) }
             if (engines.any { it.id == DSH }) dsh = vm.dshReadiness()
+            // Set up by another version of the app: update it now (the app does on start too, but Termux may not
+            // have answered then), and follow it here.
+            if (dsh == DshSetup.Readiness.Outdated && vm.updateDshIfOutdated()) dsh = DshSetup.Readiness.Updating
             if (dsh != DshSetup.Readiness.Updating) break
             delay(5_000)
         }
