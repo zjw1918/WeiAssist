@@ -332,6 +332,8 @@
     <string name="dsh_section_install">Installation</string>
     <string name="dsh_step_termux_app">Termux (GitHub or F-Droid build)</string>
     <string name="dsh_step_permission">Permission to run commands in Termux</string>
+    <string name="dsh_step_battery">Termux may run in the background</string>
+    <string name="dsh_step_battery_hint">In Termux\'s app settings, set battery use to “No restrictions” (and allow autostart if your phone has it). Otherwise some phones pause Termux in the background, and DeepSeek Harness takes minutes to start or never answers.</string>
     <string name="dsh_step_commands">Termux accepts commands from this app</string>
     <string name="dsh_step_commands_hint">Open Termux and wait until it has finished setting up. Then paste this command there, press Enter, and come back:</string>
     <string name="dsh_copy_command">Copy command</string>

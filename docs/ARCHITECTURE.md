@@ -138,6 +138,11 @@ entry in the registry.
   `setup.log` (each step starts with `== [id]`, the run ends with `== [done]` or `== [failed] <code>`), `setup.pid`
   while it runs, and `installed` (a hash of the materials) when it worked. dsh counts as set up only with this APK's
   hash, so an app with a newer bridge asks for the setup again; done steps are skipped.
+- **Termux must not be frozen:** once a RUN_COMMAND ends, Termux is a cached background app, and HyperOS gave dsh
+  almost no CPU (minutes to boot) or froze it outright (`do_freezer_trap`), even reading `/proc/<pid>/cmdline` in the
+  launch script blocked. `launchDsh` therefore starts a keepalive task that lasts as long as dsh's tmux session (Termux
+  stays a foreground service, no wake lock), and the setup screen asks for Termux's battery use to be unrestricted
+  (HyperOS freezes even foreground services of restricted apps).
 - **The bridge** (`dsh-host/src/index.ts`) is the dsh counterpart of `pi-host`. It is mounted by the profile
   patch `dsh-host/profile/cordis.patch.yml`, which turns off only the one-shot runner, the titler (the app titles
   sessions) and dsh's coding-agent persona, and declares the model routes.

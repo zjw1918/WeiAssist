@@ -93,7 +93,30 @@ class Termux(context: Context) {
         val r = execute(args, 30) ?: return "No answer from Termux. Open Termux once, and allow it to run in the background."
         if (r.getInt("err", RESULT_OK) != RESULT_OK) return "Termux could not start DeepSeek Harness: ${r.getString("errmsg").orEmpty()}"
         val code = r.getInt("exitCode", -1)
-        return if (code == 0) null else r.getString("stdout").orEmpty().ifBlank { r.getString("stderr").orEmpty() }.ifBlank { "exit code $code" }
+        if (code != 0) return r.getString("stdout").orEmpty().ifBlank { r.getString("stderr").orEmpty() }.ifBlank { "exit code $code" }
+        keepDshRunning()
+        return null
+    }
+
+    /**
+     * Keep Termux's service in the foreground while dsh runs: a task that waits as long as dsh's tmux session lasts.
+     * Otherwise Termux becomes a cached background app once the launch command ends, and some phones (HyperOS) then
+     * give its processes almost no CPU: dsh took minutes to boot, or never connected. A running task keeps Termux a
+     * foreground service (its "1 task" notification), without a wake lock. One at a time; it ends with dsh.
+     */
+    private fun keepDshRunning() {
+        val script = """
+            # dsh-keepalive
+            d="${'$'}{HOME}/.weiassist-dsh"; f="${'$'}{d}/keepalive.pid"
+            export TMUX_TMPDIR="${'$'}{d}/.tmux"
+            p="${'$'}(cat "${'$'}{f}" 2> /dev/null)"
+            [ -n "${'$'}{p}" ] && grep -q dsh-keepalive "/proc/${'$'}{p}/cmdline" 2> /dev/null && exit 0
+            echo ${'$'}${'$'} > "${'$'}{f}"
+            while tmux has-session -t dsh 2> /dev/null; do sleep 15; done
+            rm -f "${'$'}{f}"
+        """.trimIndent()
+        // No result wanted: Termux holds the task, not this app.
+        start(command(arrayOf("-c", script), "dsh"))
     }
 
     /**
@@ -261,23 +284,31 @@ class Termux(context: Context) {
             PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_UPDATE_CURRENT or
                 (if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0),
         )
-        val intent = Intent(ACTION_RUN).setComponent(ComponentName(PACKAGE, "com.termux.app.RunCommandService"))
-            .putExtra("com.termux.RUN_COMMAND_PATH", "$PREFIX/bin/bash")
-            .putExtra("com.termux.RUN_COMMAND_ARGUMENTS", args)
-            .putExtra("com.termux.RUN_COMMAND_WORKDIR", HOME)
-            .putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
-            .putExtra("com.termux.RUN_COMMAND_COMMAND_LABEL", "agent")
-            .putExtra("com.termux.RUN_COMMAND_PENDING_INTENT", result)
+        val intent = command(args, "agent").putExtra("com.termux.RUN_COMMAND_PENDING_INTENT", result)
         return try {
-            // Termux's service goes foreground at once; the agent's own foreground service lets us start it.
-            if (Build.VERSION.SDK_INT >= 26) app.startForegroundService(intent) else app.startService(intent)
+            start(intent)?.let { e -> return android.os.Bundle().apply { putInt("err", 1); putString("errmsg", e) } }
             withTimeoutOrNull(timeoutSec * 1000) { done.await() }
-        } catch (e: Exception) {
-            Log.w(TAG, "RUN_COMMAND failed", e)
-            android.os.Bundle().apply { putInt("err", 1); putString("errmsg", e.message ?: e.javaClass.simpleName) }
         } finally {
             pending.remove(req)
         }
+    }
+
+    /** A RUN_COMMAND for bash with [args], in the background. */
+    private fun command(args: Array<String>, label: String) = Intent(ACTION_RUN).setComponent(ComponentName(PACKAGE, "com.termux.app.RunCommandService"))
+        .putExtra("com.termux.RUN_COMMAND_PATH", "$PREFIX/bin/bash")
+        .putExtra("com.termux.RUN_COMMAND_ARGUMENTS", args)
+        .putExtra("com.termux.RUN_COMMAND_WORKDIR", HOME)
+        .putExtra("com.termux.RUN_COMMAND_BACKGROUND", true)
+        .putExtra("com.termux.RUN_COMMAND_COMMAND_LABEL", label)
+
+    /** Hand [intent] to Termux; why it couldn't be, or null. */
+    private fun start(intent: Intent): String? = try {
+        // Termux's service goes foreground at once; the agent's own foreground service lets us start it.
+        if (Build.VERSION.SDK_INT >= 26) app.startForegroundService(intent) else app.startService(intent)
+        null
+    } catch (e: Exception) {
+        Log.w(TAG, "RUN_COMMAND failed", e)
+        e.message ?: e.javaClass.simpleName
     }
 
     companion object {
