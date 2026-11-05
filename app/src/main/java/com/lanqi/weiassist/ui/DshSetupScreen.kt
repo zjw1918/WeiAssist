@@ -46,7 +46,6 @@ import com.lanqi.weiassist.agent.DshSetup
 import com.lanqi.weiassist.agent.Termux
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import java.util.Locale
 
 /**
  * Sets DeepSeek Harness up from the app: Termux itself ([TermuxSteps]), then the setup script, run in Termux
@@ -76,7 +75,7 @@ fun DshSetupScreen(vm: AppViewModel, termux: Termux, setup: DshSetup, onClose: (
     val answers = local.sendable && status != null && status?.termuxProblem == null
     val running = launching || status?.running == true
     val default by vm.defaultEngine.collectAsStateWithLifecycle()
-    var mirrors by rememberSaveable { mutableStateOf(Locale.getDefault().let { it.language == "zh" && it.country != "TW" && it.country != "HK" }) }
+    var mirrors by rememberSaveable { mutableStateOf(setup.defaultMirrors()) }
 
     Scaffold(
         contentWindowInsets = WindowInsets(0),

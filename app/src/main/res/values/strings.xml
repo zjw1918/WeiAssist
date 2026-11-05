@@ -328,6 +328,9 @@
     <string name="engine_ready">Set up in Termux</string>
     <string name="engine_checking">Checking…</string>
     <string name="engine_dsh_not_ready">Not set up yet. Tap to set it up.</string>
+    <string name="engine_dsh_outdated">Needs an update for this version of the app. Tap to update.</string>
+    <string name="engine_dsh_updating">Updating in Termux…</string>
+    <string name="engine_dsh_termux">Termux can\'t run commands for this app yet. Tap to check.</string>
     <string name="dsh_setup_title">Set up DeepSeek Harness</string>
     <string name="dsh_setup_row_hint">Install, update or check it in Termux</string>
     <string name="dsh_setup_intro">DeepSeek Harness runs in Termux, inside a small Ubuntu system. This setup installs Ubuntu, Node.js and DeepSeek Harness there. It needs about 1.5 GB of free space, downloads several hundred MB and can take 10–30 minutes, so use Wi-Fi and keep the phone charging. You can leave this screen: the setup goes on in Termux.</string>
