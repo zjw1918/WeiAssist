@@ -22,6 +22,9 @@ files or your sign-in.
 
 ## Setup
 
+The quickest way is in the app: **Settings → Linux commands (Termux) → Set up Linux commands**. It checks each step
+below, shows what is missing with the button that fixes it, and installs `curl` and `tmux` for you. The steps by hand:
+
 ### 1. Install Termux from GitHub or F-Droid
 
 Download the latest `termux-app_*_universal.apk` (or the one for your CPU, usually `arm64-v8a`) from
@@ -48,7 +51,7 @@ termux-reload-settings
 
 ### 3. Allow WeiAssist to run commands in Termux
 
-In WeiAssist, open **Settings → Linux commands (Termux)** and tap **Allow**.
+In WeiAssist, open **Settings → Linux commands (Termux) → Set up Linux commands** and tap **Allow**.
 
 If Android doesn't ask (for example after you declined once), allow it by hand: Android **Settings →
 Apps → WeiAssist → Permissions → Additional permissions → Run commands in Termux environment → Allow**.
@@ -57,7 +60,7 @@ The menu names differ a little between phone makers.
 ### 4. Let Termux run in the background
 
 Many phones stop background apps to save battery, which ends long commands. In WeiAssist, tap
-**Termux app settings**, and there:
+**Termux app settings** on the same screen, and there:
 
 - set battery use to **Unrestricted** (or "No restrictions");
 - allow **Autostart** (Xiaomi, OPPO, realme, vivo, Huawei and others have this switch).
@@ -73,7 +76,7 @@ adb shell settings put global settings_enable_monitor_phantom_procs false
 
 ### 5. Check
 
-In **Settings → Linux commands (Termux)**, tap **Check**. It shows whether `bash`, `curl`, `tmux` and the
+The setup screen checks it each time you open it (or tap **Check again**). It shows whether `curl`, `tmux` and the
 network work. When everything has a ✓, try it in a chat:
 
 > What's the weather in Hangzhou this week?
@@ -116,6 +119,8 @@ network work. When everything has a ✓, try it in a chat:
 
 ### 设置步骤
 
+最简单的方法是在应用里：**设置 → Linux 命令（Termux）→ 设置 Linux 命令**。它会逐项检查下面的步骤，显示缺少什么和对应的按钮，并能直接安装 `curl` 和 `tmux`。手动步骤如下：
+
 1. **从 GitHub 或 F-Droid 安装 Termux**：在 [Termux 的 GitHub 发布页](https://github.com/termux/termux-app/releases/latest)
    下载 `termux-app_*_universal.apk`（或 `arm64-v8a` 版），或从 [F-Droid](https://f-droid.org/packages/com.termux/) 安装。
    **不要用 Google Play 版**，它不能替其他应用运行命令；如已安装，请先卸载（其中的文件会丢失）。
@@ -129,12 +134,12 @@ network work. When everything has a ✓, try it in a chat:
    ```
 
    `pkg upgrade` 不能省，否则新装的 `curl` 可能报 OpenSSL 错误。
-3. **授权小维助手**：在小维助手 **设置 → Linux 命令（Termux）** 点 **允许**。如果系统没有弹窗，请到系统
+3. **授权小维助手**：在小维助手 **设置 → Linux 命令（Termux）→ 设置 Linux 命令** 点 **允许**。如果系统没有弹窗，请到系统
    **设置 → 应用 → 小维助手 → 权限 → 其他权限 → 在 Termux 环境中运行命令 → 允许**（各品牌菜单名称略有不同）。
 4. **允许 Termux 后台运行**：在小维助手点 **Termux 应用设置**，把省电策略设为 **无限制**，并允许 **自启动**。
    Android 12 及以上还会限制应用的子进程数量（"phantom process"），可能中断编译和测试。小维助手的 Shell
    后台启动时会自动解除这个限制；没有使用 Shell 后台的话，可以在电脑上用 `adb` 运行上文英文部分的两条命令。
-5. **检查**：在 **设置 → Linux 命令（Termux）** 点 **检查**，`bash`、`curl`、`tmux` 和网络都显示 ✓ 即可。
+5. **检查**：每次打开设置页面都会检查（也可点 **重新检查**），`curl`、`tmux` 和网络都显示 ✓ 即可。
    然后在对话里试试：“杭州这一周的天气怎么样？”
 
 ### 常见问题
