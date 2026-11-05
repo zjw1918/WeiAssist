@@ -24,4 +24,16 @@ interface CoreAccounts {
     suspend fun lookupModels(ids: List<String>): JSONObject
     /** The API key saved for [provider], if it signed in with one. */
     fun savedApiKey(provider: String): String?
+
+    /**
+     * The providers usable now (signed in, or custom with a key), for another core to reach through the app (its key
+     * proxy): [{ id, name, api, models: [{ id, name, contextWindow, maxTokens, input, compat? }] }].
+     */
+    suspend fun routes(): JSONArray
+
+    /** [provider]'s current auth for one request: its key (a sign-in's token, refreshed if due), headers and endpoint. */
+    suspend fun providerAuth(provider: String): ProviderAuth?
 }
+
+/** What a request to a provider needs: [apiKey] (an API key or a sign-in's access token), extra [headers], [baseUrl]. */
+data class ProviderAuth(val apiKey: String?, val headers: Map<String, String>, val baseUrl: String?)

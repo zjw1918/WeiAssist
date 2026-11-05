@@ -49,8 +49,11 @@ class DshEngine(
      * then dsh's routes need keys of their own.
      */
     private val proxy: KeyProxy? = null,
-    /** The model routes the dsh profile declares (each gets the proxy's token as its key). */
-    private val routes: List<String> = listOf("openai", "deepseek", "mock"),
+    /**
+     * The providers the app can use (CoreAccounts.routes: signed in, or custom with a key) with their models. dsh gets
+     * each as a model route through [proxy], so it uses the app's providers, keys and sign-ins: no settings of its own.
+     */
+    private val routes: suspend () -> JSONArray = { JSONArray() },
     private val log: (String) -> Unit = {},
     /** How long dsh may take to boot and connect (installing nothing, but loading ~600 packages on a phone). */
     private val connectTimeoutMs: Long = 180_000,
@@ -94,7 +97,7 @@ class DshEngine(
             // Never a key: the proxy's address and its token, which only works through the proxy.
             proxy?.let { p ->
                 put(ENV_PROXY, p.start())
-                routes.forEach { route -> put(keyEnv(route), p.token) }
+                put(ENV_PROXY_KEY, p.token)
             }
         }
         launch(env)?.let { throw IllegalStateException(it) }
@@ -124,6 +127,7 @@ class DshEngine(
         socket.soTimeout = 0
         val c = Connection(socket, hello)
         connection = c
+        sentRoutes = null // a new dsh: it has no routes yet
         log("dsh connected (pid ${hello.optInt("pid")})")
         connected?.complete(hello)
         try {
@@ -168,7 +172,40 @@ class DshEngine(
         kotlinx.coroutines.withContext(Dispatchers.IO) { c.send(m) }
     }
 
+    /** The routes dsh last got (llm-pi-ai providers, as JSON), to send them only when they change. */
+    @Volatile private var sentRoutes: String? = null
+
+    /**
+     * dsh's model routes: every provider the app can use, and in dev mode the mock server (standing in for the
+     * session's model), all through the key proxy (`<proxy>/<route>`, the proxy's token as the key).
+     */
+    private suspend fun routeProfiles(config: SessionConfig): JSONObject {
+        val p = proxy ?: return JSONObject()
+        val base = p.start()
+        val out = JSONObject()
+        val list = routes()
+        for (i in 0 until list.length()) {
+            val r = list.getJSONObject(i)
+            out.put(r.getString("id"), JSONObject().put("displayName", r.optString("name")).put("api", r.getString("api"))
+                .put("apiKeyEnv", ENV_PROXY_KEY).put("baseURL", "$base/${r.getString("id")}").put("models", r.getJSONArray("models")))
+        }
+        if (!config.model.baseUrl.isNullOrBlank()) {
+            out.put(MOCK_ROUTE, JSONObject().put("displayName", "WeiAssist mock").put("api", "openai-responses")
+                .put("apiKeyEnv", ENV_PROXY_KEY).put("baseURL", "$base/$MOCK_ROUTE")
+                .put("models", JSONArray().put(JSONObject().put("id", config.model.model).put("contextWindow", 128_000).put("input", JSONArray().put("text").put("image")))))
+        }
+        return out
+    }
+
     override suspend fun configure(session: String, config: SessionConfig) {
+        if (proxy != null) {
+            start()
+            val providers = routeProfiles(config)
+            if (providers.toString() != sentRoutes) {
+                send(JSONObject().put("type", "routes").put("providers", providers))
+                sentRoutes = providers.toString()
+            }
+        }
         val m = config.model
         val cfg = JSONObject().put("type", "configure").put("session", session).put("provider", m.provider)
             .put("modelId", m.model).put("thinkingLevel", m.thinking)
@@ -217,13 +254,15 @@ class DshEngine(
         const val ID = "dsh"
         const val ENV_PORT = "WEIASSIST_BRIDGE_PORT"
         const val ENV_SECRET = "WEIASSIST_BRIDGE_SECRET"
-        /** The key proxy's base URL; the profile's routes are `<it>/<route>`. */
+        /** The key proxy's base URL; dsh's routes are `<it>/<route>`. */
         const val ENV_PROXY = "WEIASSIST_PROXY_URL"
+        /** The env var holding the proxy's token, every route's key in dsh. */
+        const val ENV_PROXY_KEY = "WEIASSIST_KEY_PROXY"
+        /** The dev mock server's route (the bridge sends a session with a baseUrl there). */
+        const val MOCK_ROUTE = "mock"
         private val HOST_CALLS = setOf("before_tool", "tool", "tool_cancel")
         /** Where the bridge connects (dsh-host: 127.0.0.1). */
         val LOOPBACK: InetAddress = InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))
 
-        /** The env var holding a route's key (the profile's llm-pi-ai apiKeyEnv; dsh-host keyEnv). */
-        fun keyEnv(route: String) = "WEIASSIST_KEY_" + route.uppercase().replace(Regex("[^A-Z0-9]"), "_")
     }
 }

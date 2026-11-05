@@ -35,7 +35,9 @@ class AgentController(context: Context) {
     /** DeepSeek Harness, run in Termux (a prototype: chosen for new sessions with the debug extra `--es core dsh`). */
     private val dsh = com.lanqi.weiassist.dsh.DshEngine(
         launch = { env -> termux.launchDsh(env) },
-        proxy = com.lanqi.weiassist.dsh.KeyProxy(::dshRoutes, log = { android.util.Log.w("DshEngine", it) }),
+        proxy = com.lanqi.weiassist.dsh.KeyProxy(::dshRoute, log = { android.util.Log.w("DshEngine", it) }),
+        // The same providers, keys and sign-ins as Pi's (Pi keeps them): dsh has no settings of its own.
+        routes = { accounts.routes() },
         log = { android.util.Log.d("DshEngine", it) },
     )
     /** The installed AI cores; a session runs on the one it was made with. */
@@ -427,14 +429,15 @@ class AgentController(context: Context) {
     fun selectCore(id: String) { if (cores[id] != null) cores.defaultId = id }
 
     /**
-     * Where dsh's model routes really go, with the key the app's key proxy puts in (read per request): the API keys
-     * saved with Pi's accounts, for the providers dsh's profile declares; in dev mode the mock server.
+     * Where a dsh model route really goes, with the key the app's key proxy puts in: Pi's current auth for that
+     * provider (an API key, or a sign-in's token Pi refreshes), asked per request on the proxy's thread; in dev mode
+     * the mock server.
      */
-    private fun dshRoutes(): Map<String, com.lanqi.weiassist.dsh.KeyProxy.Route> = buildMap {
-        DSH_UPSTREAMS.forEach { (route, upstream) ->
-            accounts.savedApiKey(route)?.let { put(route, com.lanqi.weiassist.dsh.KeyProxy.Route(upstream, it)) }
-        }
-        mockBaseUrl?.let { put("mock", com.lanqi.weiassist.dsh.KeyProxy.Route(it, "mock")) }
+    private fun dshRoute(route: String): com.lanqi.weiassist.dsh.KeyProxy.Route? {
+        if (route == com.lanqi.weiassist.dsh.DshEngine.MOCK_ROUTE) return mockBaseUrl?.let { com.lanqi.weiassist.dsh.KeyProxy.Route(it, "mock") }
+        val auth = runCatching { kotlinx.coroutines.runBlocking { accounts.providerAuth(route) } }
+            .onFailure { android.util.Log.w("DshEngine", "no auth for $route: ${it.message}") }.getOrNull() ?: return null
+        return com.lanqi.weiassist.dsh.KeyProxy.Route(auth.baseUrl ?: return null, auth.apiKey ?: return null, auth.headers)
     }
 
     /** Debug builds only: new phone sessions use the phone's own screen, as without the shell helper. */
@@ -467,7 +470,5 @@ class AgentController(context: Context) {
         /** A question also asked in a chat goes unanswered this long: not allowed (the task doesn't hold its screen for ever). */
         const val REMOTE_CONFIRM_MS = 15 * 60_000L
         val HTTP_402 = Regex("""\b402\b""")
-        /** The real endpoints of the model routes dsh's profile declares (as in Pi's catalog). */
-        val DSH_UPSTREAMS = mapOf("openai" to "https://api.openai.com/v1", "deepseek" to "https://api.deepseek.com")
     }
 }

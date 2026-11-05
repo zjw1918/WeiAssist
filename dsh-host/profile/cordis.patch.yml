@@ -16,31 +16,11 @@
     mode: !!js process.env.DSH_PERMISSION_MODE ?? 'workspace-write'
     workspaceRoot: !!js process.env.WEIASSIST_SESSIONS_DIR ?? process.cwd()
 
-# Model routes. With the app, they go through its key proxy (WEIASSIST_PROXY_URL/<route>), which puts the real key
-# in: dsh's "key" (WEIASSIST_KEY_<ROUTE>) is only the proxy's token. dsh never holds a model key.
+# Model routes come from the app at runtime: the bridge mounts an llm-pi-ai of its own with the app's providers (its
+# keys and sign-ins, through the app's key proxy), so dsh has no provider settings of its own. This row is off.
 - id: llm-pi-ai
-  config:
-    providers:
-      openai:
-        apiKeyEnv: WEIASSIST_KEY_OPENAI
-        baseURL: !!js "process.env.WEIASSIST_PROXY_URL ? process.env.WEIASSIST_PROXY_URL + '/openai' : 'https://api.openai.com/v1'"
-      deepseek:
-        apiKeyEnv: WEIASSIST_KEY_DEEPSEEK
-        baseURL: !!js "process.env.WEIASSIST_PROXY_URL ? process.env.WEIASSIST_PROXY_URL + '/deepseek' : 'https://api.deepseek.com'"
-      # The app's dev mock server (tools/mock-openai.mjs, adb reverse tcp:8787).
-      mock:
-        displayName: WeiAssist mock
-        apiKeyEnv: WEIASSIST_KEY_MOCK
-        api: openai-responses
-        baseURL: !!js "process.env.WEIASSIST_PROXY_URL ? process.env.WEIASSIST_PROXY_URL + '/mock' : (process.env.WEIASSIST_MOCK_URL ?? 'http://127.0.0.1:8787/v1')"
-        models:
-          - id: gpt-6.1-terra
-            name: Mock
-            contextWindow: 128000
-            # Phone tasks send screenshots: without this dsh keeps images from the model.
-            input: [text, image]
+  disabled: true
 
-# The app titles its sessions itself; dsh's titler would make a model request of its own.
 # dsh's persona is a coding agent's: each session's own words come from the app (the bridge's prompt section).
 - id: system-prompt
   config:

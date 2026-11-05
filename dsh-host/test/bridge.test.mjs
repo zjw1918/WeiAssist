@@ -87,6 +87,11 @@ before(async () => {
 	});
 	dsh.stderr.on("data", (c) => { stderr += c; });
 	await app.waitFor("hello", () => true, 120_000).catch((e) => { throw new Error(`${e.message}\n${stderr}`); });
+	// The app's providers as dsh's model routes (here only the mock server, without the key proxy).
+	app.send({ type: "routes", providers: { mock: {
+		displayName: "Mock", api: "openai-responses", apiKeyEnv: "WEIASSIST_KEY_MOCK", baseURL: mock.url,
+		models: [{ id: "gpt-6.1-terra", contextWindow: 128000, input: ["text", "image"] }],
+	} } });
 });
 
 after(async () => {
@@ -244,6 +249,24 @@ test("a native call the app blocks is denied", { skip }, async () => {
 	const end = app.messages.find((m) => m.type === "tool_end" && m.session === id("n2"));
 	assert.equal(end.isError, true);
 	assert.match(end.output, /Paused by the user/);
+});
+
+test("a provider added in the app while dsh runs is a route at once (no restart)", { skip }, async () => {
+	app.send({ type: "routes", providers: {
+		mock: { displayName: "Mock", api: "openai-responses", apiKeyEnv: "WEIASSIST_KEY_MOCK", baseURL: mock.url, models: [{ id: "gpt-6.1-terra", input: ["text", "image"] }] },
+		"custom-y": { displayName: "My server", api: "openai-completions", apiKeyEnv: "WEIASSIST_KEY_MOCK", baseURL: mock.url,
+			models: [{ id: "qwen-9", contextWindow: 32768, input: ["text"], compat: { supportsDeveloperRole: false, supportsStore: false } }] },
+	} });
+	const before = mock.requests.length;
+	app.send({ type: "configure", session: id("cy"), provider: "custom-y", modelId: "qwen-9", toolSpecs: [] });
+	const conf = await app.waitFor("configured", (m) => m.session === id("cy"));
+	assert.equal(conf.provider, "custom-y");
+	app.send({ type: "prompt", session: id("cy"), text: "hello" });
+	const end = await app.waitFor("assistant_end", (m) => m.session === id("cy"));
+	assert.equal(end.text, MOCK_REPLY);
+	const req = mock.requests.slice(before).find((r) => r.url.endsWith("/chat/completions"));
+	assert.ok(req, "the custom route spoke its own protocol (chat completions)");
+	assert.equal(JSON.parse(req.body).model, "qwen-9");
 });
 
 test("a session comes back after its agent is gone (dispose, then configure again)", { skip }, async () => {

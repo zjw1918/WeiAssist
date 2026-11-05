@@ -764,3 +764,45 @@ test("Stop drops a steered message the model hasn't read yet", async () => {
 	assert.equal(host.messages.some((m) => m.type === "message_end" && m.text === "never mind that"), false);
 	assert.doesNotMatch(mock.requests.slice(before).map((r) => r.body).join("\n"), /never mind that/);
 });
+
+// ---- other AI cores (DeepSeek Harness), through the app's key proxy ---------------------------------
+
+const query = async (host, fn, args = {}) => {
+	const id = `q${Math.random().toString(36).slice(2)}`;
+	host.call("query", { id, fn, args });
+	const r = await host.waitFor("query_result", (m) => m.id === id);
+	if (!r.ok) throw new Error(r.value?.message);
+	return r.value;
+};
+
+test("another core gets the signed-in providers as routes, with their models", async () => {
+	const host = await startHost({ credentials: apiKeyCredentials });
+	const routes = await query(host, "coreRoutes");
+	const openai = routes.find((r) => r.id === "openai");
+	assert.ok(openai, JSON.stringify(routes.map((r) => r.id)));
+	assert.equal(openai.api, "openai-responses");
+	const m = openai.models.find((x) => x.id === "gpt-5.4-mini");
+	assert.ok(m && m.contextWindow > 0 && m.input.includes("text"));
+	assert.ok(!routes.some((r) => r.id === "anthropic"), "only providers with a credential");
+});
+
+test("the key proxy gets a provider's current key and endpoint; unknown providers have none", async () => {
+	const host = await startHost({ credentials: apiKeyCredentials });
+	const auth = await query(host, "providerAuth", { provider: "openai" });
+	assert.equal(auth.apiKey, JSON.parse(apiKeyCredentials).openai.key);
+	assert.equal(auth.baseUrl, "https://api.openai.com/v1");
+	assert.equal(await query(host, "providerAuth", { provider: "nope" }), null);
+	await assert.rejects(query(host, "noSuchQuery"));
+});
+
+test("a custom provider is a route with its endpoint's quirks, and its key and base URL reach the proxy", async () => {
+	const host = await startHost({ credentials: apiKeyCredentials, customProviders: [{ id: "custom-x", name: "X", baseUrl: "http://10.0.0.2:8000/v1", models: [{ id: "qwen-9", contextWindow: 32768, images: false }], images: false }] });
+	host.call("setCustomProviders", { providers: [{ id: "custom-x", name: "X", baseUrl: "http://10.0.0.2:8000/v1", models: [{ id: "qwen-9", contextWindow: 32768, images: false }], images: false }], provider: "custom-x", key: "sk-x" });
+	await host.waitFor("status", (m) => m.providers.some((p) => p.id === "custom-x" && p.credential));
+	const route = (await query(host, "coreRoutes")).find((r) => r.id === "custom-x");
+	assert.equal(route.api, "openai-completions");
+	assert.deepEqual(route.models.map((m) => [m.id, m.contextWindow, m.input]), [["qwen-9", 32768, ["text"]]]);
+	assert.equal(route.models[0].compat.supportsDeveloperRole, false);
+	const auth = await query(host, "providerAuth", { provider: "custom-x" });
+	assert.deepEqual([auth.apiKey, auth.baseUrl], ["sk-x", "http://10.0.0.2:8000/v1"]);
+});
