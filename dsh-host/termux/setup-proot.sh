@@ -8,7 +8,8 @@
 # By hand: `node build.mjs --out <dir>` in dsh-host/ writes the materials to <dir>/dsh; copy that folder into Termux.
 #   bash setup-proot.sh <materials folder> [stamp]
 # The materials folder holds the bridge (index.js, package.json), the profile patch (cordis.patch.yml) and this script.
-# Optional env: NODE_VERSION (default v24.13.0), NODE_MIRROR (default https://nodejs.org/dist; e.g.
+# Optional env: DSH_VERSION (default DSH_TESTED: the version this app's bridge and profile patch were tested with; a
+# version or an npm dist-tag such as latest), NODE_VERSION (default v24.13.0), NODE_MIRROR (default https://nodejs.org/dist; e.g.
 # https://npmmirror.com/mirrors/node), NPM_REGISTRY (e.g. https://registry.npmmirror.com).
 #
 # Ubuntu sees Termux's home as /root (--termux-home), so everything lives in ~/.weiassist-dsh/linux:
@@ -20,7 +21,9 @@
 #   installed   the stamp (the app's hash of the materials) once everything worked
 set -euo pipefail
 
-DSH_VERSION="0.2.2-rc.1"
+# The app reads this line (DshSetup.testedVersion): keep it one line, a plain version.
+DSH_TESTED="0.2.2-rc.1"
+DSH_VERSION="${DSH_VERSION:-$DSH_TESTED}"
 NODE_VERSION="${NODE_VERSION:-v24.13.0}"
 NODE_MIRROR="${NODE_MIRROR:-https://nodejs.org/dist}"
 NPM_REGISTRY="${NPM_REGISTRY:-}"
@@ -127,8 +130,12 @@ in_ubuntu '
 	cd /root/.weiassist-dsh/linux/run
 	[ -f package.json ] || echo "{\"name\":\"weiassist-dsh\",\"private\":true,\"type\":\"module\"}" > package.json
 	[ -z "$NPM_REGISTRY" ] || npm config set registry "$NPM_REGISTRY"
-	if [ "$(node -p "require(\"./node_modules/@deepseek-ai/dsh/package.json\").version" 2> /dev/null)" != "$DSH_VERSION" ]; then
-		npm install "@deepseek-ai/dsh@$DSH_VERSION" --no-audit --no-fund
+	want="$DSH_VERSION"
+	# A dist-tag (latest, next): the version it names now.
+	case "$want" in [0-9]*) ;; *) want="$(npm view "@deepseek-ai/dsh@$want" version | tail -1)"; echo "$DSH_VERSION is $want" ;; esac
+	[ -n "$want" ] || { echo "npm does not know @deepseek-ai/dsh@$DSH_VERSION."; exit 6; }
+	if [ "$(node -p "require(\"./node_modules/@deepseek-ai/dsh/package.json\").version" 2> /dev/null)" != "$want" ]; then
+		npm install "@deepseek-ai/dsh@$want" --save-exact --no-audit --no-fund
 	fi
 	du -sh node_modules
 	export DSH_HOME=/root/.weiassist-dsh/linux/home
