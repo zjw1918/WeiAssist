@@ -83,6 +83,8 @@ fun SettingsTab(vm: AppViewModel, s: AgentState) {
                 )
             }
 
+            termux?.let { t -> LinuxSection(t) { termuxSetup = true } }
+
             EngineSection(vm, s) { dshSetup = true }
 
             SectionHeader(stringResource(R.string.shell_title))
@@ -90,26 +92,6 @@ fun SettingsTab(vm: AppViewModel, s: AgentState) {
 
             SectionHeader(stringResource(R.string.telegram_title))
             Group { Column(Modifier.padding(GroupContentPadding)) { TelegramSection(vm) } }
-
-            termux?.let { t ->
-                SectionHeader(stringResource(R.string.termux_title))
-                Group {
-                    // Only what the app knows without asking Termux; the setup screen checks the rest.
-                    val local = rememberTermuxView(t).local
-                    GroupRow(
-                        title = stringResource(R.string.termux_setup_row), icon = R.drawable.ic_terminal,
-                        description = when {
-                            !local.installed -> stringResource(R.string.termux_missing)
-                            !local.runnable -> stringResource(R.string.termux_play_build)
-                            !local.permitted -> stringResource(R.string.termux_no_permission)
-                            else -> stringResource(R.string.termux_row_allowed)
-                        },
-                        descriptionColor = if (local.sendable) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
-                        onClick = { termuxSetup = true },
-                        trailing = { AppIcon(R.drawable.ic_chevron_right, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) },
-                    )
-                }
-            }
 
             // Per-app language is a system screen on Android 13+.
             if (Build.VERSION.SDK_INT >= 33) {
@@ -198,3 +180,38 @@ private fun EngineSection(vm: AppViewModel, s: AgentState, openDshSetup: () -> U
 }
 
 private const val DSH = "dsh"
+
+/**
+ * Linux commands (Termux), above the AI engine: whether they are set up, and the way to their setup. Until they are,
+ * a note says what the assistant can't do without them.
+ */
+@Composable
+private fun LinuxSection(termux: com.lanqi.weiassist.agent.Termux, openSetup: () -> Unit) {
+    val view = rememberTermuxView(termux)
+    val local = view.local
+    val inspection by termux.lastInspection.collectAsStateWithLifecycle()
+    // Ask Termux once (later the setup screen keeps the answer up to date); only when commands can be sent at all.
+    LaunchedEffect(local.sendable) { if (local.sendable && termux.lastInspection.value == null) termux.inspect() }
+    val ready = local.sendable && inspection?.ready == true
+    SectionHeader(stringResource(R.string.termux_title))
+    Group {
+        GroupRow(
+            title = stringResource(R.string.termux_setup_row), icon = R.drawable.ic_terminal,
+            description = when {
+                !local.installed -> stringResource(R.string.termux_missing)
+                !local.runnable -> stringResource(R.string.termux_play_build)
+                !local.permitted -> stringResource(R.string.termux_no_permission)
+                ready -> stringResource(R.string.termux_row_ready)
+                else -> stringResource(R.string.termux_row_allowed)
+            },
+            descriptionColor = if (local.sendable) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+            onClick = openSetup,
+            trailing = { AppIcon(R.drawable.ic_chevron_right, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+        )
+    }
+    // Not set up (known: Termux missing or not allowed, or its check failed); nothing while it is being checked.
+    if (!local.sendable || inspection?.ready == false) Text(
+        stringResource(R.string.termux_limited_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp),
+    )
+}
