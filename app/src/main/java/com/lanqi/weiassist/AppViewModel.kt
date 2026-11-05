@@ -151,6 +151,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Why [id] can't run now (DeepSeek Harness not set up in Termux…), or null. */
     suspend fun engineProblem(id: String): String? = controller.value?.engineProblem(id)
 
+    /** Sets DeepSeek Harness up in Termux, for its setup screen. */
+    val dshSetup get() = controller.value?.dshSetup
+
     fun setMock(on: Boolean) { useMock = on; controller.value?.mockBaseUrl = if (on) MOCK_BASE_URL else null }
 
     /** Enabled in system settings: true at once on launch, before the service has (re)connected. */

@@ -1,44 +1,88 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # Sets up DeepSeek Harness (dsh) for WeiAssist inside an Ubuntu userland in Termux (proot-distro), where Node is
 # plain linux-arm64 and dsh's published native modules load as they are (Termux's own Node is "android", which they
-# don't support). A prototype.
-#   bash setup-proot.sh [materials folder]
-# The materials folder (default: ~/storage/downloads/weiassist-dsh) holds the bridge plugin
-# (weiassist-dsh-bridge-*.tgz) and the profile patch (cordis.patch.yml). Optional env:
-#   NODE_VERSION (default v24.13.0), NODE_MIRROR (default https://nodejs.org/dist; e.g. https://npmmirror.com/mirrors/node),
-#   NPM_REGISTRY (e.g. https://registry.npmmirror.com).
+# don't support).
+#
+# WeiAssist runs this itself (Settings → AI engine → Set up DeepSeek Harness): it writes the materials into
+# ~/.weiassist-dsh/materials and runs `bash setup-proot.sh <materials> <stamp>` in Termux, then follows the log.
+# By hand: `node build.mjs --out <dir>` in dsh-host/ writes the materials to <dir>/dsh; copy that folder into Termux.
+#   bash setup-proot.sh <materials folder> [stamp]
+# The materials folder holds the bridge (index.js, package.json), the profile patch (cordis.patch.yml) and this script.
+# Optional env: NODE_VERSION (default v24.13.0), NODE_MIRROR (default https://nodejs.org/dist; e.g.
+# https://npmmirror.com/mirrors/node), NPM_REGISTRY (e.g. https://registry.npmmirror.com).
+#
 # Ubuntu sees Termux's home as /root (--termux-home), so everything lives in ~/.weiassist-dsh/linux:
-#   run/ (the dsh installation), home/ (DSH_HOME: its profile and sessions). Log: ~/.weiassist-dsh/setup-proot.log
+#   run/ (the dsh installation), home/ (DSH_HOME: its profile and sessions).
+# What the app reads (one run at a time):
+#   setup.log   this run's output; each step starts with a line "== [id] text", and the run ends with "== [done]"
+#               or "== [failed] <exit code>"
+#   setup.pid   this run's pid while it runs
+#   installed   the stamp (the app's hash of the materials) once everything worked
 set -euo pipefail
 
 DSH_VERSION="0.2.2-rc.1"
 NODE_VERSION="${NODE_VERSION:-v24.13.0}"
 NODE_MIRROR="${NODE_MIRROR:-https://nodejs.org/dist}"
 NPM_REGISTRY="${NPM_REGISTRY:-}"
-src="${1:-$HOME/storage/downloads/weiassist-dsh}"
 d="$HOME/.weiassist-dsh"
-mkdir -p "$d/linux/run" "$d/linux/home" "$d/materials"
-exec > >(tee "$d/setup-proot.log") 2>&1
+src="${1:-$d/materials}"
+stamp="${2:-manual}"
+mkdir -p "$d/linux/run" "$d/linux/home" "$d/bridge"
+exec > >(tee "$d/setup.log") 2>&1
+echo $$ > "$d/setup.pid"
+finish() {
+	c=$?
+	rm -f "$d/setup.pid"
+	if [ "$c" = 0 ]; then printf '\n== [done]\n'; else printf '\n== [failed] %s\n' "$c"; fi
+}
+trap finish EXIT
 
-step() { printf '\n== %s\n' "$*"; }
+step() { id="$1"; shift; printf '\n== [%s] %s\n' "$id" "$*"; }
 
-step "materials from $src"
-plugin="$(ls "$src"/weiassist-dsh-bridge-*.tgz 2> /dev/null | tail -1 || true)"
-[ -n "$plugin" ] && [ -f "$src/cordis.patch.yml" ] || { echo "Missing the plugin .tgz or cordis.patch.yml in $src (run termux-setup-storage first if it is in Downloads)."; exit 2; }
-cp "$plugin" "$d/materials/weiassist-dsh-bridge.tgz"
-cp "$src/cordis.patch.yml" "$d/materials/cordis.patch.yml"
+# Termux's packages without questions (a changed config file keeps the user's version).
+export DEBIAN_FRONTEND=noninteractive
+apt_opts=(-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
 
-step "proot-distro and Ubuntu"
-command -v proot-distro > /dev/null || pkg install -y proot-distro
-command -v tmux > /dev/null || pkg install -y tmux
+step materials "the bridge and the profile from $src"
+[ -f "$src/index.js" ] && [ -f "$src/package.json" ] && [ -f "$src/cordis.patch.yml" ] || { echo "Missing index.js, package.json or cordis.patch.yml in $src."; exit 2; }
+rm -rf "$d/bridge/lib" && mkdir -p "$d/bridge/lib"
+cp "$src/index.js" "$d/bridge/lib/index.js"
+cp "$src/package.json" "$d/bridge/package.json"
+cp "$src/cordis.patch.yml" "$d/bridge/cordis.patch.yml"
+
+step termux "Termux packages (proot-distro, tmux)"
+if ! command -v proot-distro > /dev/null || ! command -v tmux > /dev/null; then
+	# A fresh Termux must upgrade first, or newly installed tools can fail on mismatched libraries (OpenSSL).
+	# pkg picks a random mirror, and some lag behind by years (packages older than Termux's own then can't install:
+	# "unmet dependencies"). If that happens, pin a mirror known to be current and use apt-get, which keeps it.
+	if ! { pkg update -y "${apt_opts[@]}" && pkg upgrade -y "${apt_opts[@]}" && pkg install -y "${apt_opts[@]}" proot-distro tmux; }; then
+		mirrors=(https://packages-cf.termux.dev/apt/termux-main https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main
+			https://mirrors.ustc.edu.cn/termux/apt/termux-main https://mirrors.aliyun.com/termux/termux-main)
+		# Mainland China (the app asked for its mirrors): the official repository is slow there, so try it last.
+		case "$NODE_MIRROR" in *npmmirror*) mirrors=("${mirrors[@]:1}" "${mirrors[0]}") ;; esac
+		ok=
+		for m in "${mirrors[@]}"; do
+			echo "Trying the Termux mirror $m"
+			echo "deb $m stable main" > "$PREFIX/etc/apt/sources.list"
+			if apt-get update "${apt_opts[@]}" && apt-get -y "${apt_opts[@]}" full-upgrade && apt-get -y "${apt_opts[@]}" install proot-distro tmux; then
+				ok=1; break
+			fi
+		done
+		[ -n "$ok" ] || { echo "No Termux mirror could install proot-distro and tmux."; exit 3; }
+	fi
+fi
+proot-distro --version 2> /dev/null | head -1 || true
+
+step ubuntu "Ubuntu (proot-distro)"
 # Ask proot-distro itself whether Ubuntu is there: newer versions keep containers elsewhere than installed-rootfs/.
 if ! proot-distro login ubuntu -- true > /dev/null 2>&1; then
 	proot-distro install ubuntu
 fi
+proot-distro login ubuntu -- sh -c '. /etc/os-release && echo "$PRETTY_NAME"'
 
-in_ubuntu() { proot-distro login ubuntu --termux-home -- env NODE_VERSION="$NODE_VERSION" NODE_MIRROR="$NODE_MIRROR" NPM_REGISTRY="$NPM_REGISTRY" DSH_VERSION="$DSH_VERSION" bash -euo pipefail -c "$1"; }
+in_ubuntu() { proot-distro login ubuntu --termux-home -- env NODE_VERSION="$NODE_VERSION" NODE_MIRROR="$NODE_MIRROR" NPM_REGISTRY="$NPM_REGISTRY" DSH_VERSION="$DSH_VERSION" DEBIAN_FRONTEND=noninteractive bash -euo pipefail -c "$1"; }
 
-step "Node $NODE_VERSION in Ubuntu"
+step node "Node $NODE_VERSION in Ubuntu"
 in_ubuntu '
 	if ! command -v node > /dev/null || [ "$(node -v)" != "$NODE_VERSION" ]; then
 		command -v curl > /dev/null && command -v xz > /dev/null || { apt-get update -y && apt-get install -y curl ca-certificates xz-utils; }
@@ -48,45 +92,50 @@ in_ubuntu '
 	node -p "\"platform: \" + process.platform + \"-\" + process.arch"
 '
 
-step "dsh $DSH_VERSION"
+step dsh "dsh $DSH_VERSION"
 in_ubuntu '
 	cd /root/.weiassist-dsh/linux/run
 	[ -f package.json ] || echo "{\"name\":\"weiassist-dsh\",\"private\":true,\"type\":\"module\"}" > package.json
 	[ -z "$NPM_REGISTRY" ] || npm config set registry "$NPM_REGISTRY"
-	npm install "@deepseek-ai/dsh@$DSH_VERSION" --no-audit --no-fund
+	if [ "$(node -p "require(\"./node_modules/@deepseek-ai/dsh/package.json\").version" 2> /dev/null)" != "$DSH_VERSION" ]; then
+		npm install "@deepseek-ai/dsh@$DSH_VERSION" --no-audit --no-fund
+	fi
 	du -sh node_modules
 	export DSH_HOME=/root/.weiassist-dsh/linux/home
 	node ./node_modules/.bin/dsh --version
 '
 
-step "the weiassist profile and the bridge"
+step profile "the weiassist profile and the bridge"
 in_ubuntu '
 	cd /root/.weiassist-dsh/linux/run
 	export DSH_HOME=/root/.weiassist-dsh/linux/home
-	node ./node_modules/.bin/dsh --profile weiassist --from-default-profile headless --dump-config > /dev/null
 	p="$DSH_HOME/profiles/weiassist"
+	[ -f "$p/package.json" ] || node ./node_modules/.bin/dsh --profile weiassist --from-default-profile headless --dump-config > /dev/null
 	rm -rf "$p/node_modules/@weiassist/dsh-bridge"
 	mkdir -p "$p/node_modules/@weiassist/dsh-bridge"
-	tar -xzf /root/.weiassist-dsh/materials/weiassist-dsh-bridge.tgz -C "$p/node_modules/@weiassist/dsh-bridge" --strip-components=1
-	node -e "const f=process.argv[1]; const fs=require(\"fs\"); const j=JSON.parse(fs.readFileSync(f)); j.dependencies={...j.dependencies,\"@weiassist/dsh-bridge\":\"0.1.0\"}; fs.writeFileSync(f, JSON.stringify(j,null,2))" "$p/package.json"
-	cp /root/.weiassist-dsh/materials/cordis.patch.yml "$p/cordis.patch.yml"
+	cp -r /root/.weiassist-dsh/bridge/lib /root/.weiassist-dsh/bridge/package.json "$p/node_modules/@weiassist/dsh-bridge/"
+	v="$(node -p "require(\"/root/.weiassist-dsh/bridge/package.json\").version")"
+	node -e "const f=process.argv[1]; const fs=require(\"fs\"); const j=JSON.parse(fs.readFileSync(f)); j.dependencies={...j.dependencies,\"@weiassist/dsh-bridge\":process.argv[2]}; fs.writeFileSync(f, JSON.stringify(j,null,2))" "$p/package.json" "$v"
+	cp /root/.weiassist-dsh/bridge/cordis.patch.yml "$p/cordis.patch.yml"
 	node ./node_modules/.bin/dsh --profile weiassist --dump-config | grep -E "id: weiassist-bridge|mock:"
 '
 
-step "check: dsh boots (the bridge has no app to connect to here, so it only says so)"
+step check "dsh starts (the bridge has no app to connect to here, so it only says so)"
 in_ubuntu '
 	cd /root/.weiassist-dsh/linux/run
 	export DSH_HOME=/root/.weiassist-dsh/linux/home
-	timeout 120 node ./node_modules/.bin/dsh --profile weiassist > /root/.weiassist-dsh/boot-check.log 2>&1 &
+	timeout 180 node ./node_modules/.bin/dsh --profile weiassist > /root/.weiassist-dsh/boot-check.log 2>&1 &
 	pid=$!
-	for i in $(seq 1 120); do
-		grep -q "weiassist-bridge" /root/.weiassist-dsh/boot-check.log 2> /dev/null && break
+	ok=
+	for i in $(seq 1 180); do
+		grep -q "weiassist-bridge" /root/.weiassist-dsh/boot-check.log 2> /dev/null && { ok=1; break; }
 		kill -0 $pid 2> /dev/null || break
 		sleep 1
 	done
 	kill $pid 2> /dev/null || true
 	tail -5 /root/.weiassist-dsh/boot-check.log
+	[ -n "$ok" ] || { echo "dsh did not load the bridge."; exit 5; }
 '
 
-step "done"
+echo "$stamp" > "$d/installed"
 echo "WeiAssist starts dsh itself in Ubuntu (tmux session 'dsh', log ~/.weiassist-dsh/dsh.log)."

@@ -23,7 +23,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
@@ -42,6 +45,14 @@ fun SettingsTab(vm: AppViewModel, s: AgentState) {
     val ctx = LocalContext.current
     val bar = TopAppBarDefaults.pinnedScrollBehavior()
     fun open(intent: Intent) = runCatching { ctx.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    // DeepSeek Harness's setup screen is open (it replaces this tab, like a provider's form).
+    var dshSetup by rememberSaveable { mutableStateOf(false) }
+    val termux = vm.termux
+    val setup = vm.dshSetup
+    if (dshSetup && termux != null && setup != null) {
+        DshSetupScreen(vm, termux, setup) { dshSetup = false }
+        return
+    }
     Scaffold(
         modifier = Modifier.nestedScroll(bar.nestedScrollConnection),
         contentWindowInsets = WindowInsets(0),
@@ -66,7 +77,7 @@ fun SettingsTab(vm: AppViewModel, s: AgentState) {
                 )
             }
 
-            EngineSection(vm, s)
+            EngineSection(vm, s) { dshSetup = true }
 
             SectionHeader(stringResource(R.string.shell_title))
             Group { Column(Modifier.padding(GroupContentPadding)) { ShellSection() } }
@@ -116,7 +127,7 @@ fun SettingsTab(vm: AppViewModel, s: AgentState) {
  * Termux), and the default to pick. A session keeps the engine it started with.
  */
 @Composable
-private fun EngineSection(vm: AppViewModel, s: AgentState) {
+private fun EngineSection(vm: AppViewModel, s: AgentState, openDshSetup: () -> Unit) {
     val engines = vm.engines
     if (engines.size < 2) return
     val default by vm.defaultEngine.collectAsStateWithLifecycle()
@@ -135,12 +146,27 @@ private fun EngineSection(vm: AppViewModel, s: AgentState) {
                 description = when {
                     e.id == "pi" -> stringResource(R.string.engine_pi_info, s.piVersion.orEmpty())
                     !checked -> stringResource(R.string.engine_checking)
+                    problem != null && e.id == DSH -> stringResource(R.string.engine_dsh_not_ready)
                     problem != null -> problem
                     else -> stringResource(R.string.engine_ready)
                 },
                 descriptionColor = if (problem != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                onClick = if (usable || default == e.id) ({ vm.selectCore(e.id) }) else null,
+                // DeepSeek Harness not ready: its setup.
+                onClick = when {
+                    usable || default == e.id -> ({ vm.selectCore(e.id) })
+                    checked && e.id == DSH -> openDshSetup
+                    else -> null
+                },
                 trailing = { RadioButton(selected = default == e.id, onClick = if (usable) ({ vm.selectCore(e.id) }) else null, enabled = usable || default == e.id) },
+            )
+        }
+    }
+    if (engines.any { it.id == DSH }) {
+        Group(Modifier.padding(top = 8.dp)) {
+            GroupRow(
+                title = stringResource(R.string.dsh_setup_title), description = stringResource(R.string.dsh_setup_row_hint),
+                icon = R.drawable.ic_terminal, onClick = openDshSetup,
+                trailing = { AppIcon(R.drawable.ic_chevron_right, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) },
             )
         }
     }
@@ -149,3 +175,5 @@ private fun EngineSection(vm: AppViewModel, s: AgentState) {
         modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp),
     )
 }
+
+private const val DSH = "dsh"

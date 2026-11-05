@@ -118,7 +118,7 @@ entry in the registry.
 ### DeepSeek Harness (prototype)
 
 `:core-dsh` (`DshEngine`) runs [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 0.2.2-rc.1
-(dsh). Debug builds choose it for new sessions with `--es core dsh`.
+(dsh). Settings → AI engine sets it up and chooses it; debug builds can also choose it with `--es core dsh`.
 
 ```
  WeiAssist ── DshEngine: 127.0.0.1:<port>, secret ◀─── TCP, JSON lines ─── dsh-host bridge plugin (Cordis)
@@ -129,7 +129,15 @@ entry in the registry.
 - **Why Ubuntu:** dsh needs Node ≥ 24.9 and native modules (its plugin loader's `node-addon-require-builtin`, the
   file locks of `node-addon-system`) that are published only for macOS, Windows and Linux. Termux's own Node is
   `android`, so dsh can't boot there. In Ubuntu (proot) Node is `linux-arm64` and the published binaries load.
-  Set up with `dsh-host/termux/setup-proot.sh`: Ubuntu, Node 24 and dsh's 931 MB of packages.
+  Ubuntu, Node 24 and dsh's ~950 MB of packages are installed by `dsh-host/termux/setup-proot.sh`.
+- **Setup from the app** (Settings → AI engine → Set up DeepSeek Harness, `DshSetup`): the APK carries the bridge,
+  the profile patch and the setup script (assets `dsh/`, built from `dsh-host/` by `:core-dsh`'s `buildDshHost*`).
+  The screen checks Termux (the GitHub/F-Droid build, the RUN_COMMAND permission, `allow-external-apps`), then
+  writes the materials into `~/.weiassist-dsh/materials` and runs the script there as one long RUN_COMMAND, holding
+  a wake lock. The script reports through files, so the screen picks it up again after the app was closed:
+  `setup.log` (each step starts with `== [id]`, the run ends with `== [done]` or `== [failed] <code>`), `setup.pid`
+  while it runs, and `installed` (a hash of the materials) when it worked. dsh counts as set up only with this APK's
+  hash, so an app with a newer bridge asks for the setup again; done steps are skipped.
 - **The bridge** (`dsh-host/src/index.ts`) is the dsh counterpart of `pi-host`. It is mounted by the profile
   patch `dsh-host/profile/cordis.patch.yml`, which turns off only the one-shot runner, the titler (the app titles
   sessions) and dsh's coding-agent persona, and declares the model routes.

@@ -60,6 +60,7 @@ Status legend: ✅ done · 🔨 next · ⬜ planned. Current status and todo: [P
     - ✅ the app's prompts shared like the catalog (sections, each core keeps those for the tools it offers);
     - ✅ attachments and thinking levels;
     - ✅ a setting to choose the core (Settings: the engine new sessions use);
+    - ✅ setup from the app: a screen that checks Termux, runs the Ubuntu/Node/dsh setup there and follows its steps;
     - native Android builds of dsh's modules (upstream), so it can run in Termux without Ubuntu.
 
 ## 2b. Reach it from messaging apps

@@ -33,7 +33,9 @@ class AgentController(context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val pi = PiEngine(appContext, agentName = appContext.getString(R.string.agent_name))
     val termux = Termux(appContext)
-    /** DeepSeek Harness, run in Termux (a prototype: chosen for new sessions with the debug extra `--es core dsh`). */
+    /** Sets DeepSeek Harness up in Termux (Settings → AI engine). */
+    val dshSetup = DshSetup(appContext, termux, scope)
+    /** DeepSeek Harness, run in Termux once [dshSetup] has set it up (chosen in Settings, or `--es core dsh`). */
     private val dsh = com.lanqi.weiassist.dsh.DshEngine(
         launch = { env -> termux.launchDsh(env) },
         proxy = com.lanqi.weiassist.dsh.KeyProxy(::dshRoute, log = { android.util.Log.w("DshEngine", it) }),
@@ -218,7 +220,7 @@ class AgentController(context: Context) {
     private fun warmDsh() {
         if (cores.defaultId != com.lanqi.weiassist.dsh.DshEngine.ID) return
         scope.launch(Dispatchers.IO) {
-            if (termux.dshSetupProblem() != null) return@launch
+            if (dshSetup.problem() != null) return@launch
             runCatching { dsh.start() }.onFailure { android.util.Log.w("DshEngine", "warm-up: ${it.message}") }
         }
     }
@@ -508,7 +510,7 @@ class AgentController(context: Context) {
 
     /** Why core [id] can't run now (DeepSeek Harness: Termux, or its setup), or null when it can. */
     suspend fun engineProblem(id: String): String? = when (id) {
-        com.lanqi.weiassist.dsh.DshEngine.ID -> termux.dshSetupProblem()
+        com.lanqi.weiassist.dsh.DshEngine.ID -> dshSetup.problem()
         else -> null
     }
 
