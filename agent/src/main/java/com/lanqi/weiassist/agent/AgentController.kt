@@ -203,8 +203,22 @@ class AgentController(context: Context) {
             sessions.load()
             loaded.complete(Unit)
             launch { gateway.start() }
+            warmDsh()
             val ready = pi.start()
             _state.update { it.copy(piVersion = ready.optString("pi")) }
+        }
+    }
+
+    /**
+     * When new sessions use DeepSeek Harness, boot it now, in the background: proot, Node and dsh take half a minute,
+     * which the first message would otherwise wait for (it then waits only for what's left). A dsh that can't start
+     * says why with that message too, as before.
+     */
+    private fun warmDsh() {
+        if (cores.defaultId != com.lanqi.weiassist.dsh.DshEngine.ID) return
+        scope.launch(Dispatchers.IO) {
+            if (termux.dshSetupProblem() != null) return@launch
+            runCatching { dsh.start() }.onFailure { android.util.Log.w("DshEngine", "warm-up: ${it.message}") }
         }
     }
 
@@ -450,6 +464,7 @@ class AgentController(context: Context) {
         cores.defaultId = id
         _defaultEngine.value = id
         prefs.edit().putString("core", id).apply()
+        warmDsh()
     }
 
     /** Why core [id] can't run now (DeepSeek Harness: Termux, or its setup), or null when it can. */

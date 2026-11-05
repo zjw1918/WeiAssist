@@ -31,7 +31,8 @@ cp "$src/cordis.patch.yml" "$d/materials/cordis.patch.yml"
 step "proot-distro and Ubuntu"
 command -v proot-distro > /dev/null || pkg install -y proot-distro
 command -v tmux > /dev/null || pkg install -y tmux
-if [ ! -d "$PREFIX/var/lib/proot-distro/installed-rootfs/ubuntu" ]; then
+# Ask proot-distro itself whether Ubuntu is there: newer versions keep containers elsewhere than installed-rootfs/.
+if ! proot-distro login ubuntu -- true > /dev/null 2>&1; then
 	proot-distro install ubuntu
 fi
 
