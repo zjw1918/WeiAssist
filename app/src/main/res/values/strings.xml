@@ -340,6 +340,11 @@
     <string name="termux_install">Install</string>
     <string name="termux_installing">Installing in Termux…</string>
     <string name="termux_install_failed">The install stopped. See the details below, then try again.</string>
+    <string name="termux_install_stage_update">Updating the package lists</string>
+    <string name="termux_install_stage_upgrade">Upgrading Termux\'s packages (the longest part)</string>
+    <string name="termux_install_stage_install">Installing curl and tmux</string>
+    <string name="termux_install_stage_mirror">Trying another mirror: %1$s</string>
+    <string name="termux_install_elapsed">%1$s so far. It keeps going if you leave this screen.</string>
     <string name="termux_step_network">Internet from Termux</string>
     <string name="termux_step_network_hint">Termux couldn\'t reach the internet. Check the phone\'s connection, and that Termux may use mobile data and Wi-Fi.</string>
     <string name="termux_ready_all">Ready: the assistant can run Linux commands.</string>

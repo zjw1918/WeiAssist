@@ -291,6 +291,25 @@ class Termux(context: Context) {
     val installOutput: kotlinx.coroutines.flow.StateFlow<Pair<Boolean, String>?> = _installOutput
     private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
 
+    /** Where a running [installTools] is: its stage, its latest output line, and the end of its output. */
+    data class InstallProgress(
+        /** Since when it runs (System.currentTimeMillis). */
+        val since: Long,
+        val stage: InstallStage? = null,
+        /** The mirror being tried, in [InstallStage.Mirror]. */
+        val mirror: String? = null,
+        /** The last line Termux printed (what apt is fetching, unpacking, setting up). */
+        val line: String = "",
+        val log: String = "",
+    )
+
+    /** [installTools]' stages, as its log names them ("== [id] …"). */
+    enum class InstallStage(val id: String) { Update("update"), Upgrade("upgrade"), Install("install"), Mirror("mirror") }
+
+    private val _installProgress = kotlinx.coroutines.flow.MutableStateFlow<InstallProgress?>(null)
+    /** While [installTools] runs: how far it is (read from its log in Termux every few seconds); null otherwise. */
+    val installProgress: kotlinx.coroutines.flow.StateFlow<InstallProgress?> = _installProgress
+
     /**
      * Install the basic tools (curl, tmux) after upgrading Termux's packages, in the background (it goes on when the
      * setup screen is left). Termux's pkg picks a random mirror and some are years behind ("unmet dependencies"):
@@ -302,20 +321,27 @@ class Termux(context: Context) {
             val awake = app.getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "weiassist:termux-tools")
             awake.acquire(INSTALL_SEC * 1000L)
             try {
+                // Everything it prints also goes to $TOOLS_LOG, which [followInstall] reads while it runs: Termux returns
+                // the output only at the end. "== [stage]" lines mark where it is.
                 val script = """
+                    exec > >(tee "${'$'}{HOME}/$TOOLS_LOG") 2>&1
                     export DEBIAN_FRONTEND=noninteractive
                     o=(-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
-                    pkg update -y "${'$'}{o[@]}" && pkg upgrade -y "${'$'}{o[@]}" && pkg install -y "${'$'}{o[@]}" curl tmux && exit 0
+                    echo "== [update]"; pkg update -y "${'$'}{o[@]}" &&
+                      echo "== [upgrade]" && pkg upgrade -y "${'$'}{o[@]}" &&
+                      echo "== [install]" && pkg install -y "${'$'}{o[@]}" curl tmux && exit 0
                     for m in https://packages-cf.termux.dev/apt/termux-main https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main \
                         https://mirrors.ustc.edu.cn/termux/apt/termux-main https://mirrors.aliyun.com/termux/termux-main; do
-                      echo "Trying the Termux mirror ${'$'}{m}"
+                      echo "== [mirror] ${'$'}{m}"
                       echo "deb ${'$'}{m} stable main" > "${'$'}{PREFIX}/etc/apt/sources.list"
                       apt-get update "${'$'}{o[@]}" && apt-get -y "${'$'}{o[@]}" full-upgrade && apt-get -y "${'$'}{o[@]}" install curl tmux && exit 0
                     done
                     echo "No Termux mirror could install curl and tmux."
                     exit 3
                 """.trimIndent()
-                val r = execute(arrayOf("-c", script), INSTALL_SEC)
+                _installProgress.value = InstallProgress(since = System.currentTimeMillis())
+                val follow = launch { followInstall() }
+                val r = try { execute(arrayOf("-c", script), INSTALL_SEC) } finally { follow.cancel() }
                 _installOutput.value = when {
                     r == null -> false to NO_ANSWER
                     r.getInt("err", RESULT_OK) != RESULT_OK -> false to r.getString("errmsg").orEmpty()
@@ -323,8 +349,22 @@ class Termux(context: Context) {
                 }
             } finally {
                 if (awake.isHeld) awake.release()
+                _installProgress.value = null
                 _installing.value = false
             }
+        }
+    }
+
+    /** Read the end of [installTools]' log every few seconds into [installProgress], until cancelled. */
+    private suspend fun followInstall() {
+        while (true) {
+            kotlinx.coroutines.delay(2_000)
+            val r = execute(arrayOf("-c", "tail -c 8000 \"${'$'}{HOME}/$TOOLS_LOG\" 2> /dev/null; exit 0"), 15) ?: continue
+            if (r.getInt("err", RESULT_OK) != RESULT_OK) continue
+            val last = _installProgress.value ?: return
+            val now = parseInstallLog(r.getString("stdout").orEmpty(), last.since)
+            // A long stage pushes its marker out of the log's end: it is still the stage seen last.
+            _installProgress.value = if (now.stage == null) now.copy(stage = last.stage, mirror = last.mirror) else now
         }
     }
 
@@ -399,6 +439,8 @@ class Termux(context: Context) {
         private const val HOME = "/data/data/com.termux/files/home"
         internal const val RESULT_OK = -1 // Activity.RESULT_OK: Termux's "no error"
         private const val INSTALL_SEC = 30 * 60L
+        /** [installTools]' output, in Termux's home. */
+        private const val TOOLS_LOG = ".weiassist-tools.log"
         private const val FDROID_API = "https://f-droid.org/api/v1/packages/com.termux"
         private const val FDROID_MIRROR = "https://mirrors.tuna.tsinghua.edu.cn/fdroid/repo"
         /** Termux 0.118.3, F-Droid's stable build in November 2026: used only when f-droid.org can't be reached. */
@@ -411,6 +453,23 @@ class Termux(context: Context) {
             return Inspection(
                 bash = v["bash"], curl = v["curl"] == "1", tmux = v["tmux"] == "1",
                 network = v["network"]?.toIntOrNull()?.takeIf { it > 0 },
+            )
+        }
+
+        /** [installTools]' log as [InstallProgress]: its last stage marker and its last line of output. Pure, for tests. */
+        internal fun parseInstallLog(out: String, since: Long): InstallProgress {
+            val log = DshSetup.cleanLog(out)
+            val lines = log.lines()
+            val at = lines.indexOfLast { it.startsWith("== [") }
+            val mark = lines.getOrNull(at)
+            val id = mark?.substringAfter("== [")?.substringBefore(']')
+            val stage = InstallStage.entries.firstOrNull { it.id == id }
+            return InstallProgress(
+                since = since, stage = stage,
+                mirror = if (stage == InstallStage.Mirror) mark?.substringAfter("]")?.trim() else null,
+                // Only output since the last stage began says what happens now.
+                line = lines.drop(at + 1).lastOrNull { it.isNotBlank() }?.trim().orEmpty(),
+                log = log,
             )
         }
 

@@ -20,15 +20,20 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lanqi.weiassist.R
 import com.lanqi.weiassist.agent.Termux
+import kotlinx.coroutines.delay
 
 /**
  * Sets Linux commands up (the bash tool, for every engine): Termux itself ([TermuxSteps]), then its basic tools
@@ -42,6 +47,7 @@ fun TermuxSetupScreen(termux: Termux, onClose: () -> Unit) {
     val local = view.local
     val installing by termux.installing.collectAsStateWithLifecycle()
     val installed by termux.installOutput.collectAsStateWithLifecycle()
+    val progress by termux.installProgress.collectAsStateWithLifecycle()
     var inspection by remember { mutableStateOf<Termux.Inspection?>(null) }
     // Ask again whenever the screen comes back, a step was fixed, or an install ended.
     var asks by remember { mutableIntStateOf(0) }
@@ -84,11 +90,18 @@ fun TermuxSetupScreen(termux: Termux, onClose: () -> Unit) {
                         else -> StepState.Failed
                     },
                     detail = when {
-                        installing -> stringResource(R.string.termux_installing)
+                        installing -> when (progress?.stage) {
+                            Termux.InstallStage.Update -> stringResource(R.string.termux_install_stage_update)
+                            Termux.InstallStage.Upgrade -> stringResource(R.string.termux_install_stage_upgrade)
+                            Termux.InstallStage.Install -> stringResource(R.string.termux_install_stage_install)
+                            Termux.InstallStage.Mirror -> stringResource(R.string.termux_install_stage_mirror, progress?.mirror.orEmpty())
+                            null -> stringResource(R.string.termux_installing)
+                        }
                         answers && !i!!.tools -> stringResource(R.string.termux_step_tools_hint)
                         else -> null
                     },
                 ) {
+                    if (installing) InstallProgressLine(progress)
                     if (answers && !i!!.tools && !installing) FilledTonalButton(onClick = termux::installTools) { Text(stringResource(R.string.termux_install)) }
                 }
                 GroupDivider()
@@ -112,8 +125,27 @@ fun TermuxSetupScreen(termux: Termux, onClose: () -> Unit) {
                     installed?.first == false && !installing -> Text(stringResource(R.string.termux_install_failed), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
                 }
                 if (local.sendable && !installing) TextButton(onClick = { asks++ }) { Text(stringResource(R.string.termux_check_again)) }
-                DetailsLog(installed?.second.orEmpty())
+                DetailsLog(if (installing) progress?.log.orEmpty() else installed?.second.orEmpty())
             }
         }
     }
+}
+
+/** Under a running install: what Termux printed last, and how long it has been going (ticking each second). */
+@Composable
+private fun InstallProgressLine(progress: Termux.InstallProgress?) {
+    val since = progress?.since ?: return
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(since) { while (true) { now = System.currentTimeMillis(); delay(1_000) } }
+    progress.line.takeIf { it.isNotEmpty() }?.let {
+        Text(
+            it, fontFamily = FontFamily.Monospace, fontSize = 12.sp, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+    val sec = ((now - since) / 1000).coerceAtLeast(0)
+    Text(
+        stringResource(R.string.termux_install_elapsed, "%d:%02d".format(sec / 60, sec % 60)),
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
