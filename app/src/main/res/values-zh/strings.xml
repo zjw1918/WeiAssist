@@ -3,6 +3,7 @@
     <string name="app_name">小维助手</string>
     <string name="starting_pi">正在启动 Pi…</string>
     <string name="auth_subscription">ChatGPT 订阅</string>
+    <string name="auth_subscription_xai">SuperGrok / X Premium 订阅</string>
     <string name="auth_api_key">API key</string>
     <string name="pi_runtime_info">Pi %1$s（pi-agent-core + pi-ai，运行在后台服务里）</string>
     <string name="a11y_needed">需要先在“设置 → 无障碍”里打开小维助手，它才能看屏幕、点按钮。</string>
@@ -33,6 +34,15 @@
     <string name="preparing_page">正在准备登录页…</string>
     <string name="waiting_chrome">等你在 Chrome 里完成登录…</string>
     <string name="reopen_page">重新打开登录页</string>
+    <string name="method_xai_title">用 SuperGrok 或 X Premium 订阅登录</string>
+    <string name="method_xai_body">用你的 Grok 或 X 订阅，额度算在订阅里，不用另外充值。在 x.ai 上确认一个短码后回到这里。</string>
+    <string name="device_title">登录 %1$s</string>
+    <string name="device_step1">点下面的按钮：会复制验证码，并在 Chrome 里打开 x.ai</string>
+    <string name="device_step2">用开通了 SuperGrok 或 X Premium 的账号登录，核对验证码一致（要求输入时粘贴即可）</string>
+    <string name="device_step3">确认授权后回到这里，登录会自动完成</string>
+    <string name="device_code">验证码</string>
+    <string name="device_open">复制验证码并打开 x.ai</string>
+    <string name="device_waiting">等你在 x.ai 上确认…</string>
     <string name="collapse">收起</string>
     <string name="chrome_no_return">Chrome 没跳回来？</string>
     <string name="paste_hint">把 Chrome 地址栏里以 %1$s 开头的完整地址复制过来：</string>

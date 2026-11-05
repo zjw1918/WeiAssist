@@ -34,6 +34,7 @@ import com.lanqi.weiassist.agent.Screen
 import com.lanqi.weiassist.ui.ApiKeySignIn
 import com.lanqi.weiassist.ui.AppTheme
 import com.lanqi.weiassist.ui.CustomProviderScreen
+import com.lanqi.weiassist.ui.DeviceCodeSignIn
 import com.lanqi.weiassist.ui.HomeScreen
 import com.lanqi.weiassist.ui.Tab
 import com.lanqi.weiassist.ui.SubscriptionSignIn
@@ -162,7 +163,9 @@ fun MainActivity.App(vm: AppViewModel = viewModel()) {
                     // Sign-in is a state, not a navigation destination: Back cancels it like the Cancel button,
                     // returning to where it started, instead of closing the app.
                     BackHandler { vm.cancelSignIn() }
-                    if (screen.method.type == "oauth") SubscriptionSignIn(s.signIn.authUrl, s.signIn.progress, s.signIn.prompt, vm::reopenBrowser, vm::submitPrompt, vm::cancelSignIn)
+                    if (screen.method.type == "oauth" && screen.provider == "xai")
+                        DeviceCodeSignIn(s.providers.firstOrNull { it.id == screen.provider }?.name ?: "xAI", s.signIn.userCode, s.signIn.progress, vm::reopenBrowser, vm::cancelSignIn)
+                    else if (screen.method.type == "oauth") SubscriptionSignIn(s.signIn.authUrl, s.signIn.progress, s.signIn.prompt, vm::reopenBrowser, vm::submitPrompt, vm::cancelSignIn)
                     else ApiKeySignIn(s.providers.firstOrNull { it.id == screen.provider }, s.signIn.prompt, s.signIn.progress, vm::submitPrompt, vm::cancelSignIn)
                 }
                 Screen.Starting, Screen.Connected -> Unit

@@ -49,7 +49,8 @@ object AgentReducer {
             when (e.optString("type")) {
                 "auth_url" -> e.getString("url").let { url -> Result(s.withSignIn { copy(authUrl = url) }, Effect.OpenBrowser(url)) }
                 "progress", "info" -> Result(s.withSignIn { copy(progress = e.optString("message")) })
-                "device_code" -> Result(s.withSignIn { copy(progress = "${e.optString("verificationUri")}  ·  ${e.optString("userCode")}") })
+                // Not opened right away: the user sees the code first, then opens the page (see DeviceCodeSignIn).
+                "device_code" -> Result(s.withSignIn { copy(authUrl = e.getString("verificationUri"), userCode = e.getString("userCode")) })
                 else -> Result(s)
             }
         }

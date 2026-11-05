@@ -26,6 +26,8 @@ sealed interface Screen {
 /** Where a sign-in stands: what Pi asked for and what it reported. */
 data class SignInState(
     val authUrl: String? = null,
+    /** A device-code sign-in (xAI): the code the user confirms at [authUrl]. */
+    val userCode: String? = null,
     val progress: String? = null,
     val prompt: PendingPrompt? = null,
     val error: String? = null,

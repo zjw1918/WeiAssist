@@ -1,6 +1,7 @@
 package com.lanqi.weiassist.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -26,7 +27,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.lanqi.weiassist.R
@@ -94,8 +97,9 @@ private fun siteOf(url: String) = runCatching { java.net.URI(url).host }.getOrNu
 fun methodText(p: ProviderInfo, m: AuthMethod): Pair<String, String> {
     val g = GUIDES[p.id]
     return when {
-        // The only OAuth sign-in offered (Pi host's OAUTH_PROVIDERS); SubscriptionSignIn's text is about ChatGPT too.
+        // The OAuth sign-ins offered (Pi host's OAUTH_PROVIDERS); SubscriptionSignIn's text is about ChatGPT too.
         p.id == "openai" && m.type == "oauth" -> stringResource(R.string.method_sub_title) to stringResource(R.string.method_sub_body)
+        p.id == "xai" && m.type == "oauth" -> stringResource(R.string.method_xai_title) to stringResource(R.string.method_xai_body)
         m.type == "oauth" -> (m.label ?: m.name) to ""
         else -> (g?.cardTitle?.let { stringResource(it) } ?: stringResource(R.string.method_key_generic_title, p.name)) to
             (g?.cardBody?.let { stringResource(it) } ?: g?.let { stringResource(R.string.method_key_generic_body, siteOf(it.keysPage)) } ?: "")
@@ -143,6 +147,42 @@ fun SubscriptionSignIn(
                 OutlinedTextField(pasted, { pasted = it }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                     label = { Text(stringResource(R.string.callback_url)) })
                 Button(onClick = { onPaste(pasted) }, enabled = pasted.isNotBlank()) { Text(stringResource(R.string.use_this_url)) }
+            }
+        }
+        TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }
+    }
+}
+
+/**
+ * Step 2a, device-code flavor (xAI): Pi got a code from the provider and polls until the user approves it
+ * on the provider's page. The page is opened by the user (the code is shown first, and copied on the way).
+ */
+@Composable
+fun DeviceCodeSignIn(providerName: String, userCode: String?, progress: String?, onOpen: () -> Unit, onCancel: () -> Unit) {
+    val ctx = LocalContext.current
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Text(stringResource(R.string.device_title, providerName), style = MaterialTheme.typography.headlineSmall)
+        Steps(listOf(
+            stringResource(R.string.device_step1),
+            stringResource(R.string.device_step2),
+            stringResource(R.string.device_step3),
+        ))
+        if (userCode == null) Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            Text("  " + (progress ?: stringResource(R.string.preparing_page)))
+        } else {
+            OutlinedCard(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(stringResource(R.string.device_code), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    SelectionContainer {
+                        Text(userCode, style = MaterialTheme.typography.headlineMedium, fontFamily = FontFamily.Monospace)
+                    }
+                }
+            }
+            Button(onClick = { copyText(ctx, userCode); onOpen() }, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.device_open)) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                Text("  " + (progress ?: stringResource(R.string.device_waiting)))
             }
         }
         TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) }

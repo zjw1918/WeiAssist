@@ -10,7 +10,7 @@ Status legend: ✅ done · 🔨 next · ⬜ planned. Current status and todo: [P
 - ✅ **Resilience:** the app survives the Pi renderer dying (Pi restarts, credentials kept).
 
 - ✅ **Pi in the app:** pi-agent-core and pi-ai run in a hidden WebView, with native fetch and an encrypted credential store.
-- ✅ **Sign-in:** ChatGPT subscription or an API key for any offered provider, through Pi's own `models.login`.
+- ✅ **Sign-in:** ChatGPT or xAI (SuperGrok / X Premium) subscription, or an API key for any offered provider, through Pi's own `models.login`.
 - ✅ **Models:** model and thinking-level pickers filled from Pi.
 - ✅ **Phone tools:** Pi `AgentTool`s over an AccessibilityService (read screen, tap, type, scroll, keys, open app).
 - ✅ **Confirmation:** Send/Pay/Delete-like taps need the user's OK, via the app's `before_tool` check (every core) and an overlay card.
