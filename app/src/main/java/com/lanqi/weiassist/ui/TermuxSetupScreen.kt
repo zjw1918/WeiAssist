@@ -101,6 +101,8 @@ fun TermuxSetupScreen(termux: Termux, onClose: () -> Unit) {
                     },
                     detail = if (answers && i!!.curl && i.network == null) stringResource(R.string.termux_step_network_hint) else null,
                 )
+                GroupDivider()
+                StorageStep(local)
             }
 
             Column(Modifier.padding(horizontal = 4.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {

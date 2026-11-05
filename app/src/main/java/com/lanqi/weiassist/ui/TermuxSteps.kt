@@ -51,7 +51,11 @@ import kotlinx.coroutines.launch
 enum class StepState { Pending, Running, Done, Failed }
 
 /** What the setup screens know about Termux on this phone, without asking Termux itself (see [TermuxSteps]). */
-class TermuxLocal(val installed: Boolean, val runnable: Boolean, val permitted: Boolean, val unrestricted: Boolean) {
+class TermuxLocal(
+    val installed: Boolean, val runnable: Boolean, val permitted: Boolean, val unrestricted: Boolean,
+    /** Termux may read the phone's shared storage (its own storage permission; termux-setup-storage asks for it). */
+    val storage: Boolean = false,
+) {
     /** Commands can be sent (whether Termux accepts them is another matter). */
     val sendable get() = runnable && permitted
 }
@@ -72,6 +76,8 @@ fun rememberTermuxView(termux: Termux): TermuxView {
         TermuxLocal(
             installed = installed, runnable = installed && termux.runnable(), permitted = termux.permitted(),
             unrestricted = ctx.getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(Termux.PACKAGE),
+            storage = installed && ctx.packageManager.checkPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE, Termux.PACKAGE) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED,
         )
     }
     return TermuxView(seen, local) { seen++ }
@@ -202,3 +208,36 @@ fun DetailsLog(text: String, lines: Int = 60) {
 private const val TERMUX_DOWNLOAD = "https://github.com/termux/termux-app/releases/latest"
 /** Lets other apps (this one) run commands in Termux. */
 private const val ALLOW_COMMAND = "mkdir -p ~/.termux && echo \"allow-external-apps=true\" >> ~/.termux/termux.properties && termux-reload-settings"
+
+/**
+ * Optional: Termux sees the phone's shared storage (Downloads, photos), so commands can work on the user's files. Not
+ * needed for the app's own file transfers. An app installed from a downloaded file is under Android's "restricted
+ * settings" first, which can block the permission until the user allows them in its app info.
+ */
+@Composable
+fun StorageStep(local: TermuxLocal) {
+    val ctx = LocalContext.current
+    fun open(intent: Intent) = runCatching { ctx.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+    Step(
+        stringResource(R.string.termux_step_storage),
+        if (local.storage) StepState.Done else StepState.Pending,
+        detail = if (local.installed && !local.storage) stringResource(R.string.termux_step_storage_hint) else null,
+    ) {
+        if (local.installed && !local.storage) {
+            var copied by remember { mutableStateOf(false) }
+            SelectionContainer { Text(STORAGE_COMMAND, fontFamily = FontFamily.Monospace, fontSize = 12.sp) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilledTonalButton(onClick = {
+                    open(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", Termux.PACKAGE, null)))
+                }) { Text(stringResource(R.string.termux_app_info)) }
+                TextButton(onClick = {
+                    ctx.getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Termux", STORAGE_COMMAND))
+                    copied = true
+                    ctx.packageManager.getLaunchIntentForPackage(Termux.PACKAGE)?.let(::open)
+                }) { Text(stringResource(if (copied) R.string.termux_copied else R.string.termux_copy_open)) }
+            }
+        }
+    }
+}
+
+private const val STORAGE_COMMAND = "termux-setup-storage"
