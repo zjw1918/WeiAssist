@@ -273,6 +273,22 @@ test("a provider added in the app while dsh runs is a route at once (no restart)
 	assert.equal(JSON.parse(req.body).model, "qwen-9");
 });
 
+test("the app's prompt goes to the model, without the section for a tool dsh has its own of", { skip }, async () => {
+	const sections = [
+		{ id: "chat", text: "You are Ada, a helpful assistant." },
+		{ id: "bash", text: "\n\nLinux (Termux): use pkg install.", forTool: "bash" },
+		{ id: "channel", text: "\n\nThe user is talking to you from Telegram." },
+	];
+	const before = mock.requests.length;
+	await configure(id("pr"), { toolSpecs: specs("bash"), promptSections: sections });
+	app.send({ type: "prompt", session: id("pr"), text: "hello" });
+	await app.waitFor("idle", (m) => m.session === id("pr"));
+	const system = JSON.stringify(JSON.parse(mock.requests[before].body).input[0]);
+	assert.match(system, /You are Ada, a helpful assistant\.\\n\\nThe user is talking to you from Telegram\./);
+	assert.doesNotMatch(system, /Termux/, "dsh runs its own bash: no Termux guide");
+	assert.match(system, /DeepSeek Harness/, "dsh's own words stay");
+});
+
 test("a session comes back after its agent is gone (dispose, then configure again)", { skip }, async () => {
 	app.send({ type: "dispose", session: id("c1") });
 	const conf = await configure(id("c1"), { messages: [{ dsh: id("c1") }] });

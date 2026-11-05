@@ -21,6 +21,24 @@ export function toolSpecsFor(cfg) {
 	return catalog.filter((t) => sets.includes(t.set)).map(({ set, ...spec }) => spec);
 }
 
+/** The app's prompt sections (agent/…/prompts/*.md). */
+const section = (id) => readFileSync(new URL(`../../agent/src/main/resources/com/lanqi/weiassist/agent/prompts/${id}.md`, import.meta.url), "utf8").trim();
+
+/** A session's system prompt, as Kotlin's Prompts composes it (every section: Pi gives the model all the session's tools). */
+export function promptFor(cfg, name = "WeiAssist") {
+	const kind = cfg.tools ?? (cfg.phone ? "phone" : "chat");
+	const fill = (t) => t.replaceAll("{name}", name).replaceAll("{channel}", cfg.channel === "telegram" ? "Telegram" : (cfg.channel ?? ""));
+	if (kind === "supervisor") return fill(section("supervisor"));
+	const termux = cfg.bash !== false;
+	let p = section(kind === "phone" ? "phone" : "chat");
+	if (termux) p += "\n\n" + section("bash");
+	if (cfg.channel) {
+		p += "\n\n" + section("channel");
+		if (termux) p += "\n" + section("channel-files");
+	}
+	return fill(p);
+}
+
 /** SessionCommands' action for each supervisor tool (ToolRouter.supervisorCall). */
 const SUPERVISOR_ACTIONS = {
 	list_sessions: "list", get_session: "get", create_session: "create", message_session: "send", wait_for: "wait",
@@ -53,6 +71,7 @@ export async function startHost({ credentials = null, customProviders = [], host
 	// The app sends each session's tools with configure (PiEngine.configure).
 	const call = (fn, arg) => {
 		if (fn === "configure" && arg && !arg.toolSpecs) arg = { ...arg, toolSpecs: toolSpecsFor(arg) };
+		if (fn === "configure" && arg && !arg.systemPrompt) arg = { ...arg, systemPrompt: promptFor(arg) };
 		return ctx.PiHost[fn](arg === undefined ? undefined : JSON.stringify(arg));
 	};
 	const never = new Promise(() => {});

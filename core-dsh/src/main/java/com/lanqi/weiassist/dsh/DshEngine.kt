@@ -216,7 +216,11 @@ class DshEngine(
         }
         if (!config.bash) cfg.put("bash", false)
         if (config.channel != null) cfg.put("channel", config.channel)
-        if (config.systemPrompt != null) cfg.put("systemPrompt", config.systemPrompt)
+        // The app's prompt sections: the bridge keeps those for the app tools the session keeps (dsh's own bash, not
+        // the app's Termux one: no Termux bash guide), beside dsh's own guidance.
+        cfg.put("promptSections", JSONArray().apply {
+            config.prompt.forEach { p -> put(JSONObject().put("id", p.id).put("text", p.text).apply { p.forTool?.let { put("forTool", it) } }) }
+        })
         if (!m.baseUrl.isNullOrBlank()) cfg.put("baseUrl", m.baseUrl)
         // A saved transcript is dsh's marker: the bridge resumes the session from dsh's own log.
         if (config.history != null) cfg.put("messages", config.history)

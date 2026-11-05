@@ -90,6 +90,7 @@ class AgentController(context: Context) {
             override fun runtimeRestarted() = appContext.getString(R.string.err_runtime_restarted)
             override fun continueTask() = appContext.getString(R.string.continue_task)
             override fun missingCore(core: String) = appContext.getString(R.string.err_missing_core, core)
+            override fun agentName() = appContext.getString(R.string.agent_name)
         },
         settings = { with(_state.value) { SessionManager.RunSettings(providerId, modelId, thinkingLevel, mockBaseUrl) } },
         screens = screens,

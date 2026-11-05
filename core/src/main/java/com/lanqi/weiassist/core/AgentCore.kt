@@ -119,10 +119,25 @@ data class SessionConfig(
     val bash: Boolean = true,
     /** The messaging app the user talks from ("telegram"), if any: the prompt says so. */
     val channel: String? = null,
-    val systemPrompt: String? = null,
+    /**
+     * The app's words for the session's system prompt, in order (the app's prompts, the same for every core). A core
+     * joins the sections it can honour ([PromptSection.forTool]) beside its own guidance for its own tools.
+     */
+    val prompt: List<PromptSection> = emptyList(),
     /** A transcript this core saved earlier (its `transcript` event), to restore the conversation; null keeps the agent's own. */
     val history: JSONArray? = null,
 )
+
+/**
+ * One part of a session's system prompt. [text] starts with what joins it to the part before (none for the first):
+ * the parts a core keeps, put together, are the prompt. [forTool]: only for a core that gives the model the app's
+ * tool of that name (the Termux bash section is wrong for a core whose own bash runs elsewhere).
+ */
+data class PromptSection(val id: String, val text: String, val forTool: String? = null)
+
+/** The parts of [sections] a core keeps when the model has the app's tools [tools], put together. */
+fun composePrompt(sections: List<PromptSection>, tools: Collection<String>): String =
+    sections.filter { it.forTool == null || it.forTool in tools }.joinToString("") { it.text }.trim()
 
 /** A user message: [text] plus content blocks (attached images, files) in the shared block format, or null. */
 data class UserInput(val text: String, val content: JSONArray? = null)
