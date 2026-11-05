@@ -58,7 +58,7 @@ class DshEngine(
     /** How long dsh may take to boot and connect (installing nothing, but loading ~600 packages on a phone). */
     private val connectTimeoutMs: Long = 180_000,
 ) : AgentCore {
-    override val info = CoreInfo(ID, "DeepSeek Harness", CoreCapabilities(thinkingLevels = false, images = false))
+    override val info = CoreInfo(ID, "DeepSeek Harness", CoreCapabilities())
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _events = MutableSharedFlow<JSONObject>(extraBufferCapacity = 256)
@@ -192,7 +192,10 @@ class DshEngine(
         if (!config.model.baseUrl.isNullOrBlank()) {
             out.put(MOCK_ROUTE, JSONObject().put("displayName", "WeiAssist mock").put("api", "openai-responses")
                 .put("apiKeyEnv", ENV_PROXY_KEY).put("baseURL", "$base/$MOCK_ROUTE")
-                .put("models", JSONArray().put(JSONObject().put("id", config.model.model).put("contextWindow", 128_000).put("input", JSONArray().put("text").put("image")))))
+                .put("models", JSONArray().put(JSONObject().put("id", config.model.model).put("contextWindow", 128_000)
+                    .put("input", JSONArray().put("text").put("image"))
+                    // Like OpenAI's reasoning models, so the app's thinking level travels (each level's own spelling).
+                    .put("reasoningEfforts", JSONObject().put("low", "low").put("medium", "medium").put("high", "high")))))
         }
         return out
     }

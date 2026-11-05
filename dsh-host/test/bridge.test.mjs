@@ -90,7 +90,7 @@ before(async () => {
 	// The app's providers as dsh's model routes (here only the mock server, without the key proxy).
 	app.send({ type: "routes", providers: { mock: {
 		displayName: "Mock", api: "openai-responses", apiKeyEnv: "WEIASSIST_KEY_MOCK", baseURL: mock.url,
-		models: [{ id: "gpt-6.1-terra", contextWindow: 128000, input: ["text", "image"] }],
+		models: [{ id: "gpt-6.1-terra", contextWindow: 128000, input: ["text", "image"], reasoningEfforts: { low: "low", medium: "medium", high: "high" } }],
 	} } });
 });
 
@@ -287,6 +287,42 @@ test("the app's prompt goes to the model, without the section for a tool dsh has
 	assert.match(system, /You are Ada, a helpful assistant\.\\n\\nThe user is talking to you from Telegram\./);
 	assert.doesNotMatch(system, /Termux/, "dsh runs its own bash: no Termux guide");
 	assert.match(system, /DeepSeek Harness/, "dsh's own words stay");
+});
+
+test("an image attached to the user's message reaches the model", { skip }, async () => {
+	const jpeg = "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAAA//EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AN//Z";
+	await configure(id("att"));
+	const before = mock.requests.length;
+	app.send({ type: "prompt", session: id("att"), text: "what is this?", content: [
+		{ type: "text", text: "<attachment name=\"cat.jpg\" type=\"image\"/>" },
+		{ type: "image", data: jpeg, mimeType: "image/jpeg" },
+		{ type: "image", data: "AAAA", mimeType: "image/heic" },
+	] });
+	await app.waitFor("idle", (m) => m.session === id("att"));
+	const user = JSON.stringify(JSON.parse(mock.requests[before].body).input.find((i) => i.role === "user"));
+	assert.match(user, /what is this\?/);
+	assert.match(user, /cat\.jpg/);
+	assert.match(user, /input_image/, "the picture went to the model");
+	assert.match(user, /image\/heic, that this engine couldn't take/, "an unknown format becomes a note");
+});
+
+test("the app's thinking level becomes the nearest effort the model offers", { skip }, async () => {
+	// A model that offers low, medium and high (its wire spellings the same).
+	app.send({ type: "routes", providers: { mock: {
+		displayName: "Mock", api: "openai-responses", apiKeyEnv: "WEIASSIST_KEY_MOCK", baseURL: mock.url,
+		models: [{ id: "gpt-6.1-terra", input: ["text", "image"], reasoningEfforts: { low: "low", medium: "medium", high: "high" } }],
+	} } });
+	const effortOf = async (level, name) => {
+		await configure(id(name), { thinkingLevel: level });
+		const before = mock.requests.length;
+		app.send({ type: "prompt", session: id(name), text: "think" });
+		await app.waitFor("idle", (m) => m.session === id(name));
+		return JSON.parse(mock.requests[before].body).reasoning?.effort;
+	};
+	assert.equal(await effortOf("high", "th1"), "high");
+	assert.equal(await effortOf("off", "th2"), "low", "off on a model that always reasons: its lowest");
+	assert.equal(await effortOf("max", "th3"), "high", "above what it offers: its highest");
+	assert.equal(await effortOf("minimal", "th4"), "low");
 });
 
 test("a session comes back after its agent is gone (dispose, then configure again)", { skip }, async () => {

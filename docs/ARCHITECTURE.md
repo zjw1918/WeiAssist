@@ -159,7 +159,10 @@ entry in the registry.
   Per request, the proxy asks Pi for that provider's current auth (`CoreAccounts.providerAuth`: an API key, or a
   sign-in's access token that Pi refreshes when due; extra headers; the endpoint). A ChatGPT sign-in's token goes
   to the same OpenAI endpoint as a key.
-- **Not yet:** attached images aren't passed on, and thinking levels aren't mapped.
+- **Attachments and thinking levels:** images in the user's message go into dsh's attachment store
+  (`admitEncodedImages`) and the message refers to them. One dsh can't take (not PNG, JPEG, WebP or GIF, or refused)
+  becomes a note. The app's thinking level becomes the nearest effort the session's model offers: the level itself,
+  else the nearest above, else the highest, as the app picks a level for a model.
 
 ## The shell backend (`:shell`)
 

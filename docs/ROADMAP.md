@@ -58,7 +58,7 @@ Status legend: ✅ done · 🔨 next · ⬜ planned. Current status and todo: [P
     - ✅ a key proxy in the app, so dsh never holds API keys;
     - ✅ the same providers, keys, sign-ins and custom providers as Pi, through the same proxy (no dsh settings);
     - ✅ the app's prompts shared like the catalog (sections, each core keeps those for the tools it offers);
-    - attachments and thinking levels;
+    - ✅ attachments and thinking levels;
     - a setting to choose the core;
     - native Android builds of dsh's modules (upstream), so it can run in Termux without Ubuntu.
 
