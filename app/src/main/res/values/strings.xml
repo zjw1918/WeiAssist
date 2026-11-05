@@ -336,6 +336,8 @@
     <string name="termux_ready_all">Ready: the assistant can run Linux commands.</string>
     <string name="termux_ready_restricted">Commands work. Allow Termux to run in the background too, or long jobs may stop.</string>
     <string name="termux_check_again">Check again</string>
+    <string name="termux_row_ready">Ready</string>
+    <string name="termux_limited_note">Without Linux commands, some of the assistant\'s abilities are limited: looking things up on the web, working with files and data, writing and running code, and the DeepSeek Harness engine.</string>
     <string name="termux_section">Termux</string>
     <string name="dsh_section_install">Installation</string>
     <string name="termux_step_app">Termux (GitHub or F-Droid build)</string>

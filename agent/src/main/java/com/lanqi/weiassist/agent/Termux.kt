@@ -264,8 +264,14 @@ class Termux(context: Context) {
         val ready get() = problem == null && tools && network != null
     }
 
+    private val _lastInspection = kotlinx.coroutines.flow.MutableStateFlow<Inspection?>(null)
+    /** What [inspect] last found (null before it ran), so Settings can tell whether Linux commands are set up. */
+    val lastInspection: kotlinx.coroutines.flow.StateFlow<Inspection?> = _lastInspection
+
     /** For the setup screen: can commands run, are the basic tools there, and does Termux reach the internet? */
-    suspend fun inspect(): Inspection {
+    suspend fun inspect(): Inspection = inspectNow().also { _lastInspection.value = it }
+
+    private suspend fun inspectNow(): Inspection {
         setupProblem()?.let { return Inspection(problem = it) }
         val script = """
             echo "bash=${'$'}{BASH_VERSION%%(*}"

@@ -331,6 +331,8 @@
     <string name="termux_ready_all">可以使用：助手能运行 Linux 命令了。</string>
     <string name="termux_ready_restricted">命令可以运行。还请允许 Termux 在后台运行，否则长时间任务可能会被中断。</string>
     <string name="termux_check_again">重新检查</string>
+    <string name="termux_row_ready">可以使用</string>
+    <string name="termux_limited_note">没有 Linux 命令，助手的部分能力会受限：上网查信息、处理文件和数据、编写和运行代码，以及 DeepSeek Harness 引擎。</string>
     <string name="termux_section">Termux</string>
     <string name="dsh_section_install">安装</string>
     <string name="termux_step_app">Termux（GitHub 或 F-Droid 版）</string>
