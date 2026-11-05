@@ -78,6 +78,13 @@ adb shell device_config put activity_manager max_phantom_processes 2147483647
 adb shell settings put global settings_enable_monitor_phantom_procs false
 ```
 
+### Optional: let Termux see your files
+
+To let commands work on files in your phone's storage (Downloads, photos), run `termux-setup-storage` in Termux and
+allow access. If Termux was installed from a downloaded file, Android may block this as a "restricted setting" first:
+Android **Settings → Apps → Termux → ⋮ → Allow restricted settings**, then try again, and restart Termux. The setup
+screen shows whether Termux has this access. Sending files to and from the assistant works without it.
+
 ### 5. Check
 
 The setup screen checks it each time you open it (or tap **Check again**). It shows whether `curl`, `tmux` and the
@@ -143,6 +150,7 @@ network work. When everything has a ✓, try it in a chat:
 4. **允许 Termux 后台运行**：在小维助手点 **Termux 应用设置**，把省电策略设为 **无限制**，并允许 **自启动**。
    Android 12 及以上还会限制应用的子进程数量（"phantom process"），可能中断编译和测试。小维助手的 Shell
    后台启动时会自动解除这个限制；没有使用 Shell 后台的话，可以在电脑上用 `adb` 运行上文英文部分的两条命令。
+   （可选）**让 Termux 访问手机文件**：在 Termux 里运行 `termux-setup-storage` 并允许。如果 Termux 是从下载的文件安装的，系统可能先把它当作"受限制的设置"拦截：到系统 **设置 → 应用 → Termux → ⋮ → 允许受限制的设置**，再重试并重启 Termux。在助手里收发文件不需要这一步。
 5. **检查**：每次打开设置页面都会检查（也可点 **重新检查**），`curl`、`tmux` 和网络都显示 ✓ 即可。
    然后在对话里试试：“杭州这一周的天气怎么样？”
 
