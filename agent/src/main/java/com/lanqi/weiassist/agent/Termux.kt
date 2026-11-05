@@ -60,26 +60,17 @@ class Termux(context: Context) {
     }
 
     /**
-     * Start DeepSeek Harness (the dsh AI core) in Ubuntu in Termux (dsh-host/termux/setup-proot.sh), in a tmux session of its own,
+     * Start DeepSeek Harness (the dsh AI core) in Ubuntu in Termux (set up by [DshSetup]), in a tmux session of its own,
      * with [env] (the bridge's port and secret, model keys) passed as arguments, never spliced into the script.
      * A dsh already running is replaced. Returns why it couldn't start, or null.
      */
-    /** Why DeepSeek Harness can't run in Termux now (Termux itself, or its setup not done), or null when it can. */
-    suspend fun dshSetupProblem(): String? {
-        setupProblem()?.let { return it }
-        val script = """[ -x "${'$'}{HOME}/.weiassist-dsh/linux/run/node_modules/.bin/dsh" ] && command -v proot-distro > /dev/null"""
-        val r = execute(arrayOf("-c", script), 20) ?: return "No answer from Termux. Open Termux once, and allow it to run in the background."
-        return if (r.getInt("err", RESULT_OK) == RESULT_OK && r.getInt("exitCode", -1) == 0) null
-        else "DeepSeek Harness is not set up in Termux: run dsh-host/termux/setup-proot.sh there."
-    }
-
     suspend fun launchDsh(env: Map<String, String>): String? {
         setupProblem()?.let { return it }
         val script = """
             d="${'$'}{HOME}/.weiassist-dsh"
             # dsh runs in Ubuntu (proot-distro, see dsh-host/termux/setup-proot.sh): there Node is linux-arm64, which dsh's
             # native modules support (Termux's own Node is "android"). Ubuntu sees this home as /root.
-            [ -x "${'$'}{d}/linux/run/node_modules/.bin/dsh" ] && command -v proot-distro > /dev/null || { echo "DeepSeek Harness is not set up in Termux: run dsh-host/termux/setup-proot.sh there."; exit 3; }
+            [ -x "${'$'}{d}/linux/run/node_modules/.bin/dsh" ] && command -v proot-distro > /dev/null || { echo "${'$'}{0}"; exit 3; }
             export TMUX_TMPDIR="${'$'}{d}/.tmux"; mkdir -p "${'$'}{TMUX_TMPDIR}"
             # dsh's own bash and file tools run unconfined (danger-full-access; the user chose this): its sandbox backends
             # (bubblewrap, Landlock) can't work in proot on Android, and dsh refuses to run them otherwise. That is the
@@ -97,7 +88,8 @@ class Termux(context: Context) {
             sleep 6
             tmux has-session -t dsh 2> /dev/null || { echo "DeepSeek Harness stopped at once:"; tail -15 "${'$'}{d}/dsh.log"; exit 4; }
         """.trimIndent()
-        val args = arrayOf("-c", script, "bash") + env.map { (k, v) -> "$k=$v" }
+        // $0 = what to say when dsh isn't set up; then the environment.
+        val args = arrayOf("-c", script, DshSetup.NOT_SET_UP) + env.map { (k, v) -> "$k=$v" }
         val r = execute(args, 30) ?: return "No answer from Termux. Open Termux once, and allow it to run in the background."
         if (r.getInt("err", RESULT_OK) != RESULT_OK) return "Termux could not start DeepSeek Harness: ${r.getString("errmsg").orEmpty()}"
         val code = r.getInt("exitCode", -1)
@@ -258,7 +250,7 @@ class Termux(context: Context) {
         else -> null
     }
 
-    private suspend fun execute(args: Array<String>, timeoutSec: Long): android.os.Bundle? {
+    internal suspend fun execute(args: Array<String>, timeoutSec: Long): android.os.Bundle? {
         val req = requests.incrementAndGet()
         val done = CompletableDeferred<android.os.Bundle?>()
         pending[req] = done
@@ -297,7 +289,7 @@ class Termux(context: Context) {
         private const val EXTRA_REQUEST = "request"
         private const val PREFIX = "/data/data/com.termux/files/usr"
         private const val HOME = "/data/data/com.termux/files/home"
-        private const val RESULT_OK = -1 // Activity.RESULT_OK: Termux's "no error"
+        internal const val RESULT_OK = -1 // Activity.RESULT_OK: Termux's "no error"
         private const val KEEP = 12_000 // characters of each stream the model sees
 
         val SETUP = """
