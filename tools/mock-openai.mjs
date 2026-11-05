@@ -51,7 +51,7 @@ export const SCRIPTS = {
 		{ tool: "list_sessions", args: {} },
 		{ tool: "create_session", args: { task: "Say hello in one word.", phone: false, title: "Hello helper" } },
 		{ tool: "wait_for", args: { ids: ["Hello helper"], timeout_seconds: 60 } },
-		{ tool: "send_message", args: { id: "Hello helper", text: "Now say goodbye in one word." } },
+		{ tool: "message_session", args: { id: "Hello helper", text: "Now say goodbye in one word." } },
 		{ tool: "wait_for", args: { ids: ["Hello helper"], timeout_seconds: 60 } },
 		{ tool: "get_session", args: { id: "Hello helper" } },
 		{ text: "The helper said hello and goodbye." },
@@ -96,6 +96,10 @@ export const SCRIPTS = {
 		{ text: "summarised from notes" },
 	],
 	submit: [{ tool: "type_text", args: { id: 3, text: "example.com", submit: true } }, { tool: "press_key", args: { key: "enter" } }, { text: "submitted" }],
+	// DeepSeek Harness's own tools (an AI core's native capabilities): its bash, and a subagent that keeps a todo list.
+	dsh_bash: [{ tool: "bash", args: { description: "Print a greeting", command: "echo hi from dsh" } }, { text: "ran it" }],
+	delegate: [{ tool: "subagent", args: { description: "Keep a todo list", prompt: "Write the todo list [[script:child_todo]]" } }, { text: "delegated" }],
+	child_todo: [{ tool: "todo_write", args: { todos: [{ content: "Check the inbox", status: "pending" }] } }, { text: "listed" }],
 	douban: [
 		{ tool: "open_app", args: { app: "com.douban.frodo" } },
 		{ tool: "read_screen", args: {} },

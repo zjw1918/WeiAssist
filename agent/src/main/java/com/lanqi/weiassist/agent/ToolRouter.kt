@@ -71,7 +71,7 @@ class ToolRouter(
             "list_sessions" -> "list" to JSONObject()
             "get_session" -> "get" to JSONObject().put("id", a.optString("id"))
             "create_session" -> "create" to JSONObject().put("task", a.optString("task")).put("phone", a.optBoolean("phone")).put("title", a.optString("title"))
-            "send_message" -> "send" to JSONObject().put("id", a.optString("id")).put("text", a.optString("text"))
+            "message_session" -> "send" to JSONObject().put("id", a.optString("id")).put("text", a.optString("text"))
             "wait_for" -> "wait" to JSONObject().put("ids", a.optJSONArray("ids") ?: org.json.JSONArray())
                 .put("timeout", (if (a.has("timeout_seconds") && !a.isNull("timeout_seconds")) a.optLong("timeout_seconds", 300) else 300L).coerceIn(5, 600))
             "pause_session" -> "pause" to JSONObject().put("id", a.optString("id"))

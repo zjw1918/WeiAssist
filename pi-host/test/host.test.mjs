@@ -573,7 +573,7 @@ test("the supervisor's tools reach Kotlin with the session and their arguments, 
 	assert.ok(calls.every((c) => c.session === "sup"));
 	// pi-host sends each call as the model made it: the tool's name and arguments (Kotlin's ToolRouter shapes them).
 	const raw = host.toolCalls.filter((c) => c.session === "sup");
-	assert.deepEqual(raw.map((c) => c.name), ["list_sessions", "create_session", "wait_for", "send_message", "wait_for", "get_session"]);
+	assert.deepEqual(raw.map((c) => c.name), ["list_sessions", "create_session", "wait_for", "message_session", "wait_for", "get_session"]);
 	assert.deepEqual(raw[1].args, { task: "Say hello in one word.", phone: false, title: "Hello helper" });
 	assert.deepEqual(raw[2].args, { ids: ["Hello helper"], timeout_seconds: 60 });
 	assert.ok(raw.every((c) => /./.test(c.call)), "each call has the core's own id");

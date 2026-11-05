@@ -280,7 +280,7 @@
     <string name="tool_screenshot">截屏</string>
     <string name="tool_bash">运行命令</string>
     <string name="tool_create_session">创建会话</string>
-    <string name="tool_send_message">给会话发消息</string>
+    <string name="tool_message_session">给会话发消息</string>
     <string name="tool_list_sessions">查看会话列表</string>
     <string name="tool_get_session">查看会话</string>
     <string name="tool_wait_for">等待会话</string>

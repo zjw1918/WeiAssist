@@ -10,6 +10,7 @@
 // catalog), each call going to the app's "tool" host call after "before_tool" allowed it. dsh keeps the transcript
 // in its own session log; the app saves only a marker and asks for the session back by id.
 import { Buffer } from "node:buffer";
+import { mkdir } from "node:fs/promises";
 import net from "node:net";
 import { createMcpToolDefinition } from "@deepseek-ai/dsh-mcp-client";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
@@ -44,8 +45,10 @@ interface Live {
 	thinking?: string;
 	/** A tool call was blocked for good (before_tool said terminate): the run ends before the model's next step. */
 	stop: boolean;
-	/** Tool names by call id, for tool_end. */
+	/** Tool names by call id, for tool_end (a subagent's marked ↳). */
 	calls: Map<string, string>;
+	/** The app's tools left out because dsh has its own of that name. */
+	skipped: string[];
 }
 
 const textOf = (content: readonly any[] | undefined) =>
@@ -90,6 +93,8 @@ export class Bridge {
 	private readonly sessions = new Map<string, Live>();
 	/** Calls on one session run in order (configure before prompt), as PiHost's calls do. */
 	private readonly lanes = new Map<string, Promise<unknown>>();
+	/** The app's tools the last setup left out (dsh's own of that name stay). */
+	private lastSkipped: string[] = [];
 	/** Why the last resume failed (a new session was created instead), for the configured event. */
 	private lastResumeError?: string;
 
@@ -180,7 +185,7 @@ export class Bridge {
 					if (s.agent.status !== "running") return this.send({ type: "steer_late", session, text: m.text });
 					return s.agent.steer(this.userMessage(m.text, m.content));
 				}
-				case "abort": return this.sessions.get(session!)?.agent.cancel({ kind: "user" });
+				case "abort": return this.abort(session!);
 				case "dispose": return this.dispose(session!);
 			}
 		};
@@ -236,24 +241,31 @@ export class Bridge {
 				}
 			}
 			if (handle === undefined) {
-				handle = await this.ctx.agents.create({ sessionId: c.session, meta: { cwd: process.cwd() }, agentOptions, setup });
+				handle = await this.ctx.agents.create({ sessionId: c.session, meta: { cwd: await this.workDir(c.session) }, agentOptions, setup });
 			}
-			s = { handle, agent: handle.agent, shape, stop: false, calls: new Map() };
+			s = { handle, agent: handle.agent, shape, stop: false, calls: new Map(), skipped: this.lastSkipped };
 			this.sessions.set(c.session, s);
 		}
 		// The session's model for its next steps (durable: dsh records the selection in the session's log).
 		s.agent.model.select(model);
 		this.send({
 			type: "configured", session: c.session, provider: route, model: c.modelId, thinkingLevel: c.thinkingLevel ?? "",
-			baseUrl: c.baseUrl ?? "", resumeError: restored ? undefined : this.lastResumeError, auth: process.env[keyEnv(route)] ? "api_key" : null, messages: restored ? 1 : 0,
+			baseUrl: c.baseUrl ?? "", skipped: s.skipped, resumeError: restored ? undefined : this.lastResumeError, auth: process.env[keyEnv(route)] ? "api_key" : null, messages: restored ? 1 : 0,
 		});
 	}
 
 	/** A new Agent's own registrations: model selection, its tools, its system prompt, its tool gate. */
 	private setup(agentCtx: any, session: string, specs: ToolSpec[], prompt: string) {
 		installModelSelection(agentCtx);
-		agentCtx.systemPrompt.section({ name: "weiassist:prompt", order: 0, text: prompt, interpolate: false, complete: true });
+		// The app's words for this session, beside dsh's own guidance for its tools (the profile drops dsh's persona).
+		agentCtx.systemPrompt.section({ name: "weiassist:prompt", order: 0, text: prompt, interpolate: false });
+		this.lastSkipped = [];
 		for (const spec of specs) {
+			// dsh's own tool of that name stays (it keeps its native capabilities): the app's is left out.
+			if (this.ctx.tools.get(spec.name) !== undefined) {
+				this.lastSkipped.push(spec.name);
+				continue;
+			}
 			const definition = createMcpToolDefinition(agentCtx, {
 				name: spec.name,
 				rawName: spec.name,
@@ -275,16 +287,6 @@ export class Bridge {
 			});
 			agentCtx.tools.register(spec.parallel ? { ...definition, isConcurrencySafe: () => true } : definition);
 		}
-		// The app's gate before every call (pause, safety checks, the user's OK): a block becomes dsh's deny.
-		agentCtx.on("tools/pre-execute", async (exec: any, next: () => Promise<any>) => {
-			const verdict = await this.call("before_tool", { session, call: String(exec.callId), tool: exec.name, args: exec.arguments ?? {} });
-			if (verdict?.block) {
-				const s = this.sessions.get(session);
-				if (verdict.terminate !== false && s) s.stop = true;
-				return { kind: "deny", reason: String(verdict.reason ?? "Blocked by the app.") };
-			}
-			return next();
-		});
 		// A run ends after a terminating block: the step that would show the model the blocked result is refused.
 		agentCtx.on("agent/pre-step", async (payload: any, next: () => Promise<any>) => {
 			const s = this.sessions.get(session);
@@ -294,6 +296,37 @@ export class Bridge {
 			}
 			return next();
 		});
+	}
+
+	/**
+	 * A new session's working folder: the app's folder for it (WEIASSIST_SESSIONS_DIR/<id>, the same ~/sessions/<id>
+	 * the app's Termux tools use), else dsh's own working directory.
+	 */
+	private async workDir(id: string) {
+		const root = process.env.WEIASSIST_SESSIONS_DIR;
+		if (!root) return process.cwd();
+		const dir = `${root}/${id}`;
+		await mkdir(dir, { recursive: true });
+		return dir;
+	}
+
+	/** The app session a dsh session belongs to: itself, or the session whose subagent (or its subagent's) it is. */
+	rootOf(sessionId: string | undefined): string | undefined {
+		let id = sessionId;
+		for (let depth = 0; id !== undefined && depth < 16; depth++) {
+			if (this.sessions.has(id)) return id;
+			id = this.ctx.sessions?.get?.(id)?.header?.parentSession;
+		}
+		return undefined;
+	}
+
+	/** Stop: the session's agent and its subagents (they work in the background, and would go on). */
+	private abort(id: string) {
+		this.sessions.get(id)?.agent.cancel({ kind: "user" });
+		for (const agent of this.ctx.agents.list?.() ?? []) {
+			const own = String(agent?.session?.id ?? agent?.id ?? "");
+			if (own !== id && this.rootOf(own) === id) agent.cancel({ kind: "user" });
+		}
 	}
 
 	private async dispose(id: string) {
@@ -318,6 +351,23 @@ export class Bridge {
 
 	private listen() {
 		const ctx = this.ctx;
+		// The app's gate before every call of a session's tree: its own tools, dsh's native ones, and its subagents'
+		// (pause, Stop, safety checks, the user's OK). A block becomes dsh's deny.
+		ctx.on("tools/pre-execute", async (exec: any, next: () => Promise<any>) => {
+			const own = String(exec.agent?.session?.id ?? exec.agent?.id ?? "");
+			const session = this.rootOf(own);
+			if (session === undefined) return next();
+			const sub = own !== session;
+			const verdict = await this.call("before_tool", {
+				session, call: String(exec.callId), tool: exec.name, args: exec.arguments ?? {}, ...(sub ? { subagent: own } : {}),
+			});
+			if (verdict?.block) {
+				const s = this.sessions.get(session);
+				if (verdict.terminate !== false && s && !sub) s.stop = true;
+				return { kind: "deny", reason: String(verdict.reason ?? "Blocked by the app.") };
+			}
+			return next();
+		});
 		const idOf = (agent: any): string | undefined => {
 			for (const [id, s] of this.sessions) if (s.agent === agent) return id;
 			return undefined;
@@ -353,10 +403,25 @@ export class Bridge {
 			if (session) this.send({ type: "error", session, message: error instanceof Error ? error.message : String(error) });
 		});
 		ctx.on("session/event", (sess: any, event: any) => {
-			const session = String(sess?.id ?? "");
-			const s = this.sessions.get(session);
-			if (!s) return;
+			const own = String(sess?.id ?? "");
+			const session = this.rootOf(own);
+			const s = session === undefined ? undefined : this.sessions.get(session);
+			if (!s || session === undefined) return;
 			const d = event.data;
+			// A subagent's work shows as steps of its session (marked ↳); its own messages and turns stay in dsh.
+			if (own !== session) {
+				if (event.type === "tool/call") {
+					s.calls.set(String(d.callId), `↳ ${d.name}`);
+					let args: unknown = {};
+					try { args = JSON.parse(d.arguments || "{}"); } catch { /* the model's malformed arguments */ }
+					this.send({ type: "tool_start", session, tool: `↳ ${d.name}`, args });
+				} else if (event.type === "tool/result") {
+					const call = String(d.message.toolCallId);
+					this.send({ type: "tool_end", session, tool: s.calls.get(call) ?? "↳", isError: d.message.isError === true, output: textOf(d.message.content) });
+					s.calls.delete(call);
+				}
+				return;
+			}
 			switch (event.type) {
 				case "tool/call": {
 					s.calls.set(String(d.callId), d.name);

@@ -1,11 +1,11 @@
 # WeiAssist's dsh profile patch (dsh 0.2.2-rc.1: dsh --profile weiassist, created from the shipped headless template).
 # dsh runs as one of the app's AI cores: the bridge plugin connects to the app and runs its sessions.
-# Sessions get exactly the app's tools (its catalog), so dsh's own model-facing tools are off.
+# Sessions keep dsh's own capabilities (its tools, subagents, web, todo, plan mode, skills) and get the app's
+# tools (its catalog) on top; the bridge gates every call through the app.
 
-# No one-shot task: the bridge keeps the process alive while the app is connected.
+# No one-shot task: the bridge keeps the process alive while the app is connected. (headless-startup stays:
+# the sandbox policy reads its launch options.)
 - id: headless-runner
-  disabled: true
-- id: headless-startup
   disabled: true
 
 # Model routes. A route's key comes from the env var the bridge sets from the app (WEIASSIST_KEY_<ROUTE>).
@@ -29,43 +29,15 @@
             # Phone tasks send screenshots: without this dsh keeps images from the model.
             input: [text, image]
 
-- id: tool-bash
-  disabled: true
-- id: tool-pwsh
-  disabled: true
-- id: tool-jobs
-  disabled: true
-- id: tool-fs
-  disabled: true
-- id: tool-fs-search
-  disabled: true
-- id: tool-skill
-  disabled: true
-- id: tool-subagent
-  disabled: true
-- id: tool-subagent-fork
-  disabled: true
-- id: tool-subagent-control
-  disabled: true
-- id: tool-workflow
-  disabled: true
-- id: tool-todo
-  disabled: true
-- id: tool-goal
-  disabled: true
-- id: tool-web
-  disabled: true
-- id: tool-working-directory
-  disabled: true
-- id: mcp-resources
-  disabled: true
 # The app titles its sessions itself; dsh's titler would make a model request of its own.
+# dsh's persona is a coding agent's: each session's own words come from the app (the bridge's prompt section).
+- id: system-prompt
+  config:
+    personaPrefix: ''
+
 - id: session-title
   disabled: true
 - id: session-title-llm
-  disabled: true
-# Plan mode adds its own model-facing tool (exit_plan_mode).
-- id: plan-mode
   disabled: true
 
 - insert:
