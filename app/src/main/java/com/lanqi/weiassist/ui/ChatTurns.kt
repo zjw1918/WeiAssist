@@ -339,6 +339,9 @@ private fun ProcessHeader(
         turn.live -> stringResource(R.string.run_working, duration(elapsed ?: 0))
         run != null && run.thinkingMs > 0 && turn.steps == 0 -> stringResource(R.string.run_thought_for, duration(run.ms))
         run != null -> stringResource(R.string.run_worked_for, duration(run.ms))
+        // A part of a run (split by a message or a subagent's notice): its totals come at the run's end.
+        turn.steps == 0 && turn.process.any { it is ChatItem.Thinking } ->
+            stringResource(R.string.run_thought_for, duration(turn.process.sumOf { (it as? ChatItem.Thinking)?.ms ?: 0L }))
         else -> pluralStringResource(R.plurals.run_steps, turn.steps, turn.steps)
     }
     val animate = turn.live && status == SessionStatus.Running
