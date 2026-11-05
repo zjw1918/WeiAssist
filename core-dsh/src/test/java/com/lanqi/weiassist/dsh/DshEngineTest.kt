@@ -43,9 +43,11 @@ class DshEngineTest {
     }
 
     private fun engine(onLaunch: (Map<String, String>) -> Unit): DshEngine =
-        DshEngine(launch = { env -> onLaunch(env); null }, keys = { mapOf("openai" to "sk-test") }, connectTimeoutMs = 5_000)
+        DshEngine(launch = { env -> onLaunch(env); null }, proxy = proxy, connectTimeoutMs = 5_000)
 
-    @Test fun `launches dsh with its port, secret and keys, and is ready when it says hello with the secret`() = runBlocking {
+    private val proxy = KeyProxy({ mapOf("openai" to KeyProxy.Route("https://api.openai.com/v1", "sk-test")) })
+
+    @Test fun `launches dsh with its port, secret and the key proxy, never a key, and is ready on hello with the secret`() = runBlocking {
         var dsh: FakeDsh? = null
         var env: Map<String, String> = emptyMap()
         lateinit var e: DshEngine
@@ -53,7 +55,11 @@ class DshEngineTest {
         val hello = e.start()
         assertEquals(42, hello.getInt("pid"))
         assertEquals(e.secret, env[DshEngine.ENV_SECRET])
-        assertEquals("sk-test", env["WEIASSIST_KEY_OPENAI"])
+        // dsh gets the proxy and its token for every route; the key stays in the app.
+        assertEquals(proxy.token, env["WEIASSIST_KEY_OPENAI"])
+        assertEquals(proxy.token, env["WEIASSIST_KEY_DEEPSEEK"])
+        assertTrue(env.getValue(DshEngine.ENV_PROXY).startsWith("http://127.0.0.1:"))
+        assertFalse(env.values.any { "sk-test" in it })
         assertEquals(hello, e.start()) // connected: not launched again
         dsh!!.socket.close()
         e.destroy()
