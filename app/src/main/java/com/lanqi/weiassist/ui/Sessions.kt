@@ -655,12 +655,15 @@ fun UserMessage(entry: ChatItem, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth().padding(start = 48.dp), horizontalAlignment = Alignment.End) {
         val sent = item.delivery == Delivery.Sent
         MessageAttachments(item.attachments, Modifier.padding(bottom = if (item.text.isBlank()) 0.dp else 6.dp))
-        if (item.text.isNotBlank()) Text(
-            item.text, style = MaterialTheme.typography.bodyLarge, color = if (sent) c.onPrimaryContainer else c.onSurfaceVariant,
-            modifier = Modifier.widthIn(max = 320.dp)
-                .background(if (sent) c.primaryContainer else c.surfaceContainerHigh, RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp))
-                .padding(horizontal = 14.dp, vertical = 10.dp),
-        )
+        // Selectable like the answers: long-press to select, then copy.
+        if (item.text.isNotBlank()) androidx.compose.foundation.text.selection.SelectionContainer {
+            Text(
+                item.text, style = MaterialTheme.typography.bodyLarge, color = if (sent) c.onPrimaryContainer else c.onSurfaceVariant,
+                modifier = Modifier.widthIn(max = 320.dp)
+                    .background(if (sent) c.primaryContainer else c.surfaceContainerHigh, RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp))
+                    .padding(horizontal = 14.dp, vertical = 10.dp),
+            )
+        }
         if (!sent) Text(
             stringResource(if (item.delivery == Delivery.Queued) R.string.steer_queued else R.string.steer_not_delivered),
             style = MaterialTheme.typography.labelSmall, color = if (item.delivery == Delivery.Queued) c.onSurfaceVariant else c.error,
