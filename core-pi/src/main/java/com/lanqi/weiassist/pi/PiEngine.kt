@@ -22,6 +22,7 @@ import com.lanqi.weiassist.core.SessionConfig
 import com.lanqi.weiassist.core.ToolHost
 import com.lanqi.weiassist.core.SessionKind
 import com.lanqi.weiassist.core.UserInput
+import com.lanqi.weiassist.core.composePrompt
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -258,7 +259,8 @@ class PiEngine(context: Context, private val agentName: String) : AgentCore, Cor
         })
         if (!config.bash) cfg.put("bash", false)
         if (config.channel != null) cfg.put("channel", config.channel)
-        if (config.systemPrompt != null) cfg.put("systemPrompt", config.systemPrompt)
+        // The app's prompt (all of it: Pi gets every tool the sections are for).
+        composePrompt(config.prompt, config.tools.map { it.name }).takeIf { it.isNotEmpty() }?.let { cfg.put("systemPrompt", it) }
         if (!m.baseUrl.isNullOrBlank()) cfg.put("baseUrl", m.baseUrl)
         // Without saved messages, an existing session keeps its conversation.
         if (config.history != null) cfg.put("messages", config.history)

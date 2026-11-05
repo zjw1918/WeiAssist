@@ -57,7 +57,7 @@ Status legend: ✅ done · 🔨 next · ⬜ planned. Current status and todo: [P
   - 🚧 A second core: [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 0.2.2-rc.1, a prototype (see ARCHITECTURE, "DeepSeek Harness"). It works on a phone in Ubuntu (proot) in Termux: chat with live text, phone tools on a session's own display, screenshots as images, every call through the app's `before_tool` (a declined call is tested on a computer). Next:
     - ✅ a key proxy in the app, so dsh never holds API keys;
     - ✅ the same providers, keys, sign-ins and custom providers as Pi, through the same proxy (no dsh settings);
-    - the app's prompts shared like the catalog;
+    - ✅ the app's prompts shared like the catalog (sections, each core keeps those for the tools it offers);
     - attachments and thinking levels;
     - a setting to choose the core;
     - native Android builds of dsh's modules (upstream), so it can run in Termux without Ubuntu.

@@ -37,10 +37,7 @@ import { OPENAI_CODEX_MODELS } from "@earendil-works/pi-ai/providers/openai-code
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { bridge, bridgeCall, settle } from "./bridge.ts";
 import { fetchEvents, nativeFetch } from "./native-fetch.ts";
-import { phoneSystemPrompt, pruneOldScreens, pruneScreens } from "./phone-tools.ts";
-import { supervisorSystemPrompt } from "./supervisor-tools.ts";
-import { bashPrompt } from "./bash-tool.ts";
-import { channelPrompt } from "./channel-tools.ts";
+import { pruneOldScreens, pruneScreens } from "./phone-tools.ts";
 import { catalogTools, type ToolSpec } from "./catalog-tools.ts";
 import { compact, needsCompaction } from "./compact.ts";
 import { dispatch } from "./shims/http.ts";
@@ -400,10 +397,8 @@ async function configure(cfg: Config) {
 	// Pi maps the level onto what this model supports (e.g. "max" → the highest it has).
 	const thinkingLevel = clampThinkingLevel(model, (cfg.thinkingLevel ?? "off") as any);
 	const tools = cfg.tools ?? (cfg.phone ? "phone" : undefined);
+	// Phone sessions prune old screens from the context; tools and prompt are the app's.
 	const phone = tools === "phone";
-	const supervisor = tools === "supervisor";
-	const bash = !supervisor && cfg.bash !== false;
-	const channel = supervisor ? undefined : cfg.channel;
 	// The conversation goes on across a change of model or tools; a saved one is restored as given.
 	// System messages are left out: Pi puts the current system prompt and tools in front (initialState).
 	const history = (cfg.messages ?? prev?.agent.state.messages ?? []).filter((m: any) => m.role !== "system");
@@ -411,9 +406,8 @@ async function configure(cfg: Config) {
 	session.agent = new Agent({
 		initialState: {
 			messages: history,
-			systemPrompt: cfg.systemPrompt ?? (supervisor ? supervisorSystemPrompt(agentName)
-				: (phone ? phoneSystemPrompt(agentName)
-					: `You are ${agentName}, a helpful assistant on the user's Android phone. Reply in the user's language.`) + (bash ? "\n" + bashPrompt : "") + (channel ? "\n" + channelPrompt(channel, bash) : "")),
+			// The app's prompt (its prompts, the same for every AI core: Kotlin's Prompts); a bare one if it sent none.
+			systemPrompt: cfg.systemPrompt ?? `You are ${agentName}, a helpful assistant on the user's Android phone. Reply in the user's language.`,
 			model,
 			thinkingLevel: thinkingLevel as any,
 			// Exactly the tools the app chose for this session (phone, bash, send_file or the supervisor's).

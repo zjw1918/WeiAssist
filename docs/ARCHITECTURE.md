@@ -85,6 +85,11 @@ turns a core's features off because another core lacks them. The contract is in 
   `ToolRouter` checks that the session has the tool, shapes the arguments for the part of the app that does the
   work, and shapes the result (a screenshot becomes an image). A new tool is an entry in the catalog plus a
   route in `ToolRouter`; no core changes.
+- **The prompts** (`agent/src/main/resources/…/prompts/*.md`, `Prompts`) are the app's too: the chat, phone and
+  supervisor personas, the Termux bash guide, the messaging app's. The app picks a session's sections and fills in
+  the assistant's name (`SessionConfig.prompt`). A section can be for one of the app's tools (`forTool`, e.g. the
+  Termux guide for `bash`), and a core keeps it only when it gives the model that tool (`composePrompt`). Pi gets
+  them all; a core with a bash of its own gets no Termux guide, and keeps its own guidance beside the app's words.
 - **Checked before run:** `before_tool` and `tool` carry the same call id (the model's), and the app runs a call
   only once `before_tool` allowed it, once. So no core, and nothing else that reaches a core's socket, can skip
   the pause gate or the user's OK.
@@ -154,9 +159,7 @@ entry in the registry.
   Per request, the proxy asks Pi for that provider's current auth (`CoreAccounts.providerAuth`: an API key, or a
   sign-in's access token that Pi refreshes when due; extra headers; the endpoint). A ChatGPT sign-in's token goes
   to the same OpenAI endpoint as a key.
-- **Not yet:** the app's prompt section is a short placeholder (its prompts are still in `pi-host`).
-  Attached images aren't passed on, and thinking levels aren't mapped. Routes are only openai, deepseek and the
-  dev mock.
+- **Not yet:** attached images aren't passed on, and thinking levels aren't mapped.
 
 ## The shell backend (`:shell`)
 

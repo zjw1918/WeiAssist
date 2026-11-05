@@ -48,6 +48,8 @@ class SessionManager(
         fun continueTask(): String
         /** The session was made by AI core [core], which this build doesn't have. */
         fun missingCore(core: String): String
+        /** The assistant's name, as the prompts say it. */
+        fun agentName(): String
     }
 
     private val io = Dispatchers.IO.limitedParallelism(1)
@@ -245,6 +247,7 @@ class SessionManager(
             val config = SessionConfig(
                 ModelSelection(provider, model, thinking, mock), kind, ToolCatalog.forSession(s.summary),
                 bash = s.summary.termux && !s.summary.supervisor, channel = s.summary.channel.takeUnless { s.summary.supervisor },
+                prompt = Prompts.forSession(s.summary, strings.agentName()),
             )
             if (configured[id] != config) {
                 // First use in this runtime: give the core the saved conversation back.
