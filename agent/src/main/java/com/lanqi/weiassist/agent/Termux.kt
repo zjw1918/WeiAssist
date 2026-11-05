@@ -64,6 +64,15 @@ class Termux(context: Context) {
      * with [env] (the bridge's port and secret, model keys) passed as arguments, never spliced into the script.
      * A dsh already running is replaced. Returns why it couldn't start, or null.
      */
+    /** Why DeepSeek Harness can't run in Termux now (Termux itself, or its setup not done), or null when it can. */
+    suspend fun dshSetupProblem(): String? {
+        setupProblem()?.let { return it }
+        val script = """[ -x "${'$'}{HOME}/.weiassist-dsh/linux/run/node_modules/.bin/dsh" ] && command -v proot-distro > /dev/null"""
+        val r = execute(arrayOf("-c", script), 20) ?: return "No answer from Termux. Open Termux once, and allow it to run in the background."
+        return if (r.getInt("err", RESULT_OK) == RESULT_OK && r.getInt("exitCode", -1) == 0) null
+        else "DeepSeek Harness is not set up in Termux: run dsh-host/termux/setup-proot.sh there."
+    }
+
     suspend fun launchDsh(env: Map<String, String>): String? {
         setupProblem()?.let { return it }
         val script = """

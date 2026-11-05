@@ -120,8 +120,26 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var useMock by mutableStateOf(false)
         private set
 
-    /** Debug builds: the AI core new sessions use ("pi", "dsh"). */
+    /** The installed AI engines (Pi first), once the agent is up. */
+    val engines: List<AgentController.Engine> get() = controller.value?.engines.orEmpty()
+
+    /** An engine's name for a session's [SessionSummary.core]. */
+    fun engineName(id: String): String = controller.value?.engineName(id) ?: id
+
+    /** The engine new sessions use (Settings), unless [newEngine] picks another for the next one. */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val defaultEngine: StateFlow<String> = controller
+        .flatMapLatest { it?.defaultEngine ?: flowOf("pi") }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, "pi")
+
+    /** The engine chosen in the new-session sheet for the next session; null: the default. */
+    var newEngine by mutableStateOf<String?>(null)
+
+    /** The engine new sessions use from now on (Settings; debug builds: `--es core`). */
     fun selectCore(id: String) { controller.value?.selectCore(id) }
+
+    /** Why [id] can't run now (DeepSeek Harness not set up in Termux…), or null. */
+    suspend fun engineProblem(id: String): String? = controller.value?.engineProblem(id)
 
     fun setMock(on: Boolean) { useMock = on; controller.value?.mockBaseUrl = if (on) MOCK_BASE_URL else null }
 
@@ -189,7 +207,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (text.isEmpty() && files.isEmpty()) return
         prefs.edit().putBoolean("phoneMode", phoneMode).putString("input", input).apply()
         inputAttachments.clear()
-        viewModelScope.launch { open(c.startTask(text, phoneMode, files)) }
+        val engine = newEngine
+        newEngine = null
+        viewModelScope.launch { open(c.startTask(text, phoneMode, files, engine)) }
     }
 
     /** A follow-up message in the open session (while it works, it steers the task). */

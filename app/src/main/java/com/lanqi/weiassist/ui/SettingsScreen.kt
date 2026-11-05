@@ -13,13 +13,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
@@ -62,6 +66,8 @@ fun SettingsTab(vm: AppViewModel, s: AgentState) {
                 )
             }
 
+            EngineSection(vm, s)
+
             SectionHeader(stringResource(R.string.shell_title))
             Group { Column(Modifier.padding(GroupContentPadding)) { ShellSection() } }
 
@@ -103,4 +109,43 @@ fun SettingsTab(vm: AppViewModel, s: AgentState) {
             }
         }
     }
+}
+
+/**
+ * The AI engine new sessions use: each installed one with whether it can run now (DeepSeek Harness needs its setup in
+ * Termux), and the default to pick. A session keeps the engine it started with.
+ */
+@Composable
+private fun EngineSection(vm: AppViewModel, s: AgentState) {
+    val engines = vm.engines
+    if (engines.size < 2) return
+    val default by vm.defaultEngine.collectAsStateWithLifecycle()
+    // Why each engine can't run now (null: it can); absent while checking.
+    val problems = remember { mutableStateMapOf<String, String?>() }
+    LaunchedEffect(engines) { engines.forEach { e -> problems[e.id] = vm.engineProblem(e.id) } }
+    SectionHeader(stringResource(R.string.section_engine))
+    Group {
+        engines.forEachIndexed { i, e ->
+            if (i > 0) GroupDivider()
+            val checked = problems.containsKey(e.id)
+            val problem = problems[e.id]
+            val usable = checked && problem == null
+            GroupRow(
+                title = e.name,
+                description = when {
+                    e.id == "pi" -> stringResource(R.string.engine_pi_info, s.piVersion.orEmpty())
+                    !checked -> stringResource(R.string.engine_checking)
+                    problem != null -> problem
+                    else -> stringResource(R.string.engine_ready)
+                },
+                descriptionColor = if (problem != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                onClick = if (usable || default == e.id) ({ vm.selectCore(e.id) }) else null,
+                trailing = { RadioButton(selected = default == e.id, onClick = if (usable) ({ vm.selectCore(e.id) }) else null, enabled = usable || default == e.id) },
+            )
+        }
+    }
+    Text(
+        stringResource(R.string.engine_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 6.dp),
+    )
 }
