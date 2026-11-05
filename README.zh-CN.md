@@ -22,8 +22,6 @@
 
 [下载](https://github.com/zjw1918/WeiAssist/releases/latest) · [Termux 设置](docs/TERMUX.md) · [Telegram](docs/TELEGRAM.md) · [架构](docs/ARCHITECTURE.md) · [进度](docs/PROGRESS.md) · [路线图](docs/ROADMAP.md)（文档为英文）
 
-> **早期开发中。** 已在真机（Android 12 到 16）上可用，但难免有不完善之处。
-
 ## 安装
 
 从 [Releases](https://github.com/zjw1918/WeiAssist/releases/latest) 下载 APK 并打开。Android 询问时，允许浏览器或文件管理器安装应用。
@@ -50,7 +48,7 @@
 
 ## 它能做什么
 
-![小维助手里的四个对话：用 curl 查实时天气、在 tmux 里跑着测试的 Go Web 服务、一年的港股数据加实时盯盘、从一个想法做出一条配音视频](docs/images/showcase.png)
+![小维助手的四个界面：DeepSeek Harness 会话里三个子智能体并行调研；它的回答，把三份调研汇总成一张对比表；设置里的 AI 引擎选择（Pi 或 DeepSeek Harness）；以及 Pi 会话用 Termux 里的 curl 查天气](docs/images/showcase.png)
 
 - **多家 AI 服务：** OpenAI、Anthropic、Google、DeepSeek、OpenRouter、xAI、Moonshot、Mistral、OpenCode，以及任何兼容 OpenAI 的服务（Ollama、vLLM、LM Studio 等）。
 - **照片和文件：** 发给它图片、PDF 和文档；它也会把做好的文件发回给你。

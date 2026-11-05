@@ -28,8 +28,6 @@ servers of ours in between: the app talks to your provider directly, and your ke
 [Telegram](docs/TELEGRAM.md) · [Architecture](docs/ARCHITECTURE.md) · [Progress](docs/PROGRESS.md) ·
 [Roadmap](docs/ROADMAP.md)
 
-> **Early development.** It works on real phones (Android 12 to 16), but expect rough edges.
-
 ## Install
 
 Download the APK from [Releases](https://github.com/zjw1918/WeiAssist/releases/latest) and open it. Allow
@@ -59,7 +57,7 @@ conversation keeps the engine it started with.
 
 ## What it can do
 
-![Four conversations in WeiAssist: live weather with curl, a Go web service with tests running in tmux, a year of Hong Kong stock data with a live watch job, and a narrated video made from an idea](docs/images/showcase.png)
+![Four WeiAssist screens: a DeepSeek Harness session with three subagents researching in parallel; its answer, one comparison table from their briefs; Settings with the AI engine choice, Pi or DeepSeek Harness; and a Pi session answering the weather with curl in Termux](docs/images/showcase.png)
 
 - **Many providers:** OpenAI, Anthropic, Google, DeepSeek, OpenRouter, xAI, Moonshot, Mistral, OpenCode, and any
   OpenAI-compatible server (Ollama, vLLM, LM Studio…).
