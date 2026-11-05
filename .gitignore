@@ -25,3 +25,5 @@ core-pi/src/main/assets/
 *.jks
 *.keystore
 keystore.properties
+dsh-host/node_modules/
+dsh-host/lib/

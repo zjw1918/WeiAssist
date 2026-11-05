@@ -48,6 +48,8 @@ class MainActivity : ComponentActivity() {
     var debugRun = false
     var debugPhone = true
     var debugMock: Boolean? = null
+    /** `--es core dsh|pi`: the AI core new sessions use (DeepSeek Harness is a prototype). */
+    var debugCore: String? = null
     /** `--ez mainOnly true|false`: phone sessions use the phone's own screen, as without the shell helper. */
     var debugMainOnly: Boolean? = null
 
@@ -58,6 +60,7 @@ class MainActivity : ComponentActivity() {
         if (!BuildConfig.DEBUG) return
         i.getStringExtra("supervise")?.let { debugSupervise.value = it; debugMock = if (i.hasExtra("mock")) i.getBooleanExtra("mock", false) else null }
         if (i.hasExtra("mainOnly")) debugMainOnly = i.getBooleanExtra("mainOnly", false)
+        i.getStringExtra("core")?.let { debugCore = it }
         // `--ez noClipboard true|false`: act as if the clipboard were blocked, as on some phones (typing by keyboard).
         if (i.hasExtra("noClipboard")) com.lanqi.weiassist.phone.PhoneActions.debugNoClipboard = i.getBooleanExtra("noClipboard", false)
         val task = i.getStringExtra("task") ?: return
@@ -102,6 +105,7 @@ fun MainActivity.App(vm: AppViewModel = viewModel()) {
         vm.input = task; vm.phoneMode = debugPhone; debugTask.value = null
         debugMock?.let(vm::setMock) // `--ez mock true`: the local mock model
         debugMainOnly?.let(vm::debugMainOnly)
+        debugCore?.let(vm::selectCore)
         if (debugRun) { debugRun = false; vm.startTask() }
     }
     LaunchedEffect(debugSupervise.value, s.screen) {

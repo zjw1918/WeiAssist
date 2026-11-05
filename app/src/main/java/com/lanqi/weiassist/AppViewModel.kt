@@ -120,6 +120,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var useMock by mutableStateOf(false)
         private set
 
+    /** Debug builds: the AI core new sessions use ("pi", "dsh"). */
+    fun selectCore(id: String) { controller.value?.selectCore(id) }
+
     fun setMock(on: Boolean) { useMock = on; controller.value?.mockBaseUrl = if (on) MOCK_BASE_URL else null }
 
     /** Enabled in system settings: true at once on launch, before the service has (re)connected. */

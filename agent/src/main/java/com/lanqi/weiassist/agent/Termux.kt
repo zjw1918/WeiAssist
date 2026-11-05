@@ -60,6 +60,37 @@ class Termux(context: Context) {
     }
 
     /**
+     * Start DeepSeek Harness (the dsh AI core) in Ubuntu in Termux (dsh-host/termux/setup-proot.sh), in a tmux session of its own,
+     * with [env] (the bridge's port and secret, model keys) passed as arguments, never spliced into the script.
+     * A dsh already running is replaced. Returns why it couldn't start, or null.
+     */
+    suspend fun launchDsh(env: Map<String, String>): String? {
+        setupProblem()?.let { return it }
+        val script = """
+            d="${'$'}{HOME}/.weiassist-dsh"
+            # dsh runs in Ubuntu (proot-distro, see dsh-host/termux/setup-proot.sh): there Node is linux-arm64, which dsh's
+            # native modules support (Termux's own Node is "android"). Ubuntu sees this home as /root.
+            [ -x "${'$'}{d}/linux/run/node_modules/.bin/dsh" ] && command -v proot-distro > /dev/null || { echo "DeepSeek Harness is not set up in Termux: run dsh-host/termux/setup-proot.sh there."; exit 3; }
+            export TMUX_TMPDIR="${'$'}{d}/.tmux"; mkdir -p "${'$'}{TMUX_TMPDIR}"
+            # An earlier dsh survives its tmux session (proot and node are reparented): end its node, whose command
+            # line is exactly this (proot exits with it).
+            for p in /proc/[0-9]*; do
+                [ "${'$'}(tr '\0' ' ' < "${'$'}{p}/cmdline" 2> /dev/null)" = "node ./node_modules/.bin/dsh --profile weiassist " ] && kill "${'$'}{p#/proc/}" 2> /dev/null
+            done
+            tmux kill-session -t dsh 2> /dev/null
+            tmux new-session -d -s dsh proot-distro login ubuntu --termux-home -- env DSH_HOME=/root/.weiassist-dsh/linux/home "${'$'}@" sh -c 'cd /root/.weiassist-dsh/linux/run && exec node ./node_modules/.bin/dsh --profile weiassist > /root/.weiassist-dsh/dsh.log 2>&1'
+            # A dsh that dies at once (a missing package, a native module): say why instead of letting the app wait.
+            sleep 6
+            tmux has-session -t dsh 2> /dev/null || { echo "DeepSeek Harness stopped at once:"; tail -15 "${'$'}{d}/dsh.log"; exit 4; }
+        """.trimIndent()
+        val args = arrayOf("-c", script, "bash") + env.map { (k, v) -> "$k=$v" }
+        val r = execute(args, 30) ?: return "No answer from Termux. Open Termux once, and allow it to run in the background."
+        if (r.getInt("err", RESULT_OK) != RESULT_OK) return "Termux could not start DeepSeek Harness: ${r.getString("errmsg").orEmpty()}"
+        val code = r.getInt("exitCode", -1)
+        return if (code == 0) null else r.getString("stdout").orEmpty().ifBlank { r.getString("stderr").orEmpty() }.ifBlank { "exit code $code" }
+    }
+
+    /**
      * Run [command] with bash in session [session]'s folder, killed after [timeoutSec]. Returns what the model sees.
      * The session's tmux is its own (TMUX_TMPDIR in its folder), so its jobs can be found and stopped with it.
      */

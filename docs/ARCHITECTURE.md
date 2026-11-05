@@ -83,6 +83,9 @@ a core owns its agent loop, context handling and transcript format. The contract
   `ToolRouter` checks that the session has the tool, shapes the arguments for the part of the app that does the
   work, and shapes the result (a screenshot becomes an image). A new tool is an entry in the catalog plus a
   route in `ToolRouter`; no core changes.
+- **Checked before run:** `before_tool` and `tool` carry the same call id (the model's), and the app runs a call
+  only once `before_tool` allowed it, once. So no core, and nothing else that reaches a core's socket, can skip
+  the pause gate or the user's OK.
 - **`PhoneTools`** (`:phone`): what the phone tools do and the checks before them, the same for every core. It keeps
   each task's last screen, typed fields and step count. An action returns its result and the screen it leaves.
   `before_tool` asks the user about irreversible taps (and blind ones after typing into a hidden field), and stops a
@@ -95,8 +98,39 @@ a core owns its agent loop, context handling and transcript format. The contract
   (`<id>.<core>.json`) is in that core's format. A session whose core isn't installed shows an error instead of running.
   A core's `runtime_restarted` ends only its own sessions' runs.
 
-`:core-pi` (`PiEngine`) is today's only core. Adding one is a module that implements `AgentCore` plus one
-entry in the registry; the [roadmap](ROADMAP.md#2-agent-capability) has the next steps and DeepSeek Harness as a candidate second core.
+`:core-pi` (`PiEngine`) is the default core. Adding one is a module that implements `AgentCore` plus one
+entry in the registry.
+
+### DeepSeek Harness (prototype)
+
+`:core-dsh` (`DshEngine`) runs [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 0.2.2-rc.1
+(dsh). Debug builds choose it for new sessions with `--es core dsh`.
+
+```
+ WeiAssist ── DshEngine: 127.0.0.1:<port>, secret ◀─── TCP, JSON lines ─── dsh-host bridge plugin (Cordis)
+   │ launchDsh (Termux RUN_COMMAND)                                          inside dsh, in Ubuntu (proot-distro)
+   └──────────▶ tmux "dsh": proot-distro login ubuntu -- env <port, secret, keys> node dsh --profile weiassist
+```
+
+- **Why Ubuntu:** dsh needs Node ≥ 24.9 and native modules (its plugin loader's `node-addon-require-builtin`, the
+  file locks of `node-addon-system`) that are published only for macOS, Windows and Linux. Termux's own Node is
+  `android`, so dsh can't boot there. In Ubuntu (proot) Node is `linux-arm64` and the published binaries load.
+  Set up with `dsh-host/termux/setup-proot.sh`: Ubuntu, Node 24 and dsh's 931 MB of packages.
+- **The bridge** (`dsh-host/src/index.ts`) is the dsh counterpart of `pi-host`. It is mounted by the profile
+  patch `dsh-host/profile/cordis.patch.yml`, which also turns off dsh's own model-facing tools, plan mode and its
+  titler, and declares the model routes. Each app session is a dsh Agent with the same id. Its tools are the
+  app's specs (`createMcpToolDefinition`, so a screenshot is an image), behind dsh's `tools/pre-execute` →
+  `before_tool`. A terminating block refuses the next step (`agent/pre-step`). Live text comes from
+  `agent/assistant-stream`; dsh's own SDK and ACP servers send no live text. dsh keeps the conversation in its
+  own log; the app saves a marker and the bridge resumes the session by id.
+- **Lifecycle:** the first task launches dsh (about 30 s to boot on a realme RMX2121; later tasks take about a
+  second). If dsh dies at once, the end of its log is the session's error; if it never connects, the task ends
+  after 3 minutes. A lost connection is `runtime_restarted`, and the bridge exits when the app goes away.
+- **Not yet:** keys go to dsh in its launch environment and command line, which anything running in Termux can
+  read (the model's own bash commands included): a key proxy in the app should replace that. A key change
+  needs a dsh restart. The system prompt is a short placeholder (the app's prompts are still in `pi-host`).
+  Attached images aren't passed on, and thinking levels aren't mapped. Routes are only openai, deepseek and the
+  dev mock.
 
 ## The shell backend (`:shell`)
 

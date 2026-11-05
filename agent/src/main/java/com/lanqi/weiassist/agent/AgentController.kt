@@ -31,8 +31,15 @@ class AgentController(context: Context) {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val pi = PiEngine(appContext, agentName = appContext.getString(R.string.agent_name))
+    val termux = Termux(appContext)
+    /** DeepSeek Harness, run in Termux (a prototype: chosen for new sessions with the debug extra `--es core dsh`). */
+    private val dsh = com.lanqi.weiassist.dsh.DshEngine(
+        launch = { env -> termux.launchDsh(env) },
+        keys = ::dshKeys,
+        log = { android.util.Log.d("DshEngine", it) },
+    )
     /** The installed AI cores; a session runs on the one it was made with. */
-    private val cores = CoreRegistry(listOf(pi), defaultId = PiEngine.ID)
+    private val cores = CoreRegistry(listOf(pi, dsh), defaultId = PiEngine.ID)
     /** Sign-in, providers and the model catalog: Pi keeps them, and every core uses the model chosen there. */
     private val accounts: CoreAccounts = pi
     /** The app's side of every core's tool calls (registered below). */
@@ -42,7 +49,11 @@ class AgentController(context: Context) {
     private val phoneTools = com.lanqi.weiassist.phone.PhoneTools(::runPhone)
     /** Sessions the supervisor started in its current task (see ToolRouter.MAX_CREATES). */
     private val creates = java.util.concurrent.ConcurrentHashMap<String, Int>()
-    val termux = Termux(appContext)
+    /**
+     * Calls before_tool allowed and "tool" hasn't run yet, as "session/call". A core runs a tool only after asking
+     * (so a core in another process, or anything that reaches its socket, can't skip the user's OK).
+     */
+    private val allowed = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val prefs = appContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
     private val _state = MutableStateFlow(
@@ -85,7 +96,7 @@ class AgentController(context: Context) {
     init {
         screens.isActive = { id -> sessions.summary(id)?.status?.active == true }
         // Stop and Delete end the session's Termux jobs too; its files there are kept unless the user asked otherwise.
-        sessions.onTaskStarted = { id -> phoneTools.taskStarted(id); creates.remove(id) }
+        sessions.onTaskStarted = { id -> phoneTools.taskStarted(id); creates.remove(id); allowed.removeIf { it.startsWith("$id/") } }
         sessions.onEnded = { id, deleted, files ->
             gateway.cancelTransfers(id)
             if (deleted) { phoneTools.forget(id); creates.remove(id) }
@@ -146,7 +157,8 @@ class AgentController(context: Context) {
             val id = m.getString("session")
             val tool = m.optString("tool")
             val summary = sessions.summary(id)
-            when {
+            val call = m.optString("call")
+            val verdict = when {
                 !sessions.gate(id) -> block("Stopped by the user.")
                 summary?.phone == true ->
                     phoneTools.check(id, tool, m.optJSONObject("args") ?: JSONObject()) { c -> confirmTap(id, c) }?.let(::block)
@@ -155,10 +167,16 @@ class AgentController(context: Context) {
                     block(ToolRouter.TOO_MANY_CREATES, terminate = false)
                 else -> null
             }
+            if (verdict == null && call.isNotEmpty()) allowed += "$id/$call"
+            verdict
         }
         // Every tool call, by name (see ToolRouter and ToolCatalog); answers a ToolResult.
         tools.register("tool") { m ->
-            router.call(m.getString("session"), m.optString("call"), m.getString("name"), m.optJSONObject("args") ?: JSONObject()).toJson()
+            val id = m.getString("session")
+            val call = m.optString("call")
+            // Only a call before_tool allowed, once.
+            if (call.isEmpty() || !allowed.remove("$id/$call")) com.lanqi.weiassist.core.ToolResult("This call was not checked first; it did not run.", isError = true).toJson()
+            else router.call(id, call, m.getString("name"), m.optJSONObject("args") ?: JSONObject()).toJson()
         }
         // The user stopped the run while a call worked: end what it started (a bash command in Termux).
         tools.register("tool_cancel") { m -> router.cancel(m.getString("session"), m.optString("call")); null }
@@ -404,6 +422,18 @@ class AgentController(context: Context) {
 
     /** Debug builds only: simulate the cores' runtimes dying (Pi's WebView renderer), to test recovery on a device. */
     fun debugCrashRuntime() = cores.all.forEach { it.debugCrash() }
+
+    /** The AI core new sessions use ("pi", "dsh"); unknown ids are ignored. */
+    fun selectCore(id: String) { if (cores[id] != null) cores.defaultId = id }
+
+    /**
+     * Model keys for dsh's launch environment, by provider route: the API keys saved with Pi's accounts, and a dummy
+     * one for the dev mock server's route. dsh reads them only at launch.
+     */
+    private fun dshKeys(): Map<String, String> = buildMap {
+        _state.value.providers.forEach { p -> accounts.savedApiKey(p.id)?.let { put(p.id, it) } }
+        put("mock", "mock")
+    }
 
     /** Debug builds only: new phone sessions use the phone's own screen, as without the shell helper. */
     fun debugMainOnly(on: Boolean) { screens.debugMainOnly = on }

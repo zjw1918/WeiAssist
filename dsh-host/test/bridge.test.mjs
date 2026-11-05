@@ -1,0 +1,188 @@
+// The bridge end to end: a real dsh (the weiassist profile, with this plugin installed) against a fake app side that
+// speaks the app's core contract, and the mock model server. Needs a dsh installation:
+//   DSH_RUN   a directory with node_modules/.bin/dsh (npm install @deepseek-ai/dsh)
+//   DSH_HOME  a Harness home whose profiles/weiassist has this plugin and profile/cordis.patch.yml
+// Skipped without them.
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
+import net from "node:net";
+import { join } from "node:path";
+import { after, before, test } from "node:test";
+import { MOCK_REPLY, startMock } from "../../tools/mock-openai.mjs";
+
+const { DSH_RUN, DSH_HOME } = process.env;
+const skip = !DSH_RUN || !DSH_HOME ? "set DSH_RUN and DSH_HOME to run against a dsh installation" : false;
+
+const catalog = JSON.parse(readFileSync(new URL("../../agent/src/main/resources/com/lanqi/weiassist/agent/tools.json", import.meta.url), "utf8")).tools;
+const specs = (set) => catalog.filter((t) => t.set === set).map(({ set: _s, ...spec }) => spec);
+
+/** The app's side of the bridge: a loopback server, the events it got, and host-call handlers per test. */
+class FakeApp {
+	messages = [];
+	waiters = [];
+	handlers = {};
+	toolCalls = [];
+	secret = "s3cret";
+
+	async listen() {
+		this.server = net.createServer((sock) => {
+			this.sock = sock;
+			sock.setEncoding("utf8");
+			let buf = "";
+			sock.on("data", (c) => {
+				buf += c;
+				let nl;
+				while ((nl = buf.indexOf("\n")) >= 0) {
+					const line = buf.slice(0, nl);
+					buf = buf.slice(nl + 1);
+					if (line.trim()) this.onMessage(JSON.parse(line));
+				}
+			});
+		});
+		await new Promise((r) => this.server.listen(0, "127.0.0.1", r));
+		return this.server.address().port;
+	}
+
+	onMessage(m) {
+		this.messages.push(m);
+		for (const w of [...this.waiters]) if (w.match(m)) { this.waiters.splice(this.waiters.indexOf(w), 1); w.resolve(m); }
+		if (m.id && ["before_tool", "tool", "tool_cancel"].includes(m.type)) {
+			if (m.type === "tool") this.toolCalls.push(m);
+			const h = this.handlers[m.type] ?? (() => null);
+			Promise.resolve(h(m)).then(
+				(value) => this.send({ type: "reply", id: m.id, ok: true, value: value ?? null }),
+				(e) => this.send({ type: "reply", id: m.id, ok: false, value: { message: String(e?.message ?? e) } }),
+			);
+		}
+	}
+
+	send(m) { this.sock.write(JSON.stringify(m) + "\n"); }
+
+	waitFor(type, pred = () => true, ms = 60_000) {
+		const match = (m) => m.type === type && pred(m);
+		const seen = this.messages.find(match);
+		if (seen) return Promise.resolve(seen);
+		return new Promise((resolve, reject) => {
+			const t = setTimeout(() => reject(new Error(`timed out waiting for ${type}`)), ms);
+			this.waiters.push({ match, resolve: (m) => { clearTimeout(t); resolve(m); } });
+		});
+	}
+}
+
+let app, mock, dsh, stderr = "";
+/** Session ids unique to this run: dsh keeps every session in DSH_HOME, and a resumed one has its old conversation. */
+const run = Date.now().toString(36);
+const id = (name) => `${name}-${run}`;
+
+before(async () => {
+	if (skip) return;
+	mock = await startMock(0, { log: () => {}, delayMs: 1 });
+	app = new FakeApp();
+	const port = await app.listen();
+	dsh = spawn(join(DSH_RUN, "node_modules/.bin/dsh"), ["--profile", "weiassist"], {
+		cwd: DSH_RUN,
+		env: { ...process.env, DSH_HOME, WEIASSIST_BRIDGE_PORT: String(port), WEIASSIST_BRIDGE_SECRET: app.secret, WEIASSIST_MOCK_URL: mock.url, WEIASSIST_KEY_MOCK: "test-key" },
+		stdio: ["ignore", "ignore", "pipe"],
+	});
+	dsh.stderr.on("data", (c) => { stderr += c; });
+	await app.waitFor("hello", () => true, 120_000).catch((e) => { throw new Error(`${e.message}\n${stderr}`); });
+});
+
+after(async () => {
+	dsh?.kill();
+	app?.server.close();
+	await mock?.close();
+});
+
+const configure = async (session, extra = {}) => {
+	const seen = app.messages.length; // a new configured, not one from earlier
+	app.send({ type: "configure", session, provider: "openai", modelId: "gpt-6.1-terra", baseUrl: mock.url, toolSpecs: [], ...extra });
+	return app.waitFor("configured", (m) => m.session === session && app.messages.indexOf(m) >= seen);
+};
+
+test("the bridge says hello with the app's secret", { skip }, async () => {
+	const hello = await app.waitFor("hello");
+	assert.equal(hello.secret, app.secret);
+});
+
+test("a chat: the answer streams as text_delta, ends with assistant_end, then idle", { skip }, async () => {
+	await configure(id("c1"));
+	app.send({ type: "prompt", session: id("c1"), text: "hello" });
+	const end = await app.waitFor("assistant_end", (m) => m.session === id("c1"));
+	assert.equal(end.text, MOCK_REPLY);
+	const deltas = app.messages.filter((m) => m.type === "text_delta" && m.session === id("c1")).map((m) => m.delta).join("");
+	assert.equal(deltas, MOCK_REPLY, "the answer streamed");
+	await app.waitFor("idle", (m) => m.session === id("c1"));
+	assert.ok(app.messages.some((m) => m.type === "agent_start" && m.session === id("c1")));
+	assert.ok(app.messages.some((m) => m.type === "transcript" && m.session === id("c1")));
+	const req = JSON.parse(mock.requests.at(-1).body);
+	assert.equal(req.model, "gpt-6.1-terra");
+	assert.match(mock.requests.at(-1).headers.authorization ?? "", /test-key/, "the app's key reached the provider");
+});
+
+test("phone tools: the app's specs reach the model, calls go through before_tool then tool", { skip }, async () => {
+	const order = [];
+	app.handlers = {
+		before_tool: (m) => { order.push(["before_tool", m.tool, m.call]); return null; },
+		tool: (m) => { order.push(["tool", m.name, m.call]); return { text: `tapped [${m.args.id}]\n\nScreen now:\napp: x` }; },
+	};
+	await configure(id("p1"), { tools: "phone", toolSpecs: specs("phone") });
+	const before = mock.requests.length;
+	app.send({ type: "prompt", session: id("p1"), text: "do it [[script:tap]]" });
+	await app.waitFor("idle", (m) => m.session === id("p1"));
+	const tools = JSON.parse(mock.requests[before].body).tools.map((t) => t.name);
+	assert.deepEqual(tools.sort(), specs("phone").map((t) => t.name).sort());
+	assert.deepEqual(order.map(([k, n]) => [k, n]), [["before_tool", "tap"], ["tool", "tap"]]);
+	assert.equal(order[0][2], order[1][2], "the same call id in both, so the app can match them");
+	const call = app.toolCalls.at(-1);
+	assert.deepEqual([call.session, call.args], [id("p1"), { id: 51 }]);
+	const start = app.messages.find((m) => m.type === "tool_start" && m.session === id("p1"));
+	assert.deepEqual([start.tool, start.args], ["tap", { id: 51 }]);
+	const end = app.messages.find((m) => m.type === "tool_end" && m.session === id("p1"));
+	assert.equal(end.isError, false);
+	assert.match(end.output, /tapped \[51\]/);
+	assert.match(mock.requests.at(-1).body, /Screen now/, "the model saw the result");
+});
+
+test("a screenshot reaches the model as an image", { skip }, async () => {
+	// A real (tiny) JPEG: dsh's image admission decodes it.
+	const jpeg = "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAAA//EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AN//Z";
+	app.handlers = {
+		before_tool: () => null,
+		tool: () => ({ text: "Screenshot (720 px wide; for tap_at, scale x and y by screen width / 720).", image: { data: jpeg, mimeType: "image/jpeg" } }),
+	};
+	await configure(id("img"), { tools: "phone", toolSpecs: specs("phone") });
+	const before = mock.requests.length;
+	app.send({ type: "prompt", session: id("img"), text: "look [[script:shot]]" });
+	await app.waitFor("idle", (m) => m.session === id("img"));
+	const outputs = mock.requests.slice(before).flatMap((r) => JSON.parse(r.body).input.filter((i) => i.type === "function_call_output"));
+	assert.match(JSON.stringify(outputs), /input_image/, `the picture went to the model: ${JSON.stringify(outputs).slice(0, 300)}`);
+});
+
+test("a call before_tool blocks never runs, and a terminating block ends the run", { skip }, async () => {
+	app.handlers = {
+		before_tool: (m) => (m.tool === "tap" ? { block: true, terminate: true, reason: "The user declined this action. Stop and tell the user." } : null),
+		tool: () => ({ text: "should not run" }),
+	};
+	const toolCallsBefore = app.toolCalls.length;
+	await configure(id("p2"), { tools: "phone", toolSpecs: specs("phone") });
+	const before = mock.requests.length;
+	app.send({ type: "prompt", session: id("p2"), text: "do it [[script:tap]]" });
+	await app.waitFor("idle", (m) => m.session === id("p2"));
+	assert.equal(app.toolCalls.length, toolCallsBefore, "declined: the app was never asked to tap");
+	const end = app.messages.find((m) => m.type === "tool_end" && m.session === id("p2"));
+	assert.equal(end.isError, true);
+	assert.match(end.output, /declined/);
+	assert.equal(mock.requests.length - before, 1, "ended: the model was not asked again");
+});
+
+test("a session comes back after its agent is gone (dispose, then configure again)", { skip }, async () => {
+	app.send({ type: "dispose", session: id("c1") });
+	const conf = await configure(id("c1"), { messages: [{ dsh: id("c1") }] });
+	assert.equal(conf.messages, 1, `restored from dsh own log: ${conf.resumeError}`);
+	const before = mock.requests.length;
+	app.send({ type: "prompt", session: id("c1"), text: "again" });
+	await app.waitFor("idle", (m) => m.session === id("c1") && app.messages.filter((x) => x.type === "idle" && x.session === id("c1")).length >= 2);
+	assert.match(mock.requests[before].body, /hello/, "the earlier conversation was in the request");
+});

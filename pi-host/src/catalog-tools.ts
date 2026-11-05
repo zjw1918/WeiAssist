@@ -8,8 +8,6 @@ export type ToolSpec = { name: string; label: string; description: string; param
 
 type ToolAnswer = { text?: string; isError?: boolean; image?: { data: string; mimeType: string } };
 
-let calls = 0;
-
 export const catalogTools = (session: string, specs: ToolSpec[]): AgentTool<any>[] =>
 	specs.map((spec) => ({
 		name: spec.name,
@@ -17,9 +15,10 @@ export const catalogTools = (session: string, specs: ToolSpec[]): AgentTool<any>
 		description: spec.description,
 		parameters: spec.parameters as any,
 		...(spec.parallel ? {} : { executionMode: "sequential" as const }),
-		execute: async (_id: string, args: any, signal?: AbortSignal) => {
+		execute: async (toolCallId: string, args: any, signal?: AbortSignal) => {
 			signal?.throwIfAborted(); // the user pressed Stop: don't start another call
-			const call = `c${++calls}`;
+			// The model's id for this call: before_tool saw the same one, and the app runs only a call it allowed.
+			const call = toolCallId;
 			const cancel = () => void bridgeCall("tool_cancel", { session, call }).catch(() => {});
 			signal?.addEventListener("abort", cancel, { once: true });
 			try {

@@ -54,7 +54,12 @@ Status legend: ✅ done · 🔨 next · ⬜ planned. Current status and todo: [P
   - ✅ The core contract (`:core`: `AgentCore`, `ToolHost`, `CoreAccounts`, `CoreRegistry`); Pi behind it (`:core-pi`); each session records its core.
   - ✅ Phone-tool policy (screen memory, confirm judgment, blind typing, step limit) moved from `pi-host/src/phone-tools.ts` into Kotlin (`PhoneTools`), so every core gets it.
   - ✅ One tool catalog (`tools.json`: names, schemas, descriptions) the app hands every core, and one `tool` host call that runs them (`ToolRouter`).
-  - ⬜ A second core: [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`). It needs Node ≥ 24.9 (no WebView), so it would run as a Node process with our own dsh plugin (tools on `ctx.tools`, gate/confirm on `tools/pre-execute`, streaming from `agent/assistant-stream`). Its SDK and ACP servers send no live text and the SDK can't cancel. Blockers on Android: `process.platform` is `android`, so dsh's native `flock` throws; no Android builds of `sharp` and `node-pty`.
+  - 🚧 A second core: [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 0.2.2-rc.1, a prototype (see ARCHITECTURE, "DeepSeek Harness"). It works on a phone in Ubuntu (proot) in Termux: chat with live text, phone tools on a session's own display, screenshots as images, every call through the app's `before_tool` (a declined call is tested on a computer). Next:
+    - a key proxy in the app, so dsh never holds API keys;
+    - the app's prompts shared like the catalog;
+    - attachments and thinking levels;
+    - a setting to choose the core;
+    - native Android builds of dsh's modules (upstream), so it can run in Termux without Ubuntu.
 
 ## 2b. Reach it from messaging apps
 
