@@ -45,6 +45,7 @@ import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import com.lanqi.weiassist.R
 import com.lanqi.weiassist.agent.Markdown
@@ -125,14 +126,14 @@ private fun Block(b: Markdown.Block) {
             annotated(b.text),
             style = when (b.level) { 1 -> type.titleLarge; 2 -> type.titleMedium; else -> type.titleSmall }.copy(fontWeight = FontWeight.SemiBold),
         )
-        is Markdown.Paragraph -> Text(annotated(b.text), style = type.bodyMedium)
-        is Markdown.ListBlock -> Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        is Markdown.Paragraph -> Text(annotated(b.text), style = answerStyle())
+        is Markdown.ListBlock -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             b.items.forEach { item ->
                 Row(Modifier.padding(start = (item.depth * 16).dp)) {
-                    Text(item.marker, style = type.bodyMedium, modifier = Modifier.width(if (item.marker == "•") 16.dp else 24.dp))
-                    if (item.code.isEmpty()) Text(annotated(item.text), style = type.bodyMedium)
+                    Text(item.marker, style = answerStyle(), modifier = Modifier.width(if (item.marker == "•") 16.dp else 24.dp))
+                    if (item.code.isEmpty()) Text(annotated(item.text), style = answerStyle())
                     else Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(annotated(item.text), style = type.bodyMedium)
+                        Text(annotated(item.text), style = answerStyle())
                         item.code.forEach { Block(it) }
                     }
                 }
@@ -213,6 +214,10 @@ private fun Table(t: Markdown.Table) {
 }
 
 private val MAX_CELL = 220.dp
+
+/** An answer's text: the body style with roomier lines (its 20sp is tight for long paragraphs, Chinese most of all). */
+@Composable
+private fun answerStyle(): TextStyle = MaterialTheme.typography.bodyMedium.let { remember(it) { it.copy(lineHeight = 1.6.em) } }
 
 /** Monospace with its own line height: the inherited body style's 24sp would double-space code. */
 val CodeStyle = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.5.sp, lineHeight = 18.sp)

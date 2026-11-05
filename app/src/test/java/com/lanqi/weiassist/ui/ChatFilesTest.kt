@@ -26,4 +26,11 @@ class ChatFilesTest {
         listOf("https://example.com/a.pdf", "http://x", "mailto:a@b.c", "tel:123", "#section", "")
             .forEach { assertFalse(it, isFileLink(it)) }
     }
+
+    @Test fun `a run split by a message sent while it worked has no empty footer row before that message`() {
+        val items = listOf(ChatItem.User("go"), ChatItem.Step("bash", "ls", ok = true), ChatItem.User("also this"),
+            ChatItem.Step("bash", "pwd", ok = true), ChatItem.Stats(RunStats(0, steps = 2)))
+        val entries = chatEntries(chatBlocks(items, busy = false))
+        assertEquals(listOf("Message", "Header", "Message", "Header", "Footer"), entries.map { it.javaClass.simpleName })
+    }
 }

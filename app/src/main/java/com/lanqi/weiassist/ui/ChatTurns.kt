@@ -153,8 +153,8 @@ sealed interface ChatEntry {
     val contentType: Any get() = if (this is Answer) block.javaClass else javaClass
 }
 
-val BLOCK_GAP = 14.dp
-val LINE_GAP = 8.dp
+val BLOCK_GAP = 20.dp
+val LINE_GAP = 12.dp
 
 /** The rows for [blocks]. Answers' Markdown is parsed once per text (see [parsedMarkdown]). */
 fun chatEntries(blocks: List<ChatBlock>): List<ChatEntry> {
@@ -175,8 +175,10 @@ fun chatEntries(blocks: List<ChatBlock>): List<ChatEntry> {
                         else -> Unit
                     }
                 }
-                // The live turn's streaming answer goes before its footer (see SessionScreen).
-                out += ChatEntry.Footer("${b.key}:f", next(), b)
+                // The live turn's streaming answer goes before its footer (see SessionScreen). A footer with nothing to
+                // show (a run split by a message sent while it worked: no answer to copy, its totals come at its end)
+                // is no row: an empty row still takes the list's spacing, a gap before the next message.
+                if (b.live || b.stats != null || b.answerText.isNotBlank()) out += ChatEntry.Footer("${b.key}:f", next(), b)
             }
         }
     }
