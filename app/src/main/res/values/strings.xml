@@ -7,8 +7,7 @@
     <string name="pi_runtime_info">Pi %1$s (pi-agent-core + pi-ai, running in a background service)</string>
     <string name="a11y_needed">First turn on WeiAssist in Settings → Accessibility, so it can see the screen and tap buttons.</string>
     <string name="open_a11y_settings">Open accessibility settings</string>
-    <string name="task_label">What should WeiAssist do?</string>
-    <string name="chat_label">Message to %1$s</string>
+    <string name="chat_label">What should WeiAssist do? (%1$s)</string>
     <string name="stop">Stop</string>
     <string name="send">Send</string>
     <string name="ai_events">AI events</string>

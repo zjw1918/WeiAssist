@@ -495,6 +495,9 @@ class AgentController(context: Context) {
     /** A core's name ("Pi", "DeepSeek Harness"), or its id for one this build doesn't have. */
     fun engineName(id: String): String = cores[id]?.info?.name ?: id
 
+    /** A core's short name for a session's row and title bar ("Pi", "DSH"). */
+    fun engineShortName(id: String): String = cores[id]?.info?.shortName ?: id
+
     private val _defaultEngine = MutableStateFlow(prefs.getString("core", null)?.takeIf { cores[it] != null } ?: PiEngine.ID)
     /** The AI core new sessions use (Settings). Each session keeps its own for good. */
     val defaultEngine: StateFlow<String> = _defaultEngine.asStateFlow()

@@ -291,7 +291,7 @@ private fun NewSessionSheet(vm: AppViewModel, onDismiss: () -> Unit) {
             val engine by vm.defaultEngine.collectAsStateWithLifecycle()
             OutlinedTextField(
                 vm.input, { vm.input = it }, modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 6,
-                label = { Text(if (vm.phoneMode) stringResource(R.string.task_label) else stringResource(R.string.chat_label, vm.engineName(engine))) },
+                label = { Text(stringResource(R.string.chat_label, vm.engineShortName(engine))) },
                 trailingIcon = if (vm.input.isEmpty()) null else { { ClearButton { vm.input = "" } } },
                 shape = MaterialTheme.shapes.medium,
             )
@@ -362,7 +362,7 @@ private fun SessionRow(s: SessionSummary, vm: AppViewModel, selected: Boolean?, 
                 )
                 val where = listOfNotNull(
                     // Which AI engine runs it, once there is a choice.
-                    if (vm.engines.size > 1) vm.engineName(s.core) else null,
+                    if (vm.engines.size > 1) vm.engineShortName(s.core) else null,
                     if (s.channel == "telegram") stringResource(R.string.kind_telegram) else null, s.app,
                 ).joinToString(" · ").ifEmpty { null }
                 if (s.status != SessionStatus.Idle || where != null) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
@@ -513,7 +513,7 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
                         Text(
                             listOfNotNull(
                                 stringResource(if (s.phone) R.string.kind_phone else R.string.kind_chat),
-                                if (vm.engines.size > 1) vm.engineName(s.core) else null,
+                                if (vm.engines.size > 1) vm.engineShortName(s.core) else null,
                                 if (s.channel == "telegram") stringResource(R.string.kind_telegram) else null, s.app,
                             ).joinToString(" · "),
                             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,

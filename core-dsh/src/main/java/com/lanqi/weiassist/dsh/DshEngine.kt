@@ -58,7 +58,7 @@ class DshEngine(
     /** How long dsh may take to boot and connect (installing nothing, but loading ~600 packages on a phone). */
     private val connectTimeoutMs: Long = 180_000,
 ) : AgentCore {
-    override val info = CoreInfo(ID, "DeepSeek Harness", CoreCapabilities())
+    override val info = CoreInfo(ID, "DeepSeek Harness", CoreCapabilities(), shortName = "DSH")
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _events = MutableSharedFlow<JSONObject>(extraBufferCapacity = 256)
