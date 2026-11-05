@@ -137,6 +137,21 @@ fun DshSetupScreen(vm: AppViewModel, termux: Termux, setup: DshSetup, onClose: (
                     }) { Text(stringResource(R.string.termux_allow)) }
                 }
                 GroupDivider()
+                // Not required to install, but without it some phones (HyperOS, ColorOS) freeze Termux in the
+                // background, and dsh boots for minutes or never answers.
+                val unrestricted = remember(seen) {
+                    ctx.getSystemService(android.os.PowerManager::class.java).isIgnoringBatteryOptimizations(Termux.PACKAGE)
+                }
+                Step(
+                    stringResource(R.string.dsh_step_battery),
+                    if (unrestricted) StepState.Done else if (installed) StepState.Failed else StepState.Pending,
+                    detail = if (installed && !unrestricted) stringResource(R.string.dsh_step_battery_hint) else null,
+                ) {
+                    if (installed && !unrestricted) FilledTonalButton(onClick = {
+                        open(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", Termux.PACKAGE, null)))
+                    }) { Text(stringResource(R.string.termux_app_settings)) }
+                }
+                GroupDivider()
                 val problem = status?.termuxProblem
                 Step(
                     stringResource(R.string.dsh_step_commands),

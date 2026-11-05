@@ -327,6 +327,8 @@
     <string name="dsh_section_install">安装</string>
     <string name="dsh_step_termux_app">Termux（GitHub 或 F-Droid 版）</string>
     <string name="dsh_step_permission">在 Termux 中运行命令的权限</string>
+    <string name="dsh_step_battery">允许 Termux 在后台运行</string>
+    <string name="dsh_step_battery_hint">在 Termux 的应用设置里，把省电策略设为“无限制”（手机有自启动开关的也请打开）。否则部分手机会在后台暂停 Termux，DeepSeek Harness 要几分钟才能启动，或一直没有回应。</string>
     <string name="dsh_step_commands">Termux 接受本应用的命令</string>
     <string name="dsh_step_commands_hint">打开 Termux，等它初始化完成。然后把下面的命令粘贴到 Termux 里，按回车，再回到这里：</string>
     <string name="dsh_copy_command">复制命令</string>
