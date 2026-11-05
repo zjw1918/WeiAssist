@@ -226,6 +226,15 @@ test("a subagent's calls go through the app's before_tool and show as steps of i
 	await app.waitFor("idle", (m) => m.session === id("sub"));
 	const answers = app.messages.filter((m) => m.type === "assistant_end" && m.session === id("sub")).map((m) => m.text).filter(Boolean);
 	assert.ok(answers.length > 0 && !answers.includes("listed"), JSON.stringify(answers));
+	// dsh woke the session when its subagent finished: the app gets that notice, before the session's reply to it.
+	const trigger = app.messages.findIndex((m) => m.type === "trigger" && m.session === id("sub") && m.source === "subagent-settled");
+	assert.ok(trigger > app.messages.indexOf(childEnd), "no trigger after the subagent finished");
+	assert.ok(app.messages[trigger].text.length > 0, "the notice's text");
+	assert.ok(app.messages.slice(trigger).some((m) => m.type === "assistant_end" && m.session === id("sub")), "no reply after the notice");
+	// And the session said idle only after that reply, as dsh's own hosts decide (agent idle, no subagent left).
+	const idles = app.messages.map((m, i) => (m.type === "idle" && m.session === id("sub") ? i : -1)).filter((i) => i >= 0);
+	assert.deepEqual(idles.length, 1, "one idle, at the end");
+	assert.ok(idles[0] > trigger, "idle came before the subagent's result reached the session");
 });
 
 test("Stop also stops the session's subagents", { skip }, async () => {
@@ -278,16 +287,14 @@ test("the app's prompt goes to the model, without the section for a tool dsh has
 		{ id: "chat", text: "You are Ada, a helpful assistant." },
 		{ id: "bash", text: "\n\nLinux (Termux): use pkg install.", forTool: "bash" },
 		{ id: "channel", text: "\n\nThe user is talking to you from Telegram." },
-		{ id: "subagents", text: "\n\nWait for every subagent.", forTool: "subagent" },
 	];
 	const before = mock.requests.length;
 	await configure(id("pr"), { toolSpecs: specs("bash"), promptSections: sections });
 	app.send({ type: "prompt", session: id("pr"), text: "hello" });
 	await app.waitFor("idle", (m) => m.session === id("pr"));
 	const system = JSON.stringify(JSON.parse(mock.requests[before].body).input[0]);
-	assert.match(system, /You are Ada, a helpful assistant\.\\n\\nThe user is talking to you from Telegram\.\\n\\nWait for every subagent\./);
+	assert.match(system, /You are Ada, a helpful assistant\.\\n\\nThe user is talking to you from Telegram\./);
 	assert.doesNotMatch(system, /Termux/, "dsh runs its own bash: no Termux guide");
-	assert.match(system, /Wait for every subagent\./, "a section for a tool only dsh has (its subagents) stays");
 	assert.match(system, /DeepSeek Harness/, "dsh's own words stay");
 });
 

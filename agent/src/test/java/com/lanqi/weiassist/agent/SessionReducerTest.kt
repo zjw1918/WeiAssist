@@ -113,7 +113,8 @@ class SessionReducerTest {
         val s = SessionSummary("a1", "比价", phone = true, status = SessionStatus.Paused, createdAt = 1, updatedAt = 2, preview = "p", error = true, app = "com.jd")
         assertEquals(s, SessionStore.summaryFrom(SessionStore.summaryJson(s)))
         assertEquals(null, SessionStore.summaryFrom(SessionStore.summaryJson(s.copy(app = null))).app)
-        listOf(ChatItem.User("u"), ChatItem.Assistant("a"), ChatItem.Error("e"), ChatItem.Step("tap", "[3]", null), ChatItem.Step("tap", "[3]", false, "no"))
+        listOf(ChatItem.User("u"), ChatItem.Assistant("a"), ChatItem.Error("e"), ChatItem.Step("tap", "[3]", null), ChatItem.Step("tap", "[3]", false, "no"),
+            ChatItem.Trigger("subagent-settled", "Subagent rust finished. Its closing message: …"))
             .forEach { assertEquals(it, SessionStore.itemFrom(SessionStore.itemJson(it))) }
     }
 
@@ -127,6 +128,15 @@ class SessionReducerTest {
         assertEquals(woke, again)
         val done = SessionReducer.reduce(again, msg("idle"), now = 9_000)
         assertFalse(done.busy)
+    }
+
+    @Test fun `a notice the core woke its agent with is kept where it came, and the session works on`() {
+        var s = SessionReducer.userMessage(idle, "compare", queued = false, now = 1)
+        s = SessionReducer.reduce(s, msg("assistant_end", "text" to "All three are running.", "stopReason" to "stop"), now = 2)
+        s = SessionReducer.reduce(s, msg("trigger", "source" to "subagent-settled", "text" to "Subagent go finished."), now = 3)
+        assertEquals(ChatItem.Trigger("subagent-settled", "Subagent go finished."), s.items.last())
+        assertTrue(s.busy)
+        assertEquals(SessionStatus.Running, s.summary.status)
     }
 
     @Test fun `a session keeps its core, and one saved before cores existed runs on Pi`() {

@@ -86,6 +86,13 @@ sealed interface ChatItem {
     data class File(val file: Attachment, val caption: String = "") : ChatItem
     /** The model's reasoning before an answer or a tool call: [text] is empty when the provider hides it. */
     data class Thinking(val text: String, val ms: Long) : ChatItem
+    /**
+     * The core woke its agent with something not from the user: DeepSeek Harness's notice that a subagent finished
+     * ([source] "subagent-settled") or wrote to it ("agent-message"), a team message, a background job's end. The
+     * agent's reply to it is a new part of the run, as dsh's own chat shows it ("Subtask status updated"); [text] is
+     * the notice, shown on request.
+     */
+    data class Trigger(val source: String, val text: String) : ChatItem
     /** Ends a run (one task, from the user's message to idle): what it took. */
     data class Stats(val run: RunStats) : ChatItem
 }

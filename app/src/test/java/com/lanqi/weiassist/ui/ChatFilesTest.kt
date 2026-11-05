@@ -20,20 +20,26 @@ class ChatFilesTest {
         assertEquals(listOf(file, ChatItem.Assistant("Done.")), turn.answer)
     }
 
-    @Test fun `an answer stays in view when subagents report back after it`() {
+    @Test fun `each notice a subagent woke the agent with starts a part of its own, so every reply stays in view`() {
         val spawn = ChatItem.Step("subagent", "Rust", ok = true)
         val fetch = ChatItem.Step("↳ web_fetch", "", ok = true)
-        val thought = ChatItem.Thinking("Zig is already in the table.", 900)
+        val running = ChatItem.Assistant("All three are running.")
+        val goDone = ChatItem.Trigger("subagent-settled", "Subagent go finished.")
         val table = ChatItem.Assistant("| Rust | Go | Zig |")
-        val note = ChatItem.Assistant("The table above already has all three.")
-        val items = listOf(ChatItem.User("compare"), spawn, fetch, table, fetch, thought, note, ChatItem.Stats(RunStats(0)))
-        val turn = chatBlocks(items, busy = false).last() as ChatBlock.Turn
-        assertEquals(listOf(table, note), turn.answer)
-        assertEquals(listOf(spawn, fetch, fetch, thought), turn.process)
-        // Without subagents nothing changes: what came between its own steps stays in the process.
-        val plain = listOf(ChatItem.User("x"), ChatItem.Step("bash", "ls", ok = true), ChatItem.Assistant("Checking."),
-            ChatItem.Step("bash", "pwd", ok = true), ChatItem.Assistant("Done."), ChatItem.Stats(RunStats(0)))
-        assertEquals(listOf(ChatItem.Assistant("Done.")), (chatBlocks(plain, busy = false).last() as ChatBlock.Turn).answer)
+        val zigDone = ChatItem.Trigger("subagent-settled", "Subagent zig finished.")
+        val thought = ChatItem.Thinking("Zig is already in the table.", 900)
+        val note = ChatItem.Assistant("The table above already has Zig.")
+        val items = listOf(ChatItem.User("compare"), spawn, running, fetch, goDone, table, zigDone, thought, note, ChatItem.Stats(RunStats(0)))
+        val blocks = chatBlocks(items, busy = false)
+        assertEquals(listOf("Message", "Turn", "Message", "Turn", "Message", "Turn"), blocks.map { it.javaClass.simpleName })
+        val turns = blocks.filterIsInstance<ChatBlock.Turn>()
+        // The subagent's step after "running" doesn't fold that reply away; each part answers its notice.
+        assertEquals(listOf(running), turns[0].answer)
+        assertEquals(listOf(spawn, fetch), turns[0].process)
+        assertEquals(listOf(table), turns[1].answer)
+        assertEquals(listOf(note), turns[2].answer)
+        assertEquals(listOf(thought), turns[2].process)
+        assertEquals(goDone, (blocks[2] as ChatBlock.Message).item)
     }
 
     @Test fun `paths are file links, but links to web pages and other apps are not`() {

@@ -331,6 +331,11 @@
     <string name="engine_dsh_outdated">Needs an update for this version of the app. Tap to update.</string>
     <string name="engine_dsh_updating">Updating in Termux…</string>
     <string name="engine_dsh_termux">Termux can\'t run commands for this app yet. Tap to check.</string>
+    <string name="trigger_subagent">Subtask status updated</string>
+    <string name="trigger_agent">Message from a subagent</string>
+    <string name="trigger_team">Message from the team</string>
+    <string name="trigger_job">Background job update</string>
+    <string name="trigger_other">Woken by an update</string>
     <string name="dsh_setup_title">Set up DeepSeek Harness</string>
     <string name="dsh_setup_row_hint">Install, update or check it in Termux</string>
     <string name="dsh_setup_intro">DeepSeek Harness runs in Termux, inside a small Ubuntu system. This setup installs Ubuntu, Node.js and DeepSeek Harness there. It needs about 1.5 GB of free space, downloads several hundred MB and can take 10–30 minutes, so use Wi-Fi and keep the phone charging. You can leave this screen: the setup goes on in Termux.</string>
