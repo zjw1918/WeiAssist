@@ -101,6 +101,12 @@ const configure = async (session, extra = {}) => {
 	return app.waitFor("configured", (m) => m.session === session && app.messages.indexOf(m) >= seen);
 };
 
+test("dsh starts clean: no plugin fails or stays pending", { skip }, async () => {
+	await app.waitFor("hello");
+	await new Promise((r) => setTimeout(r, 1000)); // late activation reports
+	assert.doesNotMatch(stderr, /did not activate|^error:|failed/im, stderr);
+});
+
 test("the bridge says hello with the app's secret", { skip }, async () => {
 	const hello = await app.waitFor("hello");
 	assert.equal(hello.secret, app.secret);
