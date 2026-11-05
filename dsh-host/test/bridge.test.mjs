@@ -278,14 +278,16 @@ test("the app's prompt goes to the model, without the section for a tool dsh has
 		{ id: "chat", text: "You are Ada, a helpful assistant." },
 		{ id: "bash", text: "\n\nLinux (Termux): use pkg install.", forTool: "bash" },
 		{ id: "channel", text: "\n\nThe user is talking to you from Telegram." },
+		{ id: "subagents", text: "\n\nWait for every subagent.", forTool: "subagent" },
 	];
 	const before = mock.requests.length;
 	await configure(id("pr"), { toolSpecs: specs("bash"), promptSections: sections });
 	app.send({ type: "prompt", session: id("pr"), text: "hello" });
 	await app.waitFor("idle", (m) => m.session === id("pr"));
 	const system = JSON.stringify(JSON.parse(mock.requests[before].body).input[0]);
-	assert.match(system, /You are Ada, a helpful assistant\.\\n\\nThe user is talking to you from Telegram\./);
+	assert.match(system, /You are Ada, a helpful assistant\.\\n\\nThe user is talking to you from Telegram\.\\n\\nWait for every subagent\./);
 	assert.doesNotMatch(system, /Termux/, "dsh runs its own bash: no Termux guide");
+	assert.match(system, /Wait for every subagent\./, "a section for a tool only dsh has (its subagents) stays");
 	assert.match(system, /DeepSeek Harness/, "dsh's own words stay");
 });
 

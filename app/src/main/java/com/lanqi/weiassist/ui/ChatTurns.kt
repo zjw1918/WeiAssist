@@ -79,7 +79,7 @@ sealed interface ChatBlock {
 
     /**
      * One run of the agent: its [process] (reasoning, steps, what it said between steps), then its [answer]
-     * (the text after its last step, and any errors), then what it took ([stats]; null for runs saved before
+     * (what it said after its own last step, and any errors), then what it took ([stats]; null for runs saved before
      * the app counted them, and for the run in progress, see [live]).
      */
     data class Turn(
@@ -98,16 +98,23 @@ sealed interface ChatBlock {
  * Groups a session's items into blocks: each user message, then the agent's turn up to its [ChatItem.Stats].
  * The last turn is [ChatBlock.Turn.live] while the session works (it may have no items yet).
  */
+/** How a subagent's step is named (dsh-host marks them so). */
+private const val SUBAGENT_STEP = "↳"
+
 fun chatBlocks(items: List<ChatItem>, busy: Boolean): List<ChatBlock> {
     val out = mutableListOf<ChatBlock>()
     var start = -1
     val turn = mutableListOf<ChatItem>()
     fun close(stats: RunStats?, live: Boolean) {
         if (turn.isEmpty() && stats == null && !live) return
-        val last = turn.indexOfLast { it is ChatItem.Step || it is ChatItem.Thinking }
+        // The answer is what the agent said after its own last step. Its reasoning after that, and its subagents'
+        // steps (↳) as they report back, don't push an answer into the process: with subagents the agent may answer,
+        // then remark on a late result; the answer must stay in view.
+        val last = turn.indexOfLast { it is ChatItem.Step && !it.tool.startsWith(SUBAGENT_STEP) }
+        val after = { it: ChatItem -> it is ChatItem.Thinking || it is ChatItem.Step }
         // Errors and files given to the user are part of the answer, wherever they came in the run.
-        val process = turn.take(last + 1).filterNot { it is ChatItem.Error || it is ChatItem.File }
-        val answer = turn.filterIndexed { i, it -> it is ChatItem.Error || it is ChatItem.File || i > last }
+        val process = turn.filterIndexed { i, it -> (i <= last || after(it)) && it !is ChatItem.Error && it !is ChatItem.File }
+        val answer = turn.filterIndexed { i, it -> it is ChatItem.Error || it is ChatItem.File || (i > last && !after(it)) }
         out += ChatBlock.Turn("t:${if (start < 0) items.size else start}", process, answer, stats, live)
         turn.clear(); start = -1
     }
