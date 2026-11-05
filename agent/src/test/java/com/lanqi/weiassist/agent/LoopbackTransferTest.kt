@@ -20,6 +20,7 @@ import java.net.URL
 class LoopbackTransferTest {
     private fun post(url: String, body: ByteArray): Int {
         val c = URL(url).openConnection() as HttpURLConnection
+        c.connectTimeout = 10_000; c.readTimeout = 10_000 // a bug fails the test instead of hanging it
         c.requestMethod = "POST"; c.doOutput = true; c.setFixedLengthStreamingMode(body.size)
         c.outputStream.use { it.write(body) }
         return c.responseCode.also { c.disconnect() }
@@ -27,6 +28,7 @@ class LoopbackTransferTest {
 
     private fun get(url: String): Pair<Int, ByteArray> {
         val c = URL(url).openConnection() as HttpURLConnection
+        c.connectTimeout = 10_000; c.readTimeout = 10_000
         val code = c.responseCode
         return (code to if (code == 200) c.inputStream.use { it.readBytes() } else ByteArray(0)).also { c.disconnect() }
     }
@@ -47,7 +49,9 @@ class LoopbackTransferTest {
         assertEquals(413, code)
         assertFalse(ok)
         val (codes, ok2) = LoopbackTransfer.receive(dest, 1_000_000) { url ->
-            withContext(Dispatchers.IO) { listOf(post(url.dropLast(1) + "0", data), post(url, data)) }
+            // Another last hex digit: always "0" would be the right secret one time in 16.
+            val wrong = url.dropLast(1) + (if (url.last() == '0') "1" else "0")
+            withContext(Dispatchers.IO) { listOf(post(wrong, data), post(url, data)) }
         }
         // A wrong secret is turned away, and the right one still gets through.
         assertEquals(listOf(403, 200), codes)
