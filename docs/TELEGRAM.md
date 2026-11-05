@@ -6,7 +6,7 @@ WeiAssist on your phone fetches the bot's messages from Telegram itself.
 
 ## Set it up (about 2 minutes)
 
-1. In Telegram, open [@BotFather](https://t.me/BotFather), send `/newbot` and choose a name. BotFather gives
+1. In Telegram, open [BotFather](https://t.me/BotFather), send `/newbot` and choose a name. BotFather gives
    you a **token** (it looks like `123456789:AA…`).
 2. In WeiAssist: **Settings → Telegram**, paste the token, tap **Connect**.
 3. Tap **Pair a Telegram account**, then **Open in Telegram** and press **Start**. (Or send the code shown in the

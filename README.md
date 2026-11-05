@@ -76,7 +76,7 @@ conversation keeps the engine it started with.
     alt="Telegram on a Mac and the phone side by side: asked for San Diego's weather, the assistant answers using Termux; asked to email the forecast with Gmail, it writes the email on the phone and asks before tapping Send, in Telegram and on the phone; Deny is tapped in Telegram and nothing is sent">
 </p>
 
-Create a bot with @BotFather, paste its token in **Settings → Telegram** and pair your account. Each chat is a
+Create a bot with [BotFather](https://t.me/BotFather), paste its token in **Settings → Telegram** and pair your account. Each chat is a
 conversation; it streams answers, takes photos and files, and asks you (✅ / ❌) before anything risky. No server
 needed. Details: [docs/TELEGRAM.md](docs/TELEGRAM.md).
 

@@ -63,7 +63,7 @@
   <img src="docs/images/telegram-demo.gif" width="560" alt="Mac 上的 Telegram 和手机并排：问圣地亚哥的天气，助手用 Termux 回答；让它用 Gmail 发送天气预报，它在手机上写好邮件，点发送前在 Telegram 和手机上同时询问；在 Telegram 里点了拒绝，什么也没发出">
 </p>
 
-用 @BotFather 创建一个机器人，把它的 token 粘贴到 **设置 → Telegram**，再配对你的账号。每个聊天就是一个对话：回答实时显示，能收发照片和文件，有风险的操作前会先问你（✅ / ❌）。不需要服务器。详见 [docs/TELEGRAM.md](docs/TELEGRAM.md)。
+用 [BotFather](https://t.me/BotFather) 创建一个机器人，把它的 token 粘贴到 **设置 → Telegram**，再配对你的账号。每个聊天就是一个对话：回答实时显示，能收发照片和文件，有风险的操作前会先问你（✅ / ❌）。不需要服务器。详见 [docs/TELEGRAM.md](docs/TELEGRAM.md)。
 
 ## 隐私与安全
 
