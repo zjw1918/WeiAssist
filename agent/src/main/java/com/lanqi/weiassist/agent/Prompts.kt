@@ -30,6 +30,8 @@ object Prompts {
         return buildList {
             add(section(if (s.phone) "phone" else "chat"))
             if (s.termux) add(section("bash", "\n\n", forTool = "bash"))
+            // Only a core with subagents of its own (DeepSeek Harness) keeps it.
+            add(section("subagents", "\n\n", forTool = "subagent"))
             if (s.channel != null) {
                 add(section("channel", "\n\n"))
                 if (s.termux) add(section("channel-files", "\n", forTool = "send_file"))

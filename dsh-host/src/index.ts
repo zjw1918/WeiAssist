@@ -270,9 +270,12 @@ export class Bridge {
 		const kind = c.tools ?? "chat";
 		// The app's tools dsh keeps: those it has no tool of its own for (its own bash stays, see setup).
 		const kept = new Set(specs.filter((t) => this.ctx.tools.get(t.name) === undefined).map((t) => t.name));
+		// A prompt section for a tool counts when the session has it: the app's tool, kept; or, for a tool the app
+		// doesn't offer, dsh's own (its subagents). Not for an app tool dsh replaces: its bash isn't the app's.
+		const has = (tool: string) => kept.has(tool) || (!specs.some((t) => t.name === tool) && this.ctx.tools.get(tool) !== undefined);
 		const prompt = c.systemPrompt
 			?? (c.promptSections?.length
-				? c.promptSections.filter((p) => !p.forTool || kept.has(p.forTool)).map((p) => p.text).join("").trim()
+				? c.promptSections.filter((p) => !p.forTool || has(p.forTool)).map((p) => p.text).join("").trim()
 				: DEFAULT_PROMPTS[kind]!.replace("{name}", "WeiAssist"));
 		// Tools and prompt are set up with the Agent; when they change, the Agent is replaced (the log stays).
 		const shape = JSON.stringify({ specs, prompt });

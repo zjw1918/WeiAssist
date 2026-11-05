@@ -135,7 +135,8 @@ data class SessionConfig(
 /**
  * One part of a session's system prompt. [text] starts with what joins it to the part before (none for the first):
  * the parts a core keeps, put together, are the prompt. [forTool]: only for a core that gives the model the app's
- * tool of that name (the Termux bash section is wrong for a core whose own bash runs elsewhere).
+ * tool of that name (the Termux bash section is wrong for a core whose own bash runs elsewhere), or, for a tool the
+ * app doesn't offer, has its own of that name (DeepSeek Harness's subagents).
  */
 data class PromptSection(val id: String, val text: String, val forTool: String? = null)
 
