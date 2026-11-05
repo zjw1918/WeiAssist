@@ -57,7 +57,11 @@ interface AgentCore {
 }
 
 /** [id] is stable and saved with each session, and names its transcript file: lowercase letters and digits. */
-data class CoreInfo(val id: String, val name: String, val capabilities: CoreCapabilities = CoreCapabilities()) {
+data class CoreInfo(
+    val id: String, val name: String, val capabilities: CoreCapabilities = CoreCapabilities(),
+    /** Its name where space is tight (a session's row and title bar), e.g. "DSH"; [name] by default. */
+    val shortName: String = name,
+) {
     init {
         require(ID.matches(id) && id !in RESERVED_IDS) { "bad core id: $id" }
     }

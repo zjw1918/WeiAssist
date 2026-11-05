@@ -139,6 +139,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** An engine's name for a session's [SessionSummary.core]. */
     fun engineName(id: String): String = controller.value?.engineName(id) ?: id
 
+    /** Its short name ("DSH"), for a session's row and title bar. */
+    fun engineShortName(id: String): String = controller.value?.engineShortName(id) ?: id
+
     /** The engine new sessions use (Settings). */
     @OptIn(ExperimentalCoroutinesApi::class)
     val defaultEngine: StateFlow<String> = controller

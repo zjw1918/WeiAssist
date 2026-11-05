@@ -7,8 +7,7 @@
     <string name="pi_runtime_info">Pi %1$s（pi-agent-core + pi-ai，运行在后台服务里）</string>
     <string name="a11y_needed">需要先在“设置 → 无障碍”里打开小维助手，它才能看屏幕、点按钮。</string>
     <string name="open_a11y_settings">打开无障碍设置</string>
-    <string name="task_label">要小维助手做什么</string>
-    <string name="chat_label">发给 %1$s</string>
+    <string name="chat_label">要小维助手做什么（%1$s）</string>
     <string name="stop">停止</string>
     <string name="send">发送</string>
     <string name="ai_events">AI 事件</string>
