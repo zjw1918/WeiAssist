@@ -410,10 +410,10 @@ class AgentController(context: Context) {
     }
 
     // ---- sessions ---------------------------------------------------------------------------------
-    /** Start a task in a new session, on [engine] (default: the saved choice); returns its id. */
-    suspend fun startTask(text: String, phoneTools: Boolean, attachments: List<Attachment> = emptyList(), engine: String? = null): String {
+    /** Start a task in a new session, on the engine chosen in Settings; returns its id. */
+    suspend fun startTask(text: String, phoneTools: Boolean, attachments: List<Attachment> = emptyList()): String {
         loaded.await()
-        val id = sessions.create(phone = phoneTools, core = engine?.takeIf { cores[it] != null } ?: cores.defaultId)
+        val id = sessions.create(phone = phoneTools)
         sessions.send(id, text, attachments)
         return id
     }
@@ -441,7 +441,7 @@ class AgentController(context: Context) {
     fun engineName(id: String): String = cores[id]?.info?.name ?: id
 
     private val _defaultEngine = MutableStateFlow(prefs.getString("core", null)?.takeIf { cores[it] != null } ?: PiEngine.ID)
-    /** The AI core new sessions use, unless the user picks another for one. Each session keeps its own for good. */
+    /** The AI core new sessions use (Settings). Each session keeps its own for good. */
     val defaultEngine: StateFlow<String> = _defaultEngine.asStateFlow()
 
     /** The AI core new sessions use from now on ("pi", "dsh"), saved; unknown ids are ignored. */
