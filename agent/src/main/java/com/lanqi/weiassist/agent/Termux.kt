@@ -12,6 +12,7 @@ import android.os.PowerManager
 import android.util.Log
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -90,7 +91,7 @@ class Termux(context: Context) {
         """.trimIndent()
         // $0 = what to say when dsh isn't set up; then the environment.
         val args = arrayOf("-c", script, DshSetup.NOT_SET_UP) + env.map { (k, v) -> "$k=$v" }
-        val r = execute(args, 30) ?: return "No answer from Termux. Open Termux once, and allow it to run in the background."
+        val r = execute(args, 30) ?: return NO_ANSWER
         if (r.getInt("err", RESULT_OK) != RESULT_OK) return "Termux could not start DeepSeek Harness: ${r.getString("errmsg").orEmpty()}"
         val code = r.getInt("exitCode", -1)
         if (code != 0) return r.getString("stdout").orEmpty().ifBlank { r.getString("stderr").orEmpty() }.ifBlank { "exit code $code" }
@@ -250,18 +251,76 @@ class Termux(context: Context) {
         return r.getString("stdout").orEmpty().trim().ifEmpty { null }
     }
 
-    /** For Settings: can commands run, and are the basic tools there? Null text = Termux not usable (see [setupProblem]). */
-    suspend fun check(): Pair<Boolean, String> {
-        setupProblem()?.let { return false to it }
+    /** What [inspect] found. [problem]: Termux can't run this app's commands (then the rest is unknown). */
+    data class Inspection(
+        val problem: String? = null,
+        val bash: String? = null,
+        val curl: Boolean = false,
+        val tmux: Boolean = false,
+        /** The HTTP status a test request got, or null if it got none. */
+        val network: Int? = null,
+    ) {
+        val tools get() = curl && tmux
+        val ready get() = problem == null && tools && network != null
+    }
+
+    /** For the setup screen: can commands run, are the basic tools there, and does Termux reach the internet? */
+    suspend fun inspect(): Inspection {
+        setupProblem()?.let { return Inspection(problem = it) }
         val script = """
-            echo "bash ${'$'}{BASH_VERSION%%(*}"
-            for t in curl tmux; do command -v "${'$'}{t}" > /dev/null && echo "${'$'}{t} ✓" || echo "${'$'}{t} ✗  (pkg install -y ${'$'}{t})"; done
-            curl -s -o /dev/null --max-time 8 -w "network ✓ (HTTP %{http_code})\n" https://wttr.in 2> /dev/null || echo "network ✗"
+            echo "bash=${'$'}{BASH_VERSION%%(*}"
+            for t in curl tmux; do command -v "${'$'}{t}" > /dev/null && echo "${'$'}{t}=1"; done
+            command -v curl > /dev/null && curl -s -o /dev/null --max-time 8 -w "network=%{http_code}\n" https://wttr.in 2> /dev/null
+            exit 0
         """.trimIndent()
-        val r = execute(arrayOf("-c", script), 30) ?: return false to "No answer from Termux. Open Termux once, and allow it to run in the background."
-        if (r.getInt("err", RESULT_OK) != RESULT_OK) return false to "${r.getString("errmsg").orEmpty()}\n\n$SETUP"
-        val out = (r.getString("stdout").orEmpty() + r.getString("stderr").orEmpty()).trim()
-        return !out.contains('✗') to out
+        val r = execute(arrayOf("-c", script), 30) ?: return Inspection(problem = NO_ANSWER)
+        if (r.getInt("err", RESULT_OK) != RESULT_OK) return Inspection(problem = r.getString("errmsg").orEmpty().ifBlank { "Termux could not run the command." })
+        return parseInspection(r.getString("stdout").orEmpty())
+    }
+
+    private val _installing = kotlinx.coroutines.flow.MutableStateFlow(false)
+    /** [installTools] is running. */
+    val installing: kotlinx.coroutines.flow.StateFlow<Boolean> = _installing
+    private val _installOutput = kotlinx.coroutines.flow.MutableStateFlow<Pair<Boolean, String>?>(null)
+    /** How the last [installTools] went (it worked, its output), or null before one. */
+    val installOutput: kotlinx.coroutines.flow.StateFlow<Pair<Boolean, String>?> = _installOutput
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+
+    /**
+     * Install the basic tools (curl, tmux) after upgrading Termux's packages, in the background (it goes on when the
+     * setup screen is left). Termux's pkg picks a random mirror and some are years behind ("unmet dependencies"):
+     * then current mirrors are pinned and apt-get used, as in dsh-host/termux/setup-proot.sh.
+     */
+    fun installTools() {
+        if (!_installing.compareAndSet(false, true)) return
+        scope.launch {
+            val awake = app.getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "weiassist:termux-tools")
+            awake.acquire(INSTALL_SEC * 1000L)
+            try {
+                val script = """
+                    export DEBIAN_FRONTEND=noninteractive
+                    o=(-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
+                    pkg update -y "${'$'}{o[@]}" && pkg upgrade -y "${'$'}{o[@]}" && pkg install -y "${'$'}{o[@]}" curl tmux && exit 0
+                    for m in https://packages-cf.termux.dev/apt/termux-main https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main \
+                        https://mirrors.ustc.edu.cn/termux/apt/termux-main https://mirrors.aliyun.com/termux/termux-main; do
+                      echo "Trying the Termux mirror ${'$'}{m}"
+                      echo "deb ${'$'}{m} stable main" > "${'$'}{PREFIX}/etc/apt/sources.list"
+                      apt-get update "${'$'}{o[@]}" && apt-get -y "${'$'}{o[@]}" full-upgrade && apt-get -y "${'$'}{o[@]}" install curl tmux && exit 0
+                    done
+                    echo "No Termux mirror could install curl and tmux."
+                    exit 3
+                """.trimIndent()
+                val r = execute(arrayOf("-c", script), INSTALL_SEC)
+                _installOutput.value = when {
+                    r == null -> false to NO_ANSWER
+                    r.getInt("err", RESULT_OK) != RESULT_OK -> false to r.getString("errmsg").orEmpty()
+                    else -> (r.getInt("exitCode", -1) == 0) to (r.getString("stdout").orEmpty() + "\n" + r.getString("stderr").orEmpty()).trim()
+                }
+            } finally {
+                if (awake.isHeld) awake.release()
+                _installing.value = false
+            }
+        }
     }
 
     /** Why bash can't run now (for the model and Settings), or null when it can. */
@@ -321,6 +380,18 @@ class Termux(context: Context) {
         private const val PREFIX = "/data/data/com.termux/files/usr"
         private const val HOME = "/data/data/com.termux/files/home"
         internal const val RESULT_OK = -1 // Activity.RESULT_OK: Termux's "no error"
+        private const val INSTALL_SEC = 30 * 60L
+        const val NO_ANSWER = "No answer from Termux. Open Termux once, and allow it to run in the background."
+
+        /** [inspect]'s output (key=value lines). Pure, for tests. */
+        internal fun parseInspection(out: String): Inspection {
+            val v = out.lines().mapNotNull { l -> l.indexOf('=').takeIf { it > 0 }?.let { l.substring(0, it).trim() to l.substring(it + 1).trim() } }.toMap()
+            return Inspection(
+                bash = v["bash"], curl = v["curl"] == "1", tmux = v["tmux"] == "1",
+                network = v["network"]?.toIntOrNull()?.takeIf { it > 0 },
+            )
+        }
+
         private const val KEEP = 12_000 // characters of each stream the model sees
 
         val SETUP = """

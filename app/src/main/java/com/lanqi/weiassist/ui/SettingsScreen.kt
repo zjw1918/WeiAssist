@@ -47,10 +47,16 @@ fun SettingsTab(vm: AppViewModel, s: AgentState) {
     fun open(intent: Intent) = runCatching { ctx.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
     // DeepSeek Harness's setup screen is open (it replaces this tab, like a provider's form).
     var dshSetup by rememberSaveable { mutableStateOf(false) }
+    // Likewise Linux commands' (Termux) setup screen.
+    var termuxSetup by rememberSaveable { mutableStateOf(false) }
     val termux = vm.termux
     val setup = vm.dshSetup
     if (dshSetup && termux != null && setup != null) {
         DshSetupScreen(vm, termux, setup) { dshSetup = false }
+        return
+    }
+    if (termuxSetup && termux != null) {
+        TermuxSetupScreen(termux) { termuxSetup = false }
         return
     }
     Scaffold(
@@ -85,9 +91,24 @@ fun SettingsTab(vm: AppViewModel, s: AgentState) {
             SectionHeader(stringResource(R.string.telegram_title))
             Group { Column(Modifier.padding(GroupContentPadding)) { TelegramSection(vm) } }
 
-            vm.termux?.let { termux ->
+            termux?.let { t ->
                 SectionHeader(stringResource(R.string.termux_title))
-                Group { Column(Modifier.padding(GroupContentPadding)) { TermuxSection(termux) } }
+                Group {
+                    // Only what the app knows without asking Termux; the setup screen checks the rest.
+                    val local = rememberTermuxView(t).local
+                    GroupRow(
+                        title = stringResource(R.string.termux_setup_row), icon = R.drawable.ic_terminal,
+                        description = when {
+                            !local.installed -> stringResource(R.string.termux_missing)
+                            !local.runnable -> stringResource(R.string.termux_play_build)
+                            !local.permitted -> stringResource(R.string.termux_no_permission)
+                            else -> stringResource(R.string.termux_row_allowed)
+                        },
+                        descriptionColor = if (local.sendable) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                        onClick = { termuxSetup = true },
+                        trailing = { AppIcon(R.drawable.ic_chevron_right, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    )
+                }
             }
 
             // Per-app language is a system screen on Android 13+.

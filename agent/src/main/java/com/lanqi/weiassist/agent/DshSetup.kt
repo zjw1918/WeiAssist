@@ -87,7 +87,7 @@ class DshSetup(context: Context, private val termux: Termux, private val scope: 
             [ -f "${'$'}{d}/setup.log" ] && tail -c 12000 "${'$'}{d}/setup.log"
             exit 0
         """.trimIndent()
-        val r = termux.execute(arrayOf("-c", script), 20) ?: return Status(termuxProblem = NO_ANSWER)
+        val r = termux.execute(arrayOf("-c", script), 20) ?: return Status(termuxProblem = Termux.NO_ANSWER)
         if (r.getInt("err", Termux.RESULT_OK) != Termux.RESULT_OK) return Status(termuxProblem = r.getString("errmsg").orEmpty().ifBlank { "Termux could not run the command." })
         return parse(r.getString("stdout").orEmpty(), stamp)
     }
@@ -144,7 +144,6 @@ class DshSetup(context: Context, private val termux: Termux, private val scope: 
         /** The longest a setup may run (slow networks: Ubuntu, Node and ~600 npm packages). */
         private const val TIMEOUT_SEC = 2 * 60 * 60L
         private const val LOG_MARK = "--- log ---"
-        const val NO_ANSWER = "No answer from Termux. Open Termux once, and allow it to run in the background."
         const val NOT_SET_UP = "DeepSeek Harness is not set up yet: set it up in Settings → AI engine."
         private val STEP_LINE = Regex("""^== \[([a-z]+)](?: (.*))?$""")
         private val BLANK_LINES = Regex("""\n\s*\n(\s*\n)+""")
