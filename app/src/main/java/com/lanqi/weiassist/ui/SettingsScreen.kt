@@ -27,6 +27,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import com.lanqi.weiassist.agent.DshSetup
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
@@ -136,7 +138,17 @@ private fun EngineSection(vm: AppViewModel, s: AgentState, openDshSetup: () -> U
     val default by vm.defaultEngine.collectAsStateWithLifecycle()
     // Why each engine can't run now (null: it can); absent while checking.
     val problems = remember { mutableStateMapOf<String, String?>() }
-    LaunchedEffect(engines) { engines.forEach { e -> problems[e.id] = vm.engineProblem(e.id) } }
+    // DeepSeek Harness: why, in the user's words; checked again while its setup runs (an automatic update after an
+    // app update), so the row turns ready by itself.
+    var dsh by remember { mutableStateOf<DshSetup.Readiness?>(null) }
+    LaunchedEffect(engines) {
+        while (true) {
+            engines.forEach { e -> problems[e.id] = vm.engineProblem(e.id) }
+            if (engines.any { it.id == DSH }) dsh = vm.dshReadiness()
+            if (dsh != DshSetup.Readiness.Updating) break
+            delay(5_000)
+        }
+    }
     SectionHeader(stringResource(R.string.section_engine))
     Group {
         engines.forEachIndexed { i, e ->
@@ -149,7 +161,12 @@ private fun EngineSection(vm: AppViewModel, s: AgentState, openDshSetup: () -> U
                 description = when {
                     e.id == "pi" -> stringResource(R.string.engine_pi_info, s.piVersion.orEmpty())
                     !checked -> stringResource(R.string.engine_checking)
-                    problem != null && e.id == DSH -> stringResource(R.string.engine_dsh_not_ready)
+                    problem != null && e.id == DSH -> when (dsh) {
+                        DshSetup.Readiness.Outdated -> stringResource(R.string.engine_dsh_outdated)
+                        DshSetup.Readiness.Updating -> stringResource(R.string.engine_dsh_updating)
+                        is DshSetup.Readiness.Termux -> stringResource(R.string.engine_dsh_termux)
+                        else -> stringResource(R.string.engine_dsh_not_ready)
+                    }
                     problem != null -> problem
                     else -> stringResource(R.string.engine_ready)
                 },

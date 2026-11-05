@@ -154,6 +154,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** Why [id] can't run now (DeepSeek Harness not set up in Termux…), or null. */
     suspend fun engineProblem(id: String): String? = controller.value?.engineProblem(id)
 
+    /** Whether DeepSeek Harness can run now, and if not, why (Settings' words). */
+    suspend fun dshReadiness(): com.lanqi.weiassist.agent.DshSetup.Readiness? = controller.value?.dshSetup?.readiness()
+
     /** Sets DeepSeek Harness up in Termux, for its setup screen. */
     val dshSetup get() = controller.value?.dshSetup
 

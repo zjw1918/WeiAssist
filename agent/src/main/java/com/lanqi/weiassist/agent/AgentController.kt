@@ -218,8 +218,10 @@ class AgentController(context: Context) {
      * says why with that message too, as before.
      */
     private fun warmDsh() {
-        if (cores.defaultId != com.lanqi.weiassist.dsh.DshEngine.ID) return
         scope.launch(Dispatchers.IO) {
+            // An app update with a new bridge: bring dsh's setup up to date by itself, whichever engine is the default.
+            if (termux.installed()) runCatching { dshSetup.updateIfOutdated() }.onFailure { android.util.Log.w("DshSetup", "update: ${it.message}") }
+            if (cores.defaultId != com.lanqi.weiassist.dsh.DshEngine.ID) return@launch
             if (dshSetup.problem() != null) return@launch
             runCatching { dsh.start() }.onFailure { android.util.Log.w("DshEngine", "warm-up: ${it.message}") }
         }

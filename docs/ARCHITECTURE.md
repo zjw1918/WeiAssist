@@ -137,7 +137,9 @@ entry in the registry.
   a wake lock. The script reports through files, so the screen picks it up again after the app was closed:
   `setup.log` (each step starts with `== [id]`, the run ends with `== [done]` or `== [failed] <code>`), `setup.pid`
   while it runs, and `installed` (a hash of the materials) when it worked. dsh counts as set up only with this APK's
-  hash, so an app with a newer bridge asks for the setup again; done steps are skipped.
+  hash. After an app update with other materials, the app runs the setup again by itself when it opens
+  (`DshSetup.updateIfOutdated`, with the user's last mirrors choice; done steps are skipped, about a minute), and
+  Settings says "Updating in Termux…" meanwhile. A first setup is always the user's to start.
 - **dsh's version:** the script installs `DSH_TESTED` (the version the bridge and profile patch were tested with)
   unless the app passes `DSH_VERSION`. The setup screen shows the installed version, checks npm's `latest`/`next`
   tags on request and can install the newer one, with a warning, or go back to the tested one. The choice is kept

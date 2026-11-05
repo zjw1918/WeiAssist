@@ -127,17 +127,53 @@ class DshSetup(context: Context, private val termux: Termux, private val scope: 
     }
 
     /** Why dsh can't run now, or null when it can. For logs and the model; Settings shows its own words. */
-    suspend fun problem(): String? {
-        termux.setupProblem()?.let { return it }
+    suspend fun problem(): String? = when (val r = readiness()) {
+        is Readiness.Termux -> r.problem
+        Readiness.Ready -> null
+        Readiness.Updating -> "DeepSeek Harness is being set up in Termux. Wait for it to finish (Settings → AI engine)."
+        Readiness.Outdated -> "DeepSeek Harness needs an update for this version of the app: run its setup again in Settings → AI engine."
+        Readiness.NotSetUp -> NOT_SET_UP
+    }
+
+    /** Whether dsh can run now, and if not, why: for Settings' words and the automatic update. */
+    sealed interface Readiness {
+        data object Ready : Readiness
+        /** Never set up (or nothing of it is left). */
+        data object NotSetUp : Readiness
+        /** Set up by an app whose materials differ (an app update): the setup must run again, which [updateIfOutdated] does. */
+        data object Outdated : Readiness
+        /** The setup runs now. */
+        data object Updating : Readiness
+        /** Termux can't run commands for this app. */
+        data class Termux(val problem: String) : Readiness
+    }
+
+    suspend fun readiness(): Readiness {
+        termux.setupProblem()?.let { return Readiness.Termux(it) }
         val s = status()
         return when {
-            s.termuxProblem != null -> s.termuxProblem
-            s.current -> null
-            s.running -> "DeepSeek Harness is being set up in Termux. Wait for it to finish (Settings → AI engine)."
-            s.outdated -> "DeepSeek Harness needs an update for this version of the app: run its setup again in Settings → AI engine."
-            else -> NOT_SET_UP
+            s.termuxProblem != null -> Readiness.Termux(s.termuxProblem)
+            s.current -> Readiness.Ready
+            s.running || launching.value -> Readiness.Updating
+            s.outdated -> Readiness.Outdated
+            else -> Readiness.NotSetUp
         }
     }
+
+    /**
+     * dsh was set up, by an app with other materials (this app was updated): run the setup again, in the background,
+     * with the user's last choices. Done steps are skipped, so it takes about a minute; dsh can't run until it has
+     * (the bridge must match the app). A first setup is the user's to start. Returns whether it started one.
+     */
+    suspend fun updateIfOutdated(): Boolean {
+        if (readiness() != Readiness.Outdated) return false
+        Log.i(TAG, "set up by another version of the app: updating")
+        return start(defaultMirrors())
+    }
+
+    /** Download from mirrors in China: the user's last choice, else by the phone's language and region. */
+    fun defaultMirrors(): Boolean = prefs.getBoolean(KEY_MIRRORS,
+        java.util.Locale.getDefault().let { it.language == "zh" && it.country != "TW" && it.country != "HK" })
 
     /** Ask Termux where the setup stands. */
     suspend fun status(): Status {
@@ -167,7 +203,7 @@ class DshSetup(context: Context, private val termux: Termux, private val scope: 
     fun start(mirrors: Boolean, version: String? = chosenVersion): Boolean {
         if (!_launching.compareAndSet(false, true)) return false
         val dsh = version?.takeIf { it != testedVersion }
-        prefs.edit().apply { if (dsh == null) remove(KEY_VERSION) else putString(KEY_VERSION, dsh) }.apply()
+        prefs.edit().apply { if (dsh == null) remove(KEY_VERSION) else putString(KEY_VERSION, dsh) }.putBoolean(KEY_MIRRORS, mirrors).apply()
         scope.launch(Dispatchers.IO) {
             // The phone must not sleep halfway through the downloads (Termux runs it, but the CPU is the phone's).
             val awake = app.getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "weiassist:dsh-setup")
@@ -217,6 +253,7 @@ class DshSetup(context: Context, private val termux: Termux, private val scope: 
         private const val TIMEOUT_SEC = 2 * 60 * 60L
         private const val LOG_MARK = "--- log ---"
         private const val KEY_VERSION = "version"
+        private const val KEY_MIRRORS = "mirrors"
         private val SPEC = Regex("""[A-Za-z0-9][A-Za-z0-9._+-]{0,63}""")
         private val TESTED_LINE = Regex("""(?m)^DSH_TESTED="([^"]+)"$""")
         const val NOT_SET_UP = "DeepSeek Harness is not set up yet: set it up in Settings → AI engine."
