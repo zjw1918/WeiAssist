@@ -37,10 +37,11 @@ import { OPENAI_CODEX_MODELS } from "@earendil-works/pi-ai/providers/openai-code
 import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { bridge, bridgeCall, settle } from "./bridge.ts";
 import { fetchEvents, nativeFetch } from "./native-fetch.ts";
-import { PhoneSession, phoneSystemPrompt, pruneOldScreens, pruneScreens } from "./phone-tools.ts";
-import { SupervisorSession, supervisorSystemPrompt } from "./supervisor-tools.ts";
-import { bashPrompt, bashTool } from "./bash-tool.ts";
-import { channelPrompt, sendFileTool } from "./channel-tools.ts";
+import { phoneSystemPrompt, pruneOldScreens, pruneScreens } from "./phone-tools.ts";
+import { supervisorSystemPrompt } from "./supervisor-tools.ts";
+import { bashPrompt } from "./bash-tool.ts";
+import { channelPrompt } from "./channel-tools.ts";
+import { catalogTools, type ToolSpec } from "./catalog-tools.ts";
 import { compact, needsCompaction } from "./compact.ts";
 import { dispatch } from "./shims/http.ts";
 
@@ -288,13 +289,14 @@ async function startLogin(provider: string, type: "oauth" | "api_key") {
 type Config = {
 	session: string; provider: string; modelId: string; thinkingLevel?: string; baseUrl?: string; systemPrompt?: string;
 	tools?: "phone" | "supervisor"; phone?: boolean; bash?: boolean; channel?: string; messages?: AgentMessage[];
+	/** The session's tools, from the app's catalog (Kotlin ToolCatalog). */
+	toolSpecs?: ToolSpec[];
 };
 
 interface Session {
 	id: string;
 	agent: Agent;
-	phone?: PhoneSession;
-	supervisor?: SupervisorSession;
+	phone: boolean;
 	running: boolean;
 }
 
@@ -380,12 +382,12 @@ function saveTranscript(id: string) {
 /**
  * Before every tool call, Kotlin's "before_tool" (the same for every AI core): it waits while the session is
  * paused, and for a phone session runs its safety checks (risky taps need the user's OK, the step limit).
- * It answers null to go on, or why the call is blocked. Then the supervisor's own limits.
+ * It answers null to go on, or why the call is blocked (the supervisor's limits are there too).
  */
 const beforeToolCall = (s: Session) => async (ctx: BeforeToolCallContext) => {
 	const verdict = await bridgeCall("before_tool", { session: s.id, tool: ctx.toolCall.name, args: ctx.args });
 	if (verdict?.block) return { block: true, terminate: verdict.terminate !== false, reason: String(verdict.reason ?? "Blocked by the app.") };
-	return s.supervisor?.limit(ctx);
+	return undefined;
 };
 
 async function configure(cfg: Config) {
@@ -398,14 +400,14 @@ async function configure(cfg: Config) {
 	// Pi maps the level onto what this model supports (e.g. "max" → the highest it has).
 	const thinkingLevel = clampThinkingLevel(model, (cfg.thinkingLevel ?? "off") as any);
 	const tools = cfg.tools ?? (cfg.phone ? "phone" : undefined);
-	const phone = tools === "phone" ? new PhoneSession(cfg.session) : undefined;
-	const supervisor = tools === "supervisor" ? new SupervisorSession(cfg.session) : undefined;
+	const phone = tools === "phone";
+	const supervisor = tools === "supervisor";
 	const bash = !supervisor && cfg.bash !== false;
 	const channel = supervisor ? undefined : cfg.channel;
 	// The conversation goes on across a change of model or tools; a saved one is restored as given.
 	// System messages are left out: Pi puts the current system prompt and tools in front (initialState).
 	const history = (cfg.messages ?? prev?.agent.state.messages ?? []).filter((m: any) => m.role !== "system");
-	const session: Session = { id: cfg.session, agent: undefined as unknown as Agent, phone, supervisor, running: false };
+	const session: Session = { id: cfg.session, agent: undefined as unknown as Agent, phone, running: false };
 	session.agent = new Agent({
 		initialState: {
 			messages: history,
@@ -414,9 +416,8 @@ async function configure(cfg: Config) {
 					: `You are ${agentName}, a helpful assistant on the user's Android phone. Reply in the user's language.`) + (bash ? "\n" + bashPrompt : "") + (channel ? "\n" + channelPrompt(channel, bash) : "")),
 			model,
 			thinkingLevel: thinkingLevel as any,
-			// Chat and phone sessions get bash (Termux) unless configured without; the supervisor only manages sessions.
-			tools: supervisor ? supervisor.tools
-				: [...(phone?.tools ?? []), ...(bash ? [bashTool(cfg.session)] : []), ...(bash && channel ? [sendFileTool(cfg.session)] : [])],
+			// Exactly the tools the app chose for this session (phone, bash, send_file or the supervisor's).
+			tools: catalogTools(cfg.session, cfg.toolSpecs ?? []),
 		},
 		// Forwarded to providers for routing and prompt caching (OpenCode requires it as x-opencode-session).
 		sessionId: cfg.session,
@@ -461,7 +462,6 @@ async function prompt(id: string, text: string, attached?: Block[]) {
 	const s = need(id);
 	if (s.running) throw new Error("this session is already working");
 	s.running = true;
-	s.supervisor?.reset();
 	try {
 		if (needsCompaction(s.agent.state.messages, s.agent.state.model.contextWindow)) await compactSession(s);
 		if (attached?.length) await s.agent.prompt(userMessage(s, text, attached));

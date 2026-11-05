@@ -68,7 +68,7 @@ class Termux(context: Context) {
         markUsed(session, true)
         // $1 = the command, $2 = session folder, $3 = call id, $4 = timeout. The command is an argument,
         // never spliced into the script, so it needs no quoting. timeout runs in the background so the
-        // pidfile holds its pid: bash_kill sends it TERM, and timeout passes that on to the whole job.
+        // pidfile holds its pid: Stop (tool_cancel) sends it TERM, and timeout passes that on to the whole job.
         val script = PRELUDE + """
             d="${'$'}{HOME}/sessions/${'$'}{2}"; mkdir -p "${'$'}{d}/.tmux" && cd "${'$'}{d}" || exit 97
             export TMUX_TMPDIR="${'$'}{d}/.tmux"

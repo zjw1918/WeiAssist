@@ -5,8 +5,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONObject
 
 /**
- * The commands that manage sessions: one surface for the supervisor's tools (pi-host supervisor-tools.ts,
- * via the "supervisor" host call), and later for voice (speech → text → the supervisor). Main thread.
+ * The commands that manage sessions: one surface for the supervisor's tools (the catalog's, via ToolRouter),
+ * and later for voice (speech → text → the supervisor). Main thread.
  *
  * Every answer is text for a model. Words that come from sessions (their results, titles they were given)
  * come from apps and web pages, so they are fenced as data ([SessionText.untrusted]).

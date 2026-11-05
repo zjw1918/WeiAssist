@@ -53,7 +53,7 @@ Status legend: ✅ done · 🔨 next · ⬜ planned. Current status and todo: [P
 - ⬜ **Pluggable AI cores:** users choose the agent harness a new session runs on.
   - ✅ The core contract (`:core`: `AgentCore`, `ToolHost`, `CoreAccounts`, `CoreRegistry`); Pi behind it (`:core-pi`); each session records its core.
   - ✅ Phone-tool policy (screen memory, confirm judgment, blind typing, step limit) moved from `pi-host/src/phone-tools.ts` into Kotlin (`PhoneTools`), so every core gets it.
-  - ⬜ One tool catalog (names, schemas, descriptions) shared by `pi-host` and other cores.
+  - ✅ One tool catalog (`tools.json`: names, schemas, descriptions) the app hands every core, and one `tool` host call that runs them (`ToolRouter`).
   - ⬜ A second core: [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`). It needs Node ≥ 24.9 (no WebView), so it would run as a Node process with our own dsh plugin (tools on `ctx.tools`, gate/confirm on `tools/pre-execute`, streaming from `agent/assistant-stream`). Its SDK and ACP servers send no live text and the SDK can't cancel. Blockers on Android: `process.platform` is `android`, so dsh's native `flock` throws; no Android builds of `sharp` and `node-pty`.
 
 ## 2b. Reach it from messaging apps
