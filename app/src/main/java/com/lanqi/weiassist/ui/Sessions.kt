@@ -565,7 +565,8 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
             // a drag: no row (run details, steps, copy) could be tapped until the page was reopened.
             LazyColumn(
                 Modifier.weight(1f).fillMaxWidth(), state = list,
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(14.dp),
+                // No spacing of its own: each row says how far it sits from the one above (ChatEntry.gap).
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 overscrollEffect = null,
             ) {
                 if (showTrace) item(key = "trace", contentType = "trace") {
