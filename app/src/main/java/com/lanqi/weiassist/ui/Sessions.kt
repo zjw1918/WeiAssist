@@ -286,9 +286,23 @@ private fun NewSessionSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                 stringResource(if (vm.phoneMode) R.string.kind_phone_hint else R.string.kind_chat_hint),
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            // The AI engine for this session (the Settings choice unless changed here); it keeps it for good.
+            val defaultEngine by vm.defaultEngine.collectAsStateWithLifecycle()
+            val engine = vm.newEngine ?: defaultEngine
+            if (vm.engines.size > 1) Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(stringResource(R.string.engine_label), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    vm.engines.forEachIndexed { i, e ->
+                        SegmentedButton(
+                            selected = engine == e.id, onClick = { vm.newEngine = e.id },
+                            shape = SegmentedButtonDefaults.itemShape(i, vm.engines.size),
+                        ) { Text(e.name, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                    }
+                }
+            }
             OutlinedTextField(
                 vm.input, { vm.input = it }, modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 6,
-                label = { Text(stringResource(if (vm.phoneMode) R.string.task_label else R.string.chat_label)) },
+                label = { Text(if (vm.phoneMode) stringResource(R.string.task_label) else stringResource(R.string.chat_label, vm.engineName(engine))) },
                 trailingIcon = if (vm.input.isEmpty()) null else { { ClearButton { vm.input = "" } } },
                 shape = MaterialTheme.shapes.medium,
             )
@@ -357,7 +371,11 @@ private fun SessionRow(s: SessionSummary, vm: AppViewModel, selected: Boolean?, 
                     remember(s.preview) { plainLine(s.preview) }, style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     color = if (s.error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                val where = listOfNotNull(if (s.channel == "telegram") stringResource(R.string.kind_telegram) else null, s.app).joinToString(" · ").ifEmpty { null }
+                val where = listOfNotNull(
+                    // Which AI engine runs it, once there is a choice.
+                    if (vm.engines.size > 1) vm.engineName(s.core) else null,
+                    if (s.channel == "telegram") stringResource(R.string.kind_telegram) else null, s.app,
+                ).joinToString(" · ").ifEmpty { null }
                 if (s.status != SessionStatus.Idle || where != null) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
                     StatusBadge(s.status)
                     // Weighted, so it gets only the room the controls leave (unweighted, a long app name took it all
@@ -504,6 +522,7 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
                         Text(
                             listOfNotNull(
                                 stringResource(if (s.phone) R.string.kind_phone else R.string.kind_chat),
+                                if (vm.engines.size > 1) vm.engineName(s.core) else null,
                                 if (s.channel == "telegram") stringResource(R.string.kind_telegram) else null, s.app,
                             ).joinToString(" · "),
                             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
@@ -518,7 +537,7 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                             DropdownMenuItem(text = { Text(stringResource(R.string.rename)) }, leadingIcon = { AppIcon(R.drawable.ic_edit, null) }, onClick = { menu = false; rename = true })
                             DropdownMenuItem(
-                                text = { Text(stringResource(if (showTrace) R.string.hide_pi_events else R.string.pi_events)) },
+                                text = { Text(stringResource(if (showTrace) R.string.hide_ai_events else R.string.ai_events)) },
                                 leadingIcon = { AppIcon(R.drawable.ic_code, null) }, onClick = { menu = false; showTrace = !showTrace },
                             )
                             DropdownMenuItem(

@@ -8,10 +8,10 @@
     <string name="a11y_needed">First turn on WeiAssist in Settings → Accessibility, so it can see the screen and tap buttons.</string>
     <string name="open_a11y_settings">Open accessibility settings</string>
     <string name="task_label">What should WeiAssist do?</string>
-    <string name="chat_label">Message to Pi</string>
+    <string name="chat_label">Message to %1$s</string>
     <string name="stop">Stop</string>
     <string name="send">Send</string>
-    <string name="pi_events">Pi events</string>
+    <string name="ai_events">AI events</string>
     <string name="dev_mock">Dev: send to the local mock server</string>
     <string name="sign_out">Sign out</string>
     <string name="sign_out_title">Sign out?</string>
@@ -198,7 +198,7 @@
     <string name="kind_phone_hint">Operates apps on this phone for you: opens them, taps, types and scrolls.</string>
     <string name="sessions_recent">Recent</string>
     <string name="sessions_empty_title">No conversations yet</string>
-    <string name="hide_pi_events">Hide Pi events</string>
+    <string name="hide_ai_events">Hide AI events</string>
     <!-- AI providers -->
     <string name="section_provider">Provider</string>
     <string name="provider_connected">Connected</string>
@@ -319,4 +319,10 @@
     <string name="telegram_access_termux_hint">In Termux, like a conversation in the app.</string>
     <string name="telegram_access_phone">Also use the phone\'s apps</string>
     <string name="telegram_access_phone_hint">Asks you in Telegram (and on the phone) before Send, Delete and the like; payments only on the phone. Needs the accessibility service. While the phone is locked, phone tasks may not work.</string>
+    <string name="section_engine">AI engine</string>
+    <string name="engine_hint">New sessions use the engine chosen here. A session keeps the engine it was started with.</string>
+    <string name="engine_label">Engine</string>
+    <string name="engine_pi_info">Built in (Pi %1$s)</string>
+    <string name="engine_ready">Set up in Termux</string>
+    <string name="engine_checking">Checking…</string>
 </resources>

@@ -8,10 +8,10 @@
     <string name="a11y_needed">需要先在“设置 → 无障碍”里打开小维助手，它才能看屏幕、点按钮。</string>
     <string name="open_a11y_settings">打开无障碍设置</string>
     <string name="task_label">要小维助手做什么</string>
-    <string name="chat_label">发给 Pi</string>
+    <string name="chat_label">发给 %1$s</string>
     <string name="stop">停止</string>
     <string name="send">发送</string>
-    <string name="pi_events">Pi 事件</string>
+    <string name="ai_events">AI 事件</string>
     <string name="dev_mock">开发用：发到本地模拟服务器</string>
     <string name="sign_out">退出登录</string>
     <string name="sign_out_title">退出登录？</string>
@@ -195,7 +195,7 @@
     <string name="kind_phone_hint">替你操作手机上的应用：打开、点按、输入和滑动。</string>
     <string name="sessions_recent">最近</string>
     <string name="sessions_empty_title">还没有对话</string>
-    <string name="hide_pi_events">隐藏 Pi 事件</string>
+    <string name="hide_ai_events">隐藏 AI 事件</string>
     <!-- AI 服务 -->
     <string name="section_provider">服务商</string>
     <string name="provider_connected">已连接</string>
@@ -314,4 +314,10 @@
     <string name="telegram_access_termux_hint">在 Termux 中运行，和应用里的对话一样。</string>
     <string name="telegram_access_phone">也可以操作手机应用</string>
     <string name="telegram_access_phone_hint">发送、删除这类操作前会在 Telegram（和手机上）问你；付款只能在手机上确认。需要无障碍服务。手机锁屏时，操作手机应用的任务可能无法进行。</string>
+    <string name="section_engine">AI 引擎</string>
+    <string name="engine_hint">新会话使用这里选择的引擎；每个会话一直使用它创建时的引擎。</string>
+    <string name="engine_label">引擎</string>
+    <string name="engine_pi_info">内置（Pi %1$s）</string>
+    <string name="engine_ready">已在 Termux 中安装</string>
+    <string name="engine_checking">正在检查…</string>
 </resources>

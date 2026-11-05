@@ -40,8 +40,10 @@ class AgentController(context: Context) {
         routes = { accounts.routes() },
         log = { android.util.Log.d("DshEngine", it) },
     )
-    /** The installed AI cores; a session runs on the one it was made with. */
-    private val cores = CoreRegistry(listOf(pi, dsh), defaultId = PiEngine.ID)
+    /** The installed AI cores; a session runs on the one it was made with. New ones use the saved default. */
+    private val cores = CoreRegistry(listOf(pi, dsh), defaultId = PiEngine.ID).also { r ->
+        context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("core", null)?.takeIf { r[it] != null }?.let { r.defaultId = it }
+    }
     /** Sign-in, providers and the model catalog: Pi keeps them, and every core uses the model chosen there. */
     private val accounts: CoreAccounts = pi
     /** The app's side of every core's tool calls (registered below). */
@@ -408,10 +410,10 @@ class AgentController(context: Context) {
     }
 
     // ---- sessions ---------------------------------------------------------------------------------
-    /** Start a task in a new session; returns its id. */
-    suspend fun startTask(text: String, phoneTools: Boolean, attachments: List<Attachment> = emptyList()): String {
+    /** Start a task in a new session, on [engine] (default: the saved choice); returns its id. */
+    suspend fun startTask(text: String, phoneTools: Boolean, attachments: List<Attachment> = emptyList(), engine: String? = null): String {
         loaded.await()
-        val id = sessions.create(phone = phoneTools)
+        val id = sessions.create(phone = phoneTools, core = engine?.takeIf { cores[it] != null } ?: cores.defaultId)
         sessions.send(id, text, attachments)
         return id
     }
@@ -429,8 +431,32 @@ class AgentController(context: Context) {
     /** Debug builds only: simulate the cores' runtimes dying (Pi's WebView renderer), to test recovery on a device. */
     fun debugCrashRuntime() = cores.all.forEach { it.debugCrash() }
 
-    /** The AI core new sessions use ("pi", "dsh"); unknown ids are ignored. */
-    fun selectCore(id: String) { if (cores[id] != null) cores.defaultId = id }
+    /** An installed AI core: its id (saved with each session) and its name. */
+    data class Engine(val id: String, val name: String)
+
+    /** The installed AI cores, Pi first. */
+    val engines: List<Engine> = cores.all.map { Engine(it.info.id, it.info.name) }
+
+    /** A core's name ("Pi", "DeepSeek Harness"), or its id for one this build doesn't have. */
+    fun engineName(id: String): String = cores[id]?.info?.name ?: id
+
+    private val _defaultEngine = MutableStateFlow(prefs.getString("core", null)?.takeIf { cores[it] != null } ?: PiEngine.ID)
+    /** The AI core new sessions use, unless the user picks another for one. Each session keeps its own for good. */
+    val defaultEngine: StateFlow<String> = _defaultEngine.asStateFlow()
+
+    /** The AI core new sessions use from now on ("pi", "dsh"), saved; unknown ids are ignored. */
+    fun selectCore(id: String) {
+        if (cores[id] == null) return
+        cores.defaultId = id
+        _defaultEngine.value = id
+        prefs.edit().putString("core", id).apply()
+    }
+
+    /** Why core [id] can't run now (DeepSeek Harness: Termux, or its setup), or null when it can. */
+    suspend fun engineProblem(id: String): String? = when (id) {
+        com.lanqi.weiassist.dsh.DshEngine.ID -> termux.dshSetupProblem()
+        else -> null
+    }
 
     /**
      * Where a dsh model route really goes, with the key the app's key proxy puts in: Pi's current auth for that

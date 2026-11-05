@@ -105,7 +105,13 @@ turns a core's features off because another core lacks them. The contract is in 
   (`<id>.<core>.json`) is in that core's format. A session whose core isn't installed shows an error instead of running.
   A core's `runtime_restarted` ends only its own sessions' runs.
 
-`:core-pi` (`PiEngine`) is the default core. Adding one is a module that implements `AgentCore` plus one
+**Choosing an engine.** Settings → AI engine sets the default for new sessions (saved; an engine that can't
+run, e.g. DeepSeek Harness not set up in Termux, can't be chosen), and the new-session sheet may pick another for one
+session. New Telegram chats and the supervisor's sessions use the default. A session keeps its engine for good: its
+transcript is in that engine's format. The session list and a session's header name its engine, and its menu shows
+the engine's events ("AI events").
+
+`:core-pi` (`PiEngine`) is the built-in default. Adding one is a module that implements `AgentCore` plus one
 entry in the registry.
 
 ### DeepSeek Harness (prototype)

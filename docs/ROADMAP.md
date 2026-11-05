@@ -59,7 +59,7 @@ Status legend: ✅ done · 🔨 next · ⬜ planned. Current status and todo: [P
     - ✅ the same providers, keys, sign-ins and custom providers as Pi, through the same proxy (no dsh settings);
     - ✅ the app's prompts shared like the catalog (sections, each core keeps those for the tools it offers);
     - ✅ attachments and thinking levels;
-    - a setting to choose the core;
+    - ✅ a setting to choose the core (the default for new sessions, and a choice per new session);
     - native Android builds of dsh's modules (upstream), so it can run in Termux without Ubuntu.
 
 ## 2b. Reach it from messaging apps
