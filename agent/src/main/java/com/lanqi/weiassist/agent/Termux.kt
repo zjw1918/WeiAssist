@@ -72,13 +72,16 @@ class Termux(context: Context) {
             # native modules support (Termux's own Node is "android"). Ubuntu sees this home as /root.
             [ -x "${'$'}{d}/linux/run/node_modules/.bin/dsh" ] && command -v proot-distro > /dev/null || { echo "DeepSeek Harness is not set up in Termux: run dsh-host/termux/setup-proot.sh there."; exit 3; }
             export TMUX_TMPDIR="${'$'}{d}/.tmux"; mkdir -p "${'$'}{TMUX_TMPDIR}"
+            # dsh's own bash and file tools run unconfined (danger-full-access; the user chose this): its sandbox backends
+            # (bubblewrap, Landlock) can't work in proot on Android, and dsh refuses to run them otherwise. That is the
+            # power the app's Termux bash has too; the app's before_tool still gates every call.
             # An earlier dsh survives its tmux session (proot and node are reparented): end its node, whose command
             # line is exactly this (proot exits with it).
             for p in /proc/[0-9]*; do
                 [ "${'$'}(tr '\0' ' ' < "${'$'}{p}/cmdline" 2> /dev/null)" = "node ./node_modules/.bin/dsh --profile weiassist " ] && kill "${'$'}{p#/proc/}" 2> /dev/null
             done
             tmux kill-session -t dsh 2> /dev/null
-            tmux new-session -d -s dsh proot-distro login ubuntu --termux-home -- env DSH_HOME=/root/.weiassist-dsh/linux/home WEIASSIST_SESSIONS_DIR=/root/sessions "${'$'}@" sh -c 'cd /root/.weiassist-dsh/linux/run && exec node ./node_modules/.bin/dsh --profile weiassist > /root/.weiassist-dsh/dsh.log 2>&1'
+            tmux new-session -d -s dsh proot-distro login ubuntu --termux-home -- env DSH_HOME=/root/.weiassist-dsh/linux/home WEIASSIST_SESSIONS_DIR=/root/sessions DSH_PERMISSION_MODE=danger-full-access "${'$'}@" sh -c 'cd /root/.weiassist-dsh/linux/run && exec node ./node_modules/.bin/dsh --profile weiassist > /root/.weiassist-dsh/dsh.log 2>&1'
             # A dsh that dies at once (a missing package, a native module): say why instead of letting the app wait.
             sleep 6
             tmux has-session -t dsh 2> /dev/null || { echo "DeepSeek Harness stopped at once:"; tail -15 "${'$'}{d}/dsh.log"; exit 4; }

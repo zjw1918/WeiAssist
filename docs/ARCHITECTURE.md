@@ -128,7 +128,12 @@ entry in the registry.
   (`configured.skipped`, e.g. `bash`). Every call of the session's tree, dsh's own tools and its subagents'
   included, goes through dsh's `tools/pre-execute` → `before_tool`, so pause, Stop, the step limit and the user's
   OK cover them. A subagent's calls show as the session's steps (`↳ todo_write`), and Stop cancels its
-  subagents too. The system prompt is the app's section for the session plus dsh's own guidance. A terminating block refuses the next step (`agent/pre-step`). Live text comes from
+  subagents too.
+- **No sandbox on the phone:** dsh confines its bash and file tools with bubblewrap or Landlock, and neither works
+  in proot on Android. So the phone launcher runs dsh in `danger-full-access` (a choice the user made): they run
+  unconfined in Ubuntu, with Termux's home (and so `~/sessions`) as `/root`. That is the access the app's own Termux
+  `bash` has, and the app's `before_tool` still gates every call. On a computer dsh keeps its sandbox
+  (`workspace-write`). The system prompt is the app's section for the session plus dsh's own guidance. A terminating block refuses the next step (`agent/pre-step`). Live text comes from
   `agent/assistant-stream`; dsh's own SDK and ACP servers send no live text. dsh keeps the conversation in its
   own log; the app saves a marker and the bridge resumes the session by id.
 - **Lifecycle:** the first task launches dsh (about 30 s to boot on a realme RMX2121; later tasks take about a
