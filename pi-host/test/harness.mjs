@@ -55,7 +55,8 @@ export function buildBundle() {
 	return bundle;
 }
 
-export async function startHost({ credentials = null, customProviders = [], hostCalls = {} } = {}) {
+/** fakeFetch(m): a {status, json} answer for a request instead of the network (e.g. a provider's OAuth endpoints), or null. */
+export async function startHost({ credentials = null, customProviders = [], hostCalls = {}, fakeFetch = () => null } = {}) {
 	// Kotlin's before_tool (pause gate, phone safety checks): by default every tool call may go on.
 	hostCalls = { before_tool: () => null, ...hostCalls };
 	const messages = [];
@@ -118,6 +119,13 @@ export async function startHost({ credentials = null, customProviders = [], host
 
 	async function nativeFetch(m) {
 		fetches.push({ method: m.method, url: m.url });
+		const fake = fakeFetch({ ...m, body: m.body ? Buffer.from(m.body, "base64").toString() : "" });
+		if (fake) {
+			ctx.PiHost.fetchHead(JSON.stringify({ id: m.id, status: fake.status, statusText: "", headers: { "content-type": "application/json" } }));
+			ctx.PiHost.fetchChunk(m.id, Buffer.from(JSON.stringify(fake.json)).toString("base64"));
+			ctx.PiHost.fetchEnd(m.id);
+			return;
+		}
 		const ac = new AbortController();
 		aborts.set(m.id, ac);
 		try {

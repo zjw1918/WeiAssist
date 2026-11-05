@@ -122,6 +122,14 @@ class AgentReducerTest {
         assertEquals("https://auth.openai.com/x", r.state.signIn.authUrl)
     }
 
+    @Test fun `a device code is shown with its page, which the user opens`() {
+        val e = JSONObject().put("type", "device_code").put("userCode", "ABCD-1234").put("verificationUri", "https://accounts.x.ai/device?code=ABCD-1234")
+        val r = reduce(base, msg("auth_event", "event" to e))
+        assertNull(r.effect)
+        assertEquals("ABCD-1234", r.state.signIn.userCode)
+        assertEquals("https://accounts.x.ai/device?code=ABCD-1234", r.state.signIn.authUrl)
+    }
+
     @Test fun `a prompt appears and closes only when its own id closes`() {
         val open = reduce(base, msg("auth_prompt", "id" to "p1", "prompt" to JSONObject().put("type", "manual_code").put("message", "paste").put("placeholder", "http://127.0.0.1:1455/auth/callback"))).state
         assertEquals("manual_code", open.signIn.prompt!!.type)

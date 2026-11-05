@@ -3,6 +3,7 @@
     <string name="app_name">WeiAssist</string>
     <string name="starting_pi">Starting Pi…</string>
     <string name="auth_subscription">ChatGPT subscription</string>
+    <string name="auth_subscription_xai">SuperGrok / X Premium</string>
     <string name="auth_api_key">API key</string>
     <string name="pi_runtime_info">Pi %1$s (pi-agent-core + pi-ai, running in a background service)</string>
     <string name="a11y_needed">First turn on WeiAssist in Settings → Accessibility, so it can see the screen and tap buttons.</string>
@@ -33,6 +34,15 @@
     <string name="preparing_page">Preparing the sign-in page…</string>
     <string name="waiting_chrome">Waiting for you to finish in Chrome…</string>
     <string name="reopen_page">Open the sign-in page again</string>
+    <string name="method_xai_title">Sign in with SuperGrok or X Premium</string>
+    <string name="method_xai_body">Use your Grok or X subscription. Usage counts against your plan, with no extra payment. You approve a short code on x.ai, then come back here.</string>
+    <string name="device_title">Sign in to %1$s</string>
+    <string name="device_step1">Tap the button below: the code is copied and x.ai opens in Chrome.</string>
+    <string name="device_step2">Sign in with the account that has SuperGrok or X Premium, and check that the code matches (paste it if asked).</string>
+    <string name="device_step3">Approve, then come back here. Sign-in completes by itself.</string>
+    <string name="device_code">Your code</string>
+    <string name="device_open">Copy the code and open x.ai</string>
+    <string name="device_waiting">Waiting for you to approve on x.ai…</string>
     <string name="collapse">Hide</string>
     <string name="chrome_no_return">Chrome didn\'t come back?</string>
     <string name="paste_hint">Copy the full address from Chrome\'s address bar that starts with %1$s:</string>

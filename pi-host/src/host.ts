@@ -89,9 +89,10 @@ for (const p of [
 /**
  * Providers whose OAuth sign-in is offered. Each flow must be tried in the WebView (callback server
  * shim, Chrome hand-off) and the provider must allow a subscription to be used from this app;
- * the others offer their API key only.
+ * the others offer their API key only. ChatGPT: browser + loopback callback. xAI (SuperGrok or
+ * X Premium): a device code the user approves at x.ai, so no callback server is involved.
  */
-const OAUTH_PROVIDERS = new Set(["openai"]);
+const OAUTH_PROVIDERS = new Set(["openai", "xai"]);
 
 // ---- custom providers -------------------------------------------------------------------------------
 // The user's own OpenAI-compatible endpoints (vLLM, Ollama, relays…), defined in the app and sent here

@@ -38,13 +38,14 @@ test("offers Pi's DeepSeek provider with its API-key sign-in and models", async 
 	assert.deepEqual(JSON.parse(host.state.credentials).deepseek, { type: "api_key", key: "sk-ds" });
 });
 
-test("offers more of Pi's providers, by API key only, each with a model that reads images", async () => {
+test("offers more of Pi's providers, by API key (xAI also by subscription), each with a model that reads images", async () => {
 	const host = await startHost();
 	const status = await host.waitFor("status");
 	const ids = status.providers.map((p) => p.id);
 	for (const id of ["opencode", "opencode-go", "anthropic", "google", "openrouter", "xai", "moonshotai", "mistral"]) assert.ok(ids.includes(id), id);
 	for (const p of status.providers) {
-		if (p.id !== "openai") assert.deepEqual(p.methods.map((m) => m.type), ["api_key"], p.id);
+		const oauth = p.id === "openai" || p.id === "xai";
+		assert.deepEqual(p.methods.map((m) => m.type), oauth ? ["oauth", "api_key"] : ["api_key"], p.id);
 		assert.ok(p.models.some((m) => m.input?.includes("image")), `${p.id} has a model that reads images`);
 	}
 });
@@ -228,6 +229,37 @@ test("ChatGPT sign-in starts Pi's OAuth flow on the loopback port and can be can
 	assert.equal(failed.message, "cancelled");
 	await host.waitFor("http_close");
 	assert.equal(host.listening.size, 0);
+});
+
+test("xAI sign-in shows Pi's device code and saves the token once it is approved", async () => {
+	let polls = 0;
+	const host = await startHost({
+		fakeFetch: (m) => {
+			if (m.url === "https://auth.x.ai/oauth2/device/code") {
+				return { status: 200, json: { device_code: "dev", user_code: "ABCD-1234", verification_uri: "https://accounts.x.ai/device", verification_uri_complete: "https://accounts.x.ai/device?code=ABCD-1234", interval: 1, expires_in: 600 } };
+			}
+			if (m.url === "https://auth.x.ai/oauth2/token") {
+				return ++polls === 1
+					? { status: 400, json: { error: "authorization_pending" } }
+					: { status: 200, json: { access_token: "xai-at", refresh_token: "xai-rt", expires_in: 3600 } };
+			}
+			return null;
+		},
+	});
+	const status = await host.waitFor("status");
+	const xai = status.providers.find((p) => p.id === "xai");
+	assert.equal(xai.methods[0].type, "oauth");
+	assert.equal(xai.methods[0].subscription, true);
+	host.call("login", { provider: "xai", type: "oauth" });
+	const ev = await host.waitFor("auth_event", (m) => m.event.type === "device_code");
+	assert.equal(ev.event.userCode, "ABCD-1234");
+	assert.equal(ev.event.verificationUri, "https://accounts.x.ai/device?code=ABCD-1234");
+	await host.waitFor("login_done", (m) => m.provider === "xai", 15_000);
+	const saved = JSON.parse(host.state.credentials).xai;
+	assert.equal(saved.type, "oauth");
+	assert.equal(saved.access, "xai-at");
+	const after = await host.waitFor("status", (m) => m.providers.find((p) => p.id === "xai").credential === "oauth");
+	assert.ok(after.providers.find((p) => p.id === "xai").models.length > 0, "an xAI sign-in reaches xAI's models");
 });
 
 test("a model Pi doesn't know is reported as an error, not a crash", async () => {

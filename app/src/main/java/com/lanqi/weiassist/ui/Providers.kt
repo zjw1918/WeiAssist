@@ -65,7 +65,7 @@ fun ProvidersTab(vm: AppViewModel, s: AgentState) {
                 s.providers.forEachIndexed { i, p ->
                     if (i > 0) GroupDivider()
                     val how = when (p.credential) {
-                        "oauth" -> stringResource(R.string.auth_subscription)
+                        "oauth" -> stringResource(if (p.id == "xai") R.string.auth_subscription_xai else R.string.auth_subscription)
                         "api_key" -> stringResource(R.string.auth_api_key)
                         else -> null
                     }
@@ -115,7 +115,7 @@ fun ProvidersTab(vm: AppViewModel, s: AgentState) {
                 Column(Modifier.padding(GroupContentPadding)) {
                     ModelPicker(
                         models = provider?.models.orEmpty(), selected = s.model, thinkingLevel = s.thinkingLevel,
-                        onModel = vm::selectModel, onThinking = vm::selectThinking, subscription = provider?.credential == "oauth",
+                        onModel = vm::selectModel, onThinking = vm::selectThinking, subscription = provider?.id == "openai" && provider.credential == "oauth",
                     )
                 }
             }
