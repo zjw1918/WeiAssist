@@ -90,7 +90,9 @@ class Termux(context: Context) {
                 [ "${'$'}(tr '\0' ' ' < "${'$'}{p}/cmdline" 2> /dev/null)" = "node ./node_modules/.bin/dsh --profile weiassist " ] && kill "${'$'}{p#/proc/}" 2> /dev/null
             done
             tmux kill-session -t dsh 2> /dev/null
-            tmux new-session -d -s dsh proot-distro login ubuntu --termux-home -- env DSH_HOME=/root/.weiassist-dsh/linux/home WEIASSIST_SESSIONS_DIR=/root/sessions DSH_PERMISSION_MODE=danger-full-access "${'$'}@" sh -c 'cd /root/.weiassist-dsh/linux/run && exec node ./node_modules/.bin/dsh --profile weiassist > /root/.weiassist-dsh/dsh.log 2>&1'
+            # NODE_COMPILE_CACHE: Node keeps the modules it compiled there (the bridge saves them once dsh is up), so
+            # later boots skip most of that work. Node checks each entry against its file and Node's version.
+            tmux new-session -d -s dsh proot-distro login ubuntu --termux-home -- env DSH_HOME=/root/.weiassist-dsh/linux/home WEIASSIST_SESSIONS_DIR=/root/sessions DSH_PERMISSION_MODE=danger-full-access NODE_COMPILE_CACHE=/root/.weiassist-dsh/linux/compile-cache "${'$'}@" sh -c 'cd /root/.weiassist-dsh/linux/run && exec node ./node_modules/.bin/dsh --profile weiassist > /root/.weiassist-dsh/dsh.log 2>&1'
             # A dsh that dies at once (a missing package, a native module): say why instead of letting the app wait.
             sleep 6
             tmux has-session -t dsh 2> /dev/null || { echo "DeepSeek Harness stopped at once:"; tail -15 "${'$'}{d}/dsh.log"; exit 4; }

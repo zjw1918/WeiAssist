@@ -11,6 +11,7 @@
 // in its own session log; the app saves only a marker and asks for the session back by id.
 import { Buffer } from "node:buffer";
 import { mkdir } from "node:fs/promises";
+import { flushCompileCache } from "node:module";
 import net from "node:net";
 import { createMcpToolDefinition } from "@deepseek-ai/dsh-mcp-client";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
@@ -76,6 +77,18 @@ const DEFAULT_PROMPTS: Record<string, string> = {
 /** To dsh's stderr (its log file when the app starts it): dsh's own logger doesn't go there. */
 const say = (msg: string) => process.stderr.write(`weiassist-bridge: ${msg}\n`);
 
+/**
+ * Write what Node's compile cache (NODE_COMPILE_CACHE, set by the app's launch script) has gathered so far, so the
+ * next boot skips compiling those modules. Node writes it only at a clean exit, and dsh ends with a kill.
+ */
+const saveCompileCache = () => {
+	try {
+		flushCompileCache?.();
+	} catch (e) {
+		say(`compile cache: ${(e as Error).message}`);
+	}
+};
+
 export function apply(ctx: any, config: Config = {}) {
 	const port = Number(config.port ?? process.env.WEIASSIST_BRIDGE_PORT);
 	const secret = config.secret ?? process.env.WEIASSIST_BRIDGE_SECRET ?? "";
@@ -133,6 +146,8 @@ export class Bridge {
 		s.on("connect", () => {
 			say("connected to the app");
 			this.socket = s;
+			// dsh has booted: its modules are loaded (later ones, such as a model provider's, are saved after a run).
+			saveCompileCache();
 			this.send({ type: "hello", secret: this.secret, dsh: process.env.npm_package_version ?? "", pid: process.pid });
 		});
 		s.on("data", (chunk: string) => this.onData(chunk));
@@ -466,6 +481,7 @@ export class Bridge {
 				// dsh keeps the conversation in its own log: the app saves a marker and asks for it back by id.
 				this.send({ type: "transcript", session, messages: [{ dsh: session }] });
 				this.send({ type: "idle", session });
+				saveCompileCache();
 			}
 		};
 		ctx.on("agent/status", ({ agent, status }: any) => running(agent, status === "running"));
