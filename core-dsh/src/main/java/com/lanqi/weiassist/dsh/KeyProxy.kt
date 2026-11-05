@@ -97,10 +97,11 @@ class KeyProxy(
             c.setRequestProperty(name, value.replace(token, route.key))
         }
         route.headers.forEach { (name, value) -> c.setRequestProperty(name, value) }
-        if (r.body.isNotEmpty()) {
+        val body = if (SignInRequest.applies(route.upstream, route.key, rest)) SignInRequest.adapt(r.body) else r.body
+        if (body.isNotEmpty()) {
             c.doOutput = true
-            c.setFixedLengthStreamingMode(r.body.size)
-            c.outputStream.use { it.write(r.body) }
+            c.setFixedLengthStreamingMode(body.size)
+            c.outputStream.use { it.write(body) }
         }
         val code = c.responseCode
         val head = StringBuilder("HTTP/1.1 $code ${c.responseMessage ?: ""}\r\n")
@@ -112,8 +113,8 @@ class KeyProxy(
         out.write(head.toString().toByteArray(Charsets.ISO_8859_1))
         out.flush()
         // Streamed through as it comes (server-sent events): the connection's end ends the body.
-        val body = (if (code >= 400) c.errorStream else c.inputStream) ?: return
-        body.use {
+        val answer = (if (code >= 400) c.errorStream else c.inputStream) ?: return
+        answer.use {
             val buf = ByteArray(8192)
             while (true) {
                 val n = it.read(buf)

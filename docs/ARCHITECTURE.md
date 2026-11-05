@@ -165,7 +165,11 @@ entry in the registry.
   (the profile's row is off), so a provider added or signed into in the app is a dsh route at once, with no restart.
   Per request, the proxy asks Pi for that provider's current auth (`CoreAccounts.providerAuth`: an API key, or a
   sign-in's access token that Pi refreshes when due; extra headers; the endpoint). A ChatGPT sign-in's token goes
-  to the same OpenAI endpoint as a key.
+  to the same OpenAI endpoint as a key. A sign-in takes less than a key, and pi-ai (in dsh) only leaves the rest
+  out when it sees OpenAI's endpoint with a non-`sk-` key, which the proxy hides. So the proxy does it
+  (`SignInRequest`): for a sign-in's Responses requests, the `configuration_update` items carrying the thinking
+  level become the request's `reasoning.effort`, and `max_output_tokens`, `temperature` and the prompt-cache
+  retention options go.
 - **Attachments and thinking levels:** images in the user's message go into dsh's attachment store
   (`admitEncodedImages`) and the message refers to them. One dsh can't take (not PNG, JPEG, WebP or GIF, or refused)
   becomes a note. The app's thinking level becomes the nearest effort the session's model offers: the level itself,
