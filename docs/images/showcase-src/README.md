@@ -9,6 +9,7 @@ frames with English and Chinese captions. Render it with headless Chrome:
 ```
 
 1. A DeepSeek Harness session with three subagents at work (their steps marked ↳).
-2. The same session's answer: one comparison table from the three briefs.
+2. The same session as the results came in: a card as each subagent finished or wrote, the agent's reply to each,
+   then the comparison table.
 3. Settings → AI engine: Pi or DeepSeek Harness.
 4. A Pi session: the weather via curl in Termux, as a table.

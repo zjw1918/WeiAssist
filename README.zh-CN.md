@@ -48,7 +48,7 @@
 
 ## 它能做什么
 
-![小维助手的四个界面：DeepSeek Harness 会话里三个子智能体并行调研；它的回答，把三份调研汇总成一张对比表；设置里的 AI 引擎选择（Pi 或 DeepSeek Harness）；以及 Pi 会话用 Termux 里的 curl 查天气](docs/images/showcase.png)
+![小维助手的四个界面：DeepSeek Harness 会话里三个子智能体并行调研；每个子智能体完成时出现一张卡片和助手的回复，最后汇总成对比表；设置里的 AI 引擎选择（Pi 或 DeepSeek Harness）；以及 Pi 会话用 Termux 里的 curl 查天气](docs/images/showcase.png)
 
 - **多家 AI 服务：** OpenAI、Anthropic、Google、DeepSeek、OpenRouter、xAI、Moonshot、Mistral、OpenCode，以及任何兼容 OpenAI 的服务（Ollama、vLLM、LM Studio 等）。
 - **照片和文件：** 发给它图片、PDF 和文档；它也会把做好的文件发回给你。
