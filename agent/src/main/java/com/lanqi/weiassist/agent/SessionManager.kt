@@ -256,6 +256,7 @@ class SessionManager(
             val now = live[id]?.value?.takeIf { it.busy } ?: return
             val task = now.pendingTask ?: if (now.pendingAttachments.isNotEmpty()) "" else return
             onTaskStarted(id)
+            stopped -= id
             core.prompt(id, UserInput(task, Attachments.content(now.pendingAttachments)))
             prompted += id
         }
@@ -270,10 +271,17 @@ class SessionManager(
     /** Told just before a session's core is given a new task: per-task tool state starts over (see PhoneTools). */
     var onTaskStarted: (id: String) -> Unit = {}
 
+    /** Sessions the user stopped, until their next task: why their calls are refused (see stoppedByUser). */
+    private val stopped = HashSet<String>()
+
+    /** The user stopped [id]'s task (and no new one started since). */
+    fun stoppedByUser(id: String) = id in stopped
+
     /** Stop the session's task (its core aborts the run); a queued task is dropped. */
     fun stop(id: String) {
         val s = live[id]?.value ?: return
         if (!s.busy) return
+        stopped += id
         Log.d(TAG, "stop $id (${s.status})")
         onEnded(id, false, false)
         stops[id] = (stops[id] ?: 0) + 1
@@ -332,12 +340,37 @@ class SessionManager(
             scope.launch(io) { runCatching { store.saveTranscript(id, core, messages) }.onFailure { Log.e(TAG, "transcript $id not saved", it) } }
             return
         }
-        if (live[id] == null) { Log.w(TAG, "message for a session not in memory: $id ${m.optString("type")}"); return }
+        if (live[id] == null) {
+            // Not in memory (nobody looks at it, and it was idle), and its core works on: e.g. DeepSeek Harness waking
+            // it when its subagents report back. Load it, then apply what came meanwhile, in order.
+            if (summary(id) == null) { Log.w(TAG, "message for an unknown session: $id ${m.optString("type")}"); return }
+            val waiting = arrivedWhileLoading.getOrPut(id) { mutableListOf() }
+            waiting += core to m
+            if (waiting.size == 1) scope.launch {
+                loadLive(id)
+                arrivedWhileLoading.remove(id)?.forEach { (c, e) -> onCoreEvent(c, id, e) }
+            }
+            return
+        }
         if (m.optString("type") == "steer_late") { lateSteer(id, m.optString("text")); return }
         val wasBusy = live[id]!!.value.busy
+        if (m.optString("type") == "agent_start" && !wasBusy && id in stopped) {
+            // The user stopped this session: work its core starts by itself afterwards is stopped too.
+            Log.w(TAG, "$id: its core started work after the user stopped it; stopping it again")
+            coreOf(id)?.let { c -> scope.launch { c.abort(id) } }
+            return
+        }
         update(id) { SessionReducer.reduce(it, m, System.currentTimeMillis(), strings::friendly) }
         if (wasBusy && !live[id]!!.value.busy) finished(id)
+        if (!wasBusy && live[id]!!.value.busy) {
+            // A run the core started by itself: it can be steered, and a phone session needs its screen back.
+            prompted += id
+            if (live[id]!!.value.summary.phone) screens.acquire(id)
+        }
     }
+
+    /** A session's core events that came while it was being loaded into memory (see onCoreEvent). */
+    private val arrivedWhileLoading = HashMap<String, MutableList<Pair<String, JSONObject>>>()
 
     /**
      * Core [core]'s runtime died: its agents are gone. Its running tasks end; the next message restores each

@@ -117,6 +117,18 @@ class SessionReducerTest {
             .forEach { assertEquals(it, SessionStore.itemFrom(SessionStore.itemJson(it))) }
     }
 
+    @Test fun `a core that starts work by itself starts a run, and an agent_start in a run changes nothing`() {
+        val idle = SessionState(SessionSummary("a1", "t", phone = false, status = SessionStatus.Idle, createdAt = 0, updatedAt = 0))
+        val woke = SessionReducer.reduce(idle, msg("agent_start"), now = 5_000)
+        assertEquals(SessionStatus.Running, woke.summary.status)
+        assertTrue(woke.busy)
+        assertEquals(5_000L, woke.run?.startedAt)
+        val again = SessionReducer.reduce(woke, msg("agent_start"), now = 6_000)
+        assertEquals(woke, again)
+        val done = SessionReducer.reduce(again, msg("idle"), now = 9_000)
+        assertFalse(done.busy)
+    }
+
     @Test fun `a session keeps its core, and one saved before cores existed runs on Pi`() {
         val s = SessionSummary("a1", "t", phone = false, status = SessionStatus.Idle, createdAt = 1, updatedAt = 2, core = "dsh")
         assertEquals("dsh", SessionStore.summaryFrom(SessionStore.summaryJson(s)).core)

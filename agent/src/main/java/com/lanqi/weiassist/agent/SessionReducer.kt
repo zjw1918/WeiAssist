@@ -57,6 +57,10 @@ object SessionReducer {
                 .add(ChatItem.Error(err), now).preview(err, now, error = true).trace("error · ${m.optString("message")}")
         }
         "idle" -> s.copy(streaming = "", pendingTask = null).endRun(now).status(SessionStatus.Idle, now).trace("idle")
+        // The core started work by itself, not on a message from the app: e.g. DeepSeek Harness waking the session
+        // when its background subagents report back. It is a run like any other (busy: its calls pass the gate).
+        "agent_start" -> if (s.busy) s else s.copy(error = null, streaming = "", run = RunStats(now))
+            .status(SessionStatus.Running, now).trace("the core started work by itself")
         // Pi took a steered message into the conversation: it is delivered.
         "message_end" -> if (m.optString("role") == "user") s.delivered(m.optString("text")) else s
         // A transcript is persisted by the manager; it doesn't change what the user sees.

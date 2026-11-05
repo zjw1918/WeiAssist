@@ -50,6 +50,11 @@ interface Live {
 	calls: Map<string, string>;
 	/** The app's tools left out because dsh has its own of that name. */
 	skipped: string[];
+	/**
+	 * The session's agents running now: its own and its subagents' (by session id). The session works while any
+	 * does: its subagents run in the background, and dsh wakes the session's agent when they report back.
+	 */
+	running: Set<string>;
 }
 
 const textOf = (content: readonly any[] | undefined) =>
@@ -268,7 +273,7 @@ export class Bridge {
 			if (handle === undefined) {
 				handle = await this.ctx.agents.create({ sessionId: c.session, meta: { cwd: await this.workDir(c.session) }, agentOptions, setup });
 			}
-			s = { handle, agent: handle.agent, shape, stop: false, calls: new Map(), skipped: this.lastSkipped };
+			s = { handle, agent: handle.agent, shape, stop: false, calls: new Map(), skipped: this.lastSkipped, running: new Set() };
 			this.sessions.set(c.session, s);
 		}
 		// The session's model for its next steps (durable: dsh records the selection in the session's log).
@@ -397,16 +402,25 @@ export class Bridge {
 			for (const [id, s] of this.sessions) if (s.agent === agent) return id;
 			return undefined;
 		};
-		ctx.on("agent/status", ({ agent, status }: any) => {
-			const session = idOf(agent);
-			if (!session) return;
-			if (status === "running") this.send({ type: "agent_start", session });
-			else {
+		// The session works while its agent or any of its subagents does: one agent_start when the first starts (also
+		// a run dsh starts by itself, when subagents report back), one idle when the last stops.
+		const running = (agent: any, on: boolean) => {
+			const own = String(agent?.session?.id ?? agent?.id ?? "");
+			const session = this.rootOf(own);
+			const s = session === undefined ? undefined : this.sessions.get(session);
+			if (!s || session === undefined) return;
+			const was = s.running.size > 0;
+			if (on) s.running.add(own); else s.running.delete(own);
+			const now = s.running.size > 0;
+			if (!was && now) this.send({ type: "agent_start", session });
+			if (was && !now) {
 				// dsh keeps the conversation in its own log: the app saves a marker and asks for it back by id.
 				this.send({ type: "transcript", session, messages: [{ dsh: session }] });
 				this.send({ type: "idle", session });
 			}
-		});
+		};
+		ctx.on("agent/status", ({ agent, status }: any) => running(agent, status === "running"));
+		ctx.on("agent/disposed", ({ agent }: any) => running(agent, false));
 		ctx.on("agent/assistant-stream", ({ agent, frame }: any) => {
 			const session = idOf(agent);
 			const s = session ? this.sessions.get(session) : undefined;
