@@ -5,7 +5,7 @@ import com.lanqi.weiassist.core.AgentCore
 import com.lanqi.weiassist.core.CoreRegistry
 import com.lanqi.weiassist.core.ModelSelection
 import com.lanqi.weiassist.core.SessionConfig
-import com.lanqi.weiassist.core.ToolSet
+import com.lanqi.weiassist.core.SessionKind
 import com.lanqi.weiassist.core.UserInput
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -225,8 +225,11 @@ class SessionManager(
         }
         scope.launch {
             val (provider, model, thinking, mock) = settings()
-            val tools = when { s.summary.supervisor -> ToolSet.Supervisor; s.summary.phone -> ToolSet.Phone; else -> ToolSet.Chat }
-            val config = SessionConfig(ModelSelection(provider, model, thinking, mock), tools, bash = s.summary.termux, channel = s.summary.channel)
+            val kind = when { s.summary.supervisor -> SessionKind.Supervisor; s.summary.phone -> SessionKind.Phone; else -> SessionKind.Chat }
+            val config = SessionConfig(
+                ModelSelection(provider, model, thinking, mock), kind, ToolCatalog.forSession(s.summary),
+                bash = s.summary.termux && !s.summary.supervisor, channel = s.summary.channel.takeUnless { s.summary.supervisor },
+            )
             if (configured[id] != config) {
                 // First use in this runtime: give the core the saved conversation back.
                 val history = if (id !in configured) withContext(io) { store.loadTranscript(id, core.info.id) } else null

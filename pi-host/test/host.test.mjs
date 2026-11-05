@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import { MOCK_REPLY, startMock } from "../../tools/mock-openai.mjs";
-import { buildBundle, startHost } from "./harness.mjs";
+import { buildBundle, startHost, toolSpecsFor } from "./harness.mjs";
 
 let mock;
 before(async () => {
@@ -262,6 +262,24 @@ test("tool arguments reach Kotlin intact and never clobber the bridge request id
 	assert.equal(end.output, "tapped [51]\n\nScreen now:\napp: x");
 });
 
+test("the model gets the app's catalog exactly: each session's tools, with their descriptions and schemas", async () => {
+	const host = await startHost({ credentials: apiKeyCredentials, hostCalls: { phone: () => "app: x" } });
+	const before = mock.requests.length;
+	await phoneRun(host, "tap");
+	const sent = JSON.parse(mock.requests[before].body).tools;
+	const expected = toolSpecsFor({ phone: true });
+	assert.deepEqual(sent.map((t) => t.name), expected.map((t) => t.name));
+	for (const t of expected) {
+		const got = sent.find((x) => x.name === t.name);
+		assert.equal(got.description, t.description, t.name);
+		assert.deepEqual(got.parameters, t.parameters, t.name);
+	}
+	// The raw call: the session, the core's call id, the tool's name and the model's arguments.
+	const tap = host.toolCalls.find((c) => c.name === "tap");
+	assert.deepEqual([tap.session, tap.args], ["s1", { id: 51 }]);
+	assert.match(tap.call, /^c\d+$/);
+});
+
 test("Kotlin's before_tool sees every tool call with its arguments, and allowing lets it run", async () => {
 	const checks = [];
 	const taps = [];
@@ -493,6 +511,20 @@ test("type_text can submit, and press_key has enter", async () => {
 	]);
 });
 
+test("a screenshot reaches the model as an image, with the app's caption", async () => {
+	const jpeg = "/9j/" + Buffer.from("a tiny fake jpeg").toString("base64");
+	const host = await startHost({ credentials: apiKeyCredentials, hostCalls: { phone: () => jpeg } });
+	await configure(host, "img", { phone: true });
+	const before = mock.requests.length;
+	host.call("prompt", { session: "img", text: "look [[script:shot]]" });
+	await host.waitFor("idle", (m) => m.session === "img", 15_000);
+	const outputs = mock.requests.slice(before).flatMap((r) => JSON.parse(r.body).input.filter((i) => i.type === "function_call_output"));
+	const parts = JSON.stringify(outputs);
+	assert.match(parts, /Screenshot \(720 px wide/);
+	assert.match(parts, /input_image/);
+	assert.ok(parts.includes(jpeg.slice(0, 20)), "the picture's bytes went to the model");
+});
+
 test("a screenshot that comes back as a message (not a JPEG) reaches the model as text, not as an image", async () => {
 	const host = await startHost({
 		credentials: apiKeyCredentials,
@@ -535,21 +567,36 @@ test("the supervisor's tools reach Kotlin with the session and their arguments, 
 	await host.waitFor("idle", (m) => m.session === "sup", 15_000);
 	assert.deepEqual(calls.map((c) => c.action), ["list", "create", "wait", "send", "wait", "get"]);
 	assert.ok(calls.every((c) => c.session === "sup"));
-	assert.deepEqual(calls[1].args, { task: "Say hello in one word.", phone: false, title: "Hello helper" });
-	assert.deepEqual(calls[2].args, { ids: ["Hello helper"], timeout: 60 });
+	// pi-host sends each call as the model made it: the tool's name and arguments (Kotlin's ToolRouter shapes them).
+	const raw = host.toolCalls.filter((c) => c.session === "sup");
+	assert.deepEqual(raw.map((c) => c.name), ["list_sessions", "create_session", "wait_for", "send_message", "wait_for", "get_session"]);
+	assert.deepEqual(raw[1].args, { task: "Say hello in one word.", phone: false, title: "Hello helper" });
+	assert.deepEqual(raw[2].args, { ids: ["Hello helper"], timeout_seconds: 60 });
+	assert.ok(raw.every((c) => /^c\d+$/.test(c.call)), "each call has the core's own id");
 	assert.equal(host.messages.find((m) => m.type === "tool_end" && m.tool === "create_session").output, "started session s9");
 	assert.ok(!host.messages.some((m) => m.type === "tool_start" && m.tool === "read_screen"), "no phone tools for the supervisor");
 });
 
-test("one request can start at most eight sessions", async () => {
+test("a block that doesn't end the run (the supervisor's limit of eight new sessions) lets the model go on", async () => {
 	let creates = 0;
-	const host = await startHost({ credentials: apiKeyCredentials, hostCalls: { supervisor: () => `started ${++creates}` } });
+	let asked = 0;
+	const host = await startHost({
+		credentials: apiKeyCredentials,
+		hostCalls: {
+			supervisor: () => `started ${++creates}`,
+			// As Kotlin's before_tool: the ninth create_session in one request is refused, and the run goes on.
+			before_tool: (m) => (m.tool === "create_session" && ++asked > 8 ? { block: true, terminate: false, reason: "At most 8 new sessions per request." } : null),
+		},
+	});
 	await configure(host, "sup", { tools: "supervisor" });
 	host.call("prompt", { session: "sup", text: "go [[script:creates]]" });
 	await host.waitFor("idle", (m) => m.session === "sup", 15_000);
 	assert.equal(creates, 8);
 	const blocked = host.messages.filter((m) => m.type === "tool_end" && m.tool === "create_session" && m.isError);
 	assert.equal(blocked.length, 1);
+	assert.match(blocked[0].output, /At most 8/);
+	// Not terminated: the model was asked again after the blocked call, and answered.
+	assert.ok(host.messages.some((m) => m.type === "assistant_end" && m.session === "sup" && m.text));
 });
 
 // ---- bash (Termux, served by Kotlin's "bash" host call) ------------------------------------------

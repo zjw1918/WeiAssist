@@ -19,7 +19,7 @@ import com.lanqi.weiassist.core.CoreInfo
 import com.lanqi.weiassist.core.SecureStore
 import com.lanqi.weiassist.core.SessionConfig
 import com.lanqi.weiassist.core.ToolHost
-import com.lanqi.weiassist.core.ToolSet
+import com.lanqi.weiassist.core.SessionKind
 import com.lanqi.weiassist.core.UserInput
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -212,11 +212,18 @@ class PiEngine(context: Context, private val agentName: String) : AgentCore, Cor
         val m = config.model
         val cfg = JSONObject().put("session", session).put("provider", m.provider).put("modelId", m.model)
             .put("thinkingLevel", m.thinking)
-        when (config.tools) {
-            ToolSet.Phone -> cfg.put("tools", "phone")
-            ToolSet.Supervisor -> cfg.put("tools", "supervisor")
-            ToolSet.Chat -> Unit
+        when (config.kind) {
+            SessionKind.Phone -> cfg.put("tools", "phone")
+            SessionKind.Supervisor -> cfg.put("tools", "supervisor")
+            SessionKind.Chat -> Unit
         }
+        // The tools themselves, from the app's catalog: pi-host declares them as given.
+        cfg.put("toolSpecs", org.json.JSONArray().apply {
+            config.tools.forEach { t ->
+                put(JSONObject().put("name", t.name).put("label", t.label).put("description", t.description)
+                    .put("parameters", JSONObject(t.parameters)).put("parallel", t.parallel))
+            }
+        })
         if (!config.bash) cfg.put("bash", false)
         if (config.channel != null) cfg.put("channel", config.channel)
         if (config.systemPrompt != null) cfg.put("systemPrompt", config.systemPrompt)

@@ -40,6 +40,8 @@ class AgentController(context: Context) {
     private val phone = PhoneActions(appContext)
     /** The phone tools' behavior and safety, for every core (see PhoneTools). */
     private val phoneTools = com.lanqi.weiassist.phone.PhoneTools(::runPhone)
+    /** Sessions the supervisor started in its current task (see ToolRouter.MAX_CREATES). */
+    private val creates = java.util.concurrent.ConcurrentHashMap<String, Int>()
     val termux = Termux(appContext)
     private val prefs = appContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
@@ -83,10 +85,10 @@ class AgentController(context: Context) {
     init {
         screens.isActive = { id -> sessions.summary(id)?.status?.active == true }
         // Stop and Delete end the session's Termux jobs too; its files there are kept unless the user asked otherwise.
-        sessions.onTaskStarted = phoneTools::taskStarted
+        sessions.onTaskStarted = { id -> phoneTools.taskStarted(id); creates.remove(id) }
         sessions.onEnded = { id, deleted, files ->
             gateway.cancelTransfers(id)
-            if (deleted) phoneTools.forget(id)
+            if (deleted) { phoneTools.forget(id); creates.remove(id) }
             scope.launch { termux.cleanUp(id, deleted, files) }
         }
     }
@@ -143,37 +145,23 @@ class AgentController(context: Context) {
         tools.register("before_tool") { m ->
             val id = m.getString("session")
             val tool = m.optString("tool")
-            val reason = when {
-                !sessions.gate(id) -> "Stopped by the user."
-                sessions.summary(id)?.phone == true ->
-                    phoneTools.check(id, tool, m.optJSONObject("args") ?: JSONObject()) { c -> confirmTap(id, c) }
+            val summary = sessions.summary(id)
+            when {
+                !sessions.gate(id) -> block("Stopped by the user.")
+                summary?.phone == true ->
+                    phoneTools.check(id, tool, m.optJSONObject("args") ?: JSONObject()) { c -> confirmTap(id, c) }?.let(::block)
+                // The supervisor may start a few sessions per request; past that it is told to ask (the run goes on).
+                summary?.supervisor == true && tool == "create_session" && creates.merge(id, 1, Int::plus)!! > ToolRouter.MAX_CREATES ->
+                    block(ToolRouter.TOO_MANY_CREATES, terminate = false)
                 else -> null
             }
-            reason?.let { JSONObject().put("block", true).put("terminate", true).put("reason", it) }
         }
-        // A phone tool (read_screen, tap, …): PhoneTools adds the screen an action leaves and remembers what it read.
-        tools.register("phone") { m ->
-            phoneTools.call(m.optString("session"), m.getString("action"), m.optJSONObject("args") ?: JSONObject())
+        // Every tool call, by name (see ToolRouter and ToolCatalog); answers a ToolResult.
+        tools.register("tool") { m ->
+            router.call(m.getString("session"), m.optString("call"), m.getString("name"), m.optJSONObject("args") ?: JSONObject()).toJson()
         }
-        // The bash tool (pi-host bash-tool.ts): commands run in Termux, in the session's own folder.
-        tools.register("bash") { m ->
-            val id = m.optString("session")
-            if (!sessions.gate(id)) "stopped by the user"
-            else termux.run(id, m.getString("call"), m.getString("command"), m.optInt("timeout", 120))
-        }
-        tools.register("bash_kill") { m -> termux.kill(m.optString("session"), m.getString("call")); null }
-        // send_file (pi-host channel-tools.ts): a file from the session's Termux folder to its chat.
-        tools.register("send_file") { m ->
-            val id = m.optString("session")
-            val (ok, text) = if (!sessions.gate(id)) false to "Stopped by the user." else gateway.sendFile(id, m.getString("path"), m.optString("caption"))
-            JSONObject().put("ok", ok).put("text", text)
-        }
-        tools.register("supervisor") { m ->
-            val caller = m.optString("session")
-            // Only a supervisor session may manage the others.
-            if (sessions.summary(caller)?.supervisor != true) "Only the supervisor may manage sessions."
-            else commands.handle(caller, m.getString("action"), m.optJSONObject("args") ?: JSONObject())
-        }
+        // The user stopped the run while a call worked: end what it started (a bash command in Termux).
+        tools.register("tool_cancel") { m -> router.cancel(m.getString("session"), m.optString("call")); null }
         cores.bind(tools)
         scope.launch { cores.events.collect(::onCore) }
         // The shell helper came: queued phone sessions get displays. It went: so did its displays.
@@ -209,6 +197,22 @@ class AgentController(context: Context) {
             }.onFailure { android.util.Log.w("AgentController", "could not lift the child process limit", it) }
         }
     }
+
+    /** Runs every core's tool calls (see ToolCatalog). */
+    private val router by lazy {
+        ToolRouter(
+            summary = sessions::summary,
+            gate = sessions::gate,
+            phone = phoneTools::call,
+            bash = termux::run,
+            bashKill = termux::kill,
+            sendFile = gateway::sendFile,
+            supervisor = commands::handle,
+        )
+    }
+
+    private fun block(reason: String, terminate: Boolean = true) =
+        JSONObject().put("block", true).put("terminate", terminate).put("reason", reason)
 
     /** One raw action on session [id]'s screen, for [phoneTools]. Only the session holding a screen may act on it (see ScreenPool). */
     private suspend fun runPhone(id: String, action: String, args: JSONObject): String {

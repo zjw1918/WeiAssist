@@ -24,9 +24,13 @@ import org.json.JSONObject
  * - App-wide (no `session`): `runtime_restarted`, plus account events from a core that is also [CoreAccounts]
  *   (`status`, `auth_*`, `login_*`).
  *
- * **Tools** run in the app. A core asks [ToolHost] `before_tool` before every tool call: null to go on, or
- * { block, terminate, reason }. That covers the pause gate and the phone tools' safety checks, including
- * asking the user. Then it asks `phone`, `bash`, … and gives the answer to its model.
+ * **Tools** are the app's. A session's agent gets exactly [SessionConfig.tools] (from the app's catalog). It
+ * declares them to its model as given, and asks [ToolHost] for each call:
+ * - `before_tool` {session, tool, args} first: null to go on, or { block, terminate, reason }. That covers the pause
+ *   gate and the safety checks, including asking the user.
+ * - `tool` {session, call, name, args}: runs it and answers a [ToolResult] as JSON. `call` is the core's id for
+ *   this call.
+ * - `tool_cancel` {session, call} when the user stops the run while the call works (e.g. a bash command).
  */
 interface AgentCore {
     val info: CoreInfo
@@ -80,15 +84,40 @@ data class CoreCapabilities(
 /** The model a session uses. [baseUrl] overrides the provider's endpoint (dev builds' mock server). */
 data class ModelSelection(val provider: String, val model: String, val thinking: String, val baseUrl: String? = null)
 
-/** The tools a session's agent gets, beyond talking (and bash, see [SessionConfig.bash]). */
-enum class ToolSet { Chat, Phone, Supervisor }
+/** What a session is for, which picks its system prompt. Its tools are [SessionConfig.tools]. */
+enum class SessionKind { Chat, Phone, Supervisor }
+
+/**
+ * A tool as the model sees it: [parameters] is a JSON Schema (as JSON text, so specs compare by value).
+ * [parallel]: the core may run several calls of it at once; otherwise one at a time.
+ */
+data class ToolSpec(
+    val name: String,
+    val label: String,
+    val description: String,
+    val parameters: String,
+    val parallel: Boolean = false,
+)
+
+/**
+ * What a tool call returns to the model (the `tool` host call's answer): [text], plus an [image] (base64) for
+ * a screenshot. [isError] marks a failed step; the model reads why in [text].
+ */
+data class ToolResult(val text: String, val isError: Boolean = false, val image: String? = null, val imageType: String = "image/jpeg") {
+    fun toJson(): JSONObject = JSONObject().put("text", text).also { o ->
+        if (isError) o.put("isError", true)
+        if (image != null) o.put("image", JSONObject().put("data", image).put("mimeType", imageType))
+    }
+}
 
 data class SessionConfig(
     val model: ModelSelection,
-    val tools: ToolSet = ToolSet.Chat,
-    /** Linux commands in Termux (the bash tool). */
+    val kind: SessionKind = SessionKind.Chat,
+    /** The session's tools, beyond talking: the app's choice from its catalog. */
+    val tools: List<ToolSpec> = emptyList(),
+    /** Linux commands in Termux: the prompt says how to use them (the tool itself is in [tools]). */
     val bash: Boolean = true,
-    /** The messaging app the user talks from ("telegram"), if any: the prompt says so, and send_file is offered. */
+    /** The messaging app the user talks from ("telegram"), if any: the prompt says so. */
     val channel: String? = null,
     val systemPrompt: String? = null,
     /** A transcript this core saved earlier (its `transcript` event), to restore the conversation; null keeps the agent's own. */

@@ -1,0 +1,503 @@
+{
+	"about": [
+		"The app's tools, for every AI core: name, label, description and parameters (JSON Schema), as the model sees them.",
+		"set: which sessions get it (ToolCatalog.forSession): phone = phone sessions; bash = sessions with Termux;",
+		"send_file = sessions with Termux in a messaging app; supervisor = the supervisor.",
+		"parallel: the core may run several calls of it at once (else one at a time).",
+		"A core declares these and sends each call to the app's \"tool\" host call (ToolRouter), which runs it."
+	],
+	"tools": [
+		{
+			"name": "open_app",
+			"set": "phone",
+			"label": "Open app",
+			"description": "Open an installed app by its name or package name, e.g. \"Gmail\" or \"com.google.android.gm\".",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"app": {
+						"type": "string",
+						"description": "App name or package name"
+					}
+				},
+				"required": [
+					"app"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "read_screen",
+			"set": "phone",
+			"label": "Read screen",
+			"description": "Read what is on the screen now: one line per element, `[id] Class \"text\" (description) flags @x,y` (@x,y is the element's centre). Ids are valid until the next screen you get. Every action already returns the screen it leaves, so you rarely need this.",
+			"parameters": {
+				"type": "object",
+				"properties": {},
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "tap",
+			"set": "phone",
+			"label": "Tap",
+			"description": "Tap the element with this id from the latest screen.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"id": {
+						"type": "integer"
+					}
+				},
+				"required": [
+					"id"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "tap_at",
+			"set": "phone",
+			"label": "Tap at",
+			"description": "Tap a screen point (pixels, as in read_screen's @x,y or a screenshot scaled to the screen size). Use when read_screen has no element for what you need.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"x": {
+						"type": "integer"
+					},
+					"y": {
+						"type": "integer"
+					}
+				},
+				"required": [
+					"x",
+					"y"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "long_press",
+			"set": "phone",
+			"label": "Long press",
+			"description": "Long-press the element with this id (e.g. to open a context menu).",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"id": {
+						"type": "integer"
+					}
+				},
+				"required": [
+					"id"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "swipe",
+			"set": "phone",
+			"label": "Swipe",
+			"description": "Swipe across the screen like a finger. \"up\" reveals content further down (scrolls a feed down), \"down\" goes back up, \"left\"/\"right\" for carousels and tabs. fraction = share of the screen (0.2-0.8, default 0.6). Works where scroll does not (many feeds don't report themselves scrollable).",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"direction": {
+						"enum": [
+							"up",
+							"down",
+							"left",
+							"right"
+						]
+					},
+					"fraction": {
+						"type": "number"
+					}
+				},
+				"required": [
+					"direction"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "screenshot",
+			"set": "phone",
+			"label": "Screenshot",
+			"description": "See the screen as an image (scaled down; multiply coordinates by the factor given). Use it when read_screen misses things: images, prices drawn as pictures, videos, custom-drawn lists. Prefer read_screen for text and ids.",
+			"parameters": {
+				"type": "object",
+				"properties": {},
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "type_text",
+			"set": "phone",
+			"label": "Type text",
+			"description": "Replace the text of an editable element (from the latest read_screen) with the given text. submit: true then presses Enter, as the keyboard's Enter / Go / Search key does: e.g. to open a URL typed into a browser's address bar, or to search. Some apps (WeChat) hide their screen, so read_screen lists no field: then tap_at the field (find it in a screenshot) and call type_text without id; it puts the text (any language) at the cursor of the focused field. Check with a screenshot, then tap_at the app's Send button.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"id": {
+						"type": "integer"
+					},
+					"text": {
+						"type": "string"
+					},
+					"submit": {
+						"type": "boolean",
+						"description": "Press Enter after typing"
+					}
+				},
+				"required": [
+					"text"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "scroll",
+			"set": "phone",
+			"label": "Scroll",
+			"description": "Scroll a scrollable element (or the first scrollable one if id is omitted) forward (down) or backward (up).",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"id": {
+						"type": "integer"
+					},
+					"direction": {
+						"enum": [
+							"forward",
+							"backward"
+						]
+					}
+				},
+				"required": [
+					"direction"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "press_key",
+			"set": "phone",
+			"label": "Press key",
+			"description": "Press a key: back, home, recents, or enter (submits the focused text field, like the keyboard's Enter / Go / Search key).",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"key": {
+						"enum": [
+							"back",
+							"home",
+							"recents",
+							"enter"
+						]
+					}
+				},
+				"required": [
+					"key"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "wait",
+			"set": "phone",
+			"label": "Wait",
+			"description": "Wait (milliseconds, max 5000) when something is still loading. Actions already wait for the screen to settle.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"ms": {
+						"type": "integer"
+					}
+				},
+				"required": [
+					"ms"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "note",
+			"set": "phone",
+			"label": "Note",
+			"description": "Write down facts from the current screen that you will need later (an email's sender, subject, dates and asks; an item's price and rating). Only the latest two screens stay visible to you; your notes stay for the whole task.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"text": {
+						"type": "string"
+					}
+				},
+				"required": [
+					"text"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "bash",
+			"set": "bash",
+			"label": "Bash (Termux)",
+			"description": "Run a bash command in Termux, a Linux environment on this phone (aarch64, Termux packages, no root, no Docker). Starts in this session's own folder (~/sessions/<session>), which keeps files between calls; there is no /tmp, use $TMPDIR. Install tools with `pkg install -y <pkg>` (e.g. curl, jq, python, golang, git, tmux). Returns the exit code, stdout and stderr (long output is cut in the middle). Times out after timeout seconds (default 120, max 600); for servers and long jobs use tmux.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"command": {
+						"type": "string",
+						"description": "The bash command or script to run"
+					},
+					"timeout": {
+						"type": "integer",
+						"description": "Seconds before the command is killed (default 120, max 600)"
+					}
+				},
+				"required": [
+					"command"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "send_file",
+			"set": "send_file",
+			"label": "Send file",
+			"description": "Send a file from Termux to the user's chat: a picture, chart, PDF, audio, video or any file up to 50 MB (images up to 10 MB are shown as photos). The path is relative to this session's folder, or absolute.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"path": {
+						"type": "string",
+						"description": "The file's path in Termux, e.g. chart.png or ~/sessions/<id>/out/report.pdf"
+					},
+					"caption": {
+						"type": "string",
+						"description": "A short caption shown with it"
+					}
+				},
+				"required": [
+					"path"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "list_sessions",
+			"set": "supervisor",
+			"label": "List sessions",
+			"description": "All sessions (most recent first): id, kind (phone = operates the phone in its own screen; chat = talks only), status (Running, Queued, Paused, Idle, Interrupted), title, the app it uses, and its last line.",
+			"parallel": true,
+			"parameters": {
+				"type": "object",
+				"properties": {},
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "get_session",
+			"set": "supervisor",
+			"label": "Read a session",
+			"description": "One session in detail: status, its latest answer or error, and its recent steps. Use it to collect a session's result.",
+			"parallel": true,
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"id": {
+						"type": "string",
+						"description": "Session id (from list_sessions or create_session), or its exact title"
+					}
+				},
+				"required": [
+					"id"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "create_session",
+			"set": "supervisor",
+			"label": "Start a session",
+			"description": "Start a new session working on a task, and return its id at once (it runs in the background). phone = true if the task needs to operate apps on the phone (each phone session gets a screen of its own and runs alongside the others); false for pure questions. Write the task as complete, self-contained instructions: the session knows nothing else.",
+			"parallel": true,
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"task": {
+						"type": "string"
+					},
+					"phone": {
+						"type": "boolean"
+					},
+					"title": {
+						"type": "string",
+						"description": "Short title for the session list"
+					}
+				},
+				"required": [
+					"task",
+					"phone"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "send_message",
+			"set": "supervisor",
+			"label": "Message a session",
+			"description": "Send a session a follow-up message or a new task (it must not be working; wait_for it first). Use it to pass one session's result to another.",
+			"parallel": true,
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"id": {
+						"type": "string",
+						"description": "Session id (from list_sessions or create_session), or its exact title"
+					},
+					"text": {
+						"type": "string"
+					}
+				},
+				"required": [
+					"id",
+					"text"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "wait_for",
+			"set": "supervisor",
+			"label": "Wait for sessions",
+			"description": "Wait until the given sessions have finished their current tasks (or timeout_seconds, at most 600), then return their status and results. Use it to coordinate: wait for one, then give its result to another.",
+			"parallel": true,
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"ids": {
+						"type": "array",
+						"items": {
+							"type": "string",
+							"description": "Session ids or exact titles"
+						}
+					},
+					"timeout_seconds": {
+						"type": "integer"
+					}
+				},
+				"required": [
+					"ids"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "pause_session",
+			"set": "supervisor",
+			"label": "Pause a session",
+			"description": "Pause a working session: it holds before its next action, until resumed.",
+			"parallel": true,
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"id": {
+						"type": "string",
+						"description": "Session id (from list_sessions or create_session), or its exact title"
+					}
+				},
+				"required": [
+					"id"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "resume_session",
+			"set": "supervisor",
+			"label": "Resume a session",
+			"description": "Resume a paused session, or continue an Interrupted one (the app was restarted mid-task).",
+			"parallel": true,
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"id": {
+						"type": "string",
+						"description": "Session id (from list_sessions or create_session), or its exact title"
+					}
+				},
+				"required": [
+					"id"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "stop_session",
+			"set": "supervisor",
+			"label": "Stop a session",
+			"description": "Stop a session's current task (the conversation is kept and can go on later).",
+			"parallel": true,
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"id": {
+						"type": "string",
+						"description": "Session id (from list_sessions or create_session), or its exact title"
+					}
+				},
+				"required": [
+					"id"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "delete_session",
+			"set": "supervisor",
+			"label": "Delete a session",
+			"description": "Delete a session and its conversation for good. The user is asked to confirm on screen; if they decline, it stays.",
+			"parallel": true,
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"id": {
+						"type": "string",
+						"description": "Session id (from list_sessions or create_session), or its exact title"
+					}
+				},
+				"required": [
+					"id"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "rename_session",
+			"set": "supervisor",
+			"label": "Rename a session",
+			"description": "Give a session a clearer title.",
+			"parallel": true,
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"id": {
+						"type": "string",
+						"description": "Session id (from list_sessions or create_session), or its exact title"
+					},
+					"title": {
+						"type": "string"
+					}
+				},
+				"required": [
+					"id",
+					"title"
+				],
+				"additionalProperties": false
+			}
+		}
+	]
+}

@@ -5,7 +5,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 /**
  * The app's side of tool calls, shared by every core: the app registers a handler per call type
- * (`before_tool`, `phone`, `bash`, `send_file`, `supervisor`, …) once, and each core sends its tool calls here. A request
+ * (`before_tool`, `tool`, `tool_cancel`) once, and each core sends its tool calls here. A request
  * carries the `session` it is for. The answer (String, Boolean, JSONObject…) goes back to the model, and a
  * thrown exception fails the call.
  */

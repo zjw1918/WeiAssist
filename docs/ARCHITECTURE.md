@@ -31,7 +31,7 @@ Pi is the first of possibly several **AI cores**: the app talks to it only throu
                │ PiBridge.postMessage ⇄ PiHost.*(json)
 ┌───────── pi-host/ (TypeScript, bundled by esbuild) ──────────────────────┐
 │ host.ts       one Pi Agent per session + Models (login, streamSimple)    │
-│ phone-tools.ts  PhoneSession: the phone tools' schemas → "phone"         │
+│ catalog-tools.ts  the app's tool specs → Pi tools → "tool" host call     │
 │ native-fetch.ts · shims/ (node:http, node:crypto) · bridge.ts            │
 │ node_modules/@earendil-works/pi-ai, pi-agent-core (pinned, unmodified)   │
 └──────────────────────────────────────────────────────────────────────────┘
@@ -58,7 +58,7 @@ All messages are JSON.
 | JS→K | `credentials_changed` | Pi's credential store was written. Kotlin persists it encrypted. |
 | JS→K | `fetch` / `fetch_abort` | Native HTTP for Pi (no CORS). The reply streams back as `fetchHead`, `fetchChunk`, `fetchEnd` or `fetchError`. |
 | JS→K | `http_listen` / `http_close` / `http_response` | The `node:http` shim. Pi's OAuth callback server runs on a real loopback socket. |
-| JS→K | any registered host call (`before_tool`, `phone`, `bash`, …), with `session` | `bridgeCall(type, …)`, answered with `PiHost.reply(id, ok, value)`. Tool arguments are nested under `args`. `before_tool` runs before every tool call (Pi's `beforeToolCall`): it holds a paused session and runs the phone safety checks, answering null or `{ block, terminate, reason }`. |
+| JS→K | the host calls `before_tool`, `tool`, `tool_cancel`, with `session` | `bridgeCall(type, …)`, answered with `PiHost.reply(id, ok, value)`. `before_tool` {tool, args} runs before every tool call (Pi's `beforeToolCall`): it holds a paused session and runs the safety checks, answering null or `{ block, terminate, reason }`. `tool` {call, name, args} runs a tool (Kotlin's `ToolRouter`) and answers `{ text, isError?, image? }`. Tool arguments are nested under `args`. `tool_cancel` {call}: Stop during a call. |
 | K→JS | `init` (with the user's `customProviders`), `status`, `login`, `answer`, `cancelLogin`, `logout`, `setCustomProviders` | App-wide commands |
 | K→JS | `lookupModels` (synchronous: its return value comes back through `evaluateJavascript`) | Pi's catalog entries for model ids (custom providers' context windows) |
 | K→JS | `configure` (optionally with saved `messages`), `prompt` and `steer` (optionally with attachment `content` blocks), `abort`, `dispose`, all with `session` | Session commands |
@@ -70,12 +70,19 @@ Tests: [pi-host/test](../pi-host/test) runs the shipped bundle against a fake Ko
 An AI core is an agent harness that runs conversations. The app owns sessions, the UI, model settings and tools;
 a core owns its agent loop, context handling and transcript format. The contract is in `:core`:
 
-- **`AgentCore`:** one agent per session id: `configure` (model, tool set, bash, channel, saved transcript),
+- **`AgentCore`:** one agent per session id: `configure` (model, kind, tools, bash, channel, saved transcript),
   `prompt`, `steer`, `abort`, `dispose`, and `events`. Events use one vocabulary shared by all cores (`text_delta`,
   `tool_start`, `assistant_end`, `idle`, `transcript`, …, listed in `AgentCore.kt`), so `SessionReducer` and the UI
   don't know which core is talking. `CoreCapabilities` says what a core can't do (e.g. no streaming).
-- **`ToolHost`:** the app's handlers for tool calls (`before_tool`, `phone`, `bash`, `send_file`, `supervisor`),
-  registered once by `AgentController` and shared by every core.
+- **`ToolHost`:** the app's handlers for a core's tool calls (`before_tool`, `tool`, `tool_cancel`), registered
+  once by `AgentController` and shared by every core.
+- **The tool catalog** (`agent/src/main/resources/…/tools.json`, `ToolCatalog`): every tool's name, label,
+  description and JSON Schema, exactly as the model sees them. The app chooses a session's tools
+  (`ToolCatalog.forSession`: phone tools, bash with Termux, `send_file` in a messaging app, or the supervisor's)
+  and passes them in `SessionConfig.tools`. A core declares them as given and sends every call to `tool`.
+  `ToolRouter` checks that the session has the tool, shapes the arguments for the part of the app that does the
+  work, and shapes the result (a screenshot becomes an image). A new tool is an entry in the catalog plus a
+  route in `ToolRouter`; no core changes.
 - **`PhoneTools`** (`:phone`): what the phone tools do and the checks before them, the same for every core. It keeps
   each task's last screen, typed fields and step count. An action returns its result and the screen it leaves.
   `before_tool` asks the user about irreversible taps (and blind ones after typing into a hidden field), and stops a
@@ -192,9 +199,9 @@ and an unused display is blank). One Hide/Show switch for both, shown by default
 ## The supervisor (and voice)
 
 One session is the supervisor (pinned at the top of the list). It is a Pi Agent whose tools manage the other
-sessions instead of the phone (`pi-host/src/supervisor-tools.ts`): `list_sessions`, `get_session`,
+sessions instead of the phone (the catalog's supervisor tools): `list_sessions`, `get_session`,
 `create_session`, `send_message`, `wait_for`, `pause_session`, `resume_session`, `stop_session`,
-`delete_session`, `rename_session`. Each goes to Kotlin's `supervisor` host call → `SessionCommands`.
+`delete_session`, `rename_session`. Each goes through `ToolRouter` → `SessionCommands`.
 
 - **Coordination** is `wait_for` (until sessions finish, the time is up, or the supervisor is stopped) plus
   `send_message` (hand one session's result to another). Sessions may be named by id or exact title.
@@ -235,8 +242,8 @@ what they mean). Like OpenClaw's and Hermes Agent's gateways, but on the phone a
   then "⚙ N steps"), "typing…" meanwhile. Runs started in the app are not sent to Telegram.
 - **Files:** photos and documents sent to the bot (an album is one message) are fetched (Bot API: up to 20 MB) and
   attached when the model can read them (images, PDFs, text); in a conversation with Termux every file is also put
-  in its folder's `inbox/`, and the message says where. The model sends files back with `send_file` (pi-host
-  `channel-tools.ts`, offered to chat conversations with Termux): images up to 10 MB as photos, others as documents,
+  in its folder's `inbox/`, and the message says where. The model sends files back with `send_file` (in the
+  catalog, offered to conversations with Termux): images up to 10 MB as photos, others as documents,
   up to 50 MB. `/screen` sends a picture of the screen the conversation is working on.
 - **Termux ↔ app:** Termux runs as another Linux user, so files cross through `LoopbackTransfer`: a one-shot HTTP
   endpoint on 127.0.0.1 with a random secret in its URL, which Termux's `curl` uploads to (`Termux.pull`) or
