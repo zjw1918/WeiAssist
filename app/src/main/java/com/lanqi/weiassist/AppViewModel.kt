@@ -126,14 +126,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** An engine's name for a session's [SessionSummary.core]. */
     fun engineName(id: String): String = controller.value?.engineName(id) ?: id
 
-    /** The engine new sessions use (Settings), unless [newEngine] picks another for the next one. */
+    /** The engine new sessions use (Settings). */
     @OptIn(ExperimentalCoroutinesApi::class)
     val defaultEngine: StateFlow<String> = controller
         .flatMapLatest { it?.defaultEngine ?: flowOf("pi") }
         .stateIn(viewModelScope, SharingStarted.Eagerly, "pi")
-
-    /** The engine chosen in the new-session sheet for the next session; null: the default. */
-    var newEngine by mutableStateOf<String?>(null)
 
     /** The engine new sessions use from now on (Settings; debug builds: `--es core`). */
     fun selectCore(id: String) { controller.value?.selectCore(id) }
@@ -207,9 +204,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         if (text.isEmpty() && files.isEmpty()) return
         prefs.edit().putBoolean("phoneMode", phoneMode).putString("input", input).apply()
         inputAttachments.clear()
-        val engine = newEngine
-        newEngine = null
-        viewModelScope.launch { open(c.startTask(text, phoneMode, files, engine)) }
+        viewModelScope.launch { open(c.startTask(text, phoneMode, files)) }
     }
 
     /** A follow-up message in the open session (while it works, it steers the task). */

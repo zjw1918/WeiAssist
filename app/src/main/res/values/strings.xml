@@ -321,7 +321,6 @@
     <string name="telegram_access_phone_hint">Asks you in Telegram (and on the phone) before Send, Delete and the like; payments only on the phone. Needs the accessibility service. While the phone is locked, phone tasks may not work.</string>
     <string name="section_engine">AI engine</string>
     <string name="engine_hint">New sessions use the engine chosen here. A session keeps the engine it was started with.</string>
-    <string name="engine_label">Engine</string>
     <string name="engine_pi_info">Built in (Pi %1$s)</string>
     <string name="engine_ready">Set up in Termux</string>
     <string name="engine_checking">Checking…</string>

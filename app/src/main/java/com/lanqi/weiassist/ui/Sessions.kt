@@ -286,20 +286,8 @@ private fun NewSessionSheet(vm: AppViewModel, onDismiss: () -> Unit) {
                 stringResource(if (vm.phoneMode) R.string.kind_phone_hint else R.string.kind_chat_hint),
                 style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            // The AI engine for this session (the Settings choice unless changed here); it keeps it for good.
-            val defaultEngine by vm.defaultEngine.collectAsStateWithLifecycle()
-            val engine = vm.newEngine ?: defaultEngine
-            if (vm.engines.size > 1) Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(stringResource(R.string.engine_label), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    vm.engines.forEachIndexed { i, e ->
-                        SegmentedButton(
-                            selected = engine == e.id, onClick = { vm.newEngine = e.id },
-                            shape = SegmentedButtonDefaults.itemShape(i, vm.engines.size),
-                        ) { Text(e.name, maxLines = 1, overflow = TextOverflow.Ellipsis) }
-                    }
-                }
-            }
+            // New sessions use the AI engine chosen in Settings; the box says which.
+            val engine by vm.defaultEngine.collectAsStateWithLifecycle()
             OutlinedTextField(
                 vm.input, { vm.input = it }, modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 6,
                 label = { Text(if (vm.phoneMode) stringResource(R.string.task_label) else stringResource(R.string.chat_label, vm.engineName(engine))) },

@@ -316,7 +316,6 @@
     <string name="telegram_access_phone_hint">发送、删除这类操作前会在 Telegram（和手机上）问你；付款只能在手机上确认。需要无障碍服务。手机锁屏时，操作手机应用的任务可能无法进行。</string>
     <string name="section_engine">AI 引擎</string>
     <string name="engine_hint">新会话使用这里选择的引擎；每个会话一直使用它创建时的引擎。</string>
-    <string name="engine_label">引擎</string>
     <string name="engine_pi_info">内置（Pi %1$s）</string>
     <string name="engine_ready">已在 Termux 中安装</string>
     <string name="engine_checking">正在检查…</string>
