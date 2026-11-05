@@ -49,7 +49,8 @@ object SessionReducer {
             val app = APP_LINE.find(output)?.groupValues?.get(1)
             s.copy(items = items, summary = if (app != null) s.summary.copy(app = app) else s.summary).trace("  ${if (ok) "✓" else "✗"} $out")
         }
-        "configured" -> s.trace("configured · ${m.optString("model")} · thinking=${m.optString("thinkingLevel")} → ${m.optString("baseUrl")} · auth=${m.optString("auth")} · history=${m.optInt("messages")}")
+        "configured" -> s.trace("configured · ${m.optString("model")} · thinking=${m.optString("thinkingLevel")} → ${m.optString("baseUrl")} · auth=${m.optString("auth")} · history=${m.optInt("messages")}" +
+            (m.optJSONArray("skipped")?.takeIf { it.length() > 0 }?.let { " · the core's own: ${it.join(", ")}" } ?: ""))
         "error" -> {
             val err = friendly(m.optString("message"))
             s.copy(error = err, pendingTask = null).endRun(now).undelivered().status(SessionStatus.Idle, now)
@@ -115,7 +116,8 @@ object SessionReducer {
         "note" -> a?.optString("text").orEmpty().lineSequence().first().take(40)
         // the supervisor's tools
         "create_session" -> a?.optString("title").orEmpty().ifBlank { a?.optString("task").orEmpty().take(40) }
-        "send_message" -> "${a?.optString("id")}: “${a?.optString("text").orEmpty().take(40)}”"
+        // send_message: its name before message_session, in saved chats.
+        "message_session", "send_message" -> "${a?.optString("id")}: “${a?.optString("text").orEmpty().take(40)}”"
         "get_session", "pause_session", "resume_session", "stop_session", "delete_session" -> a?.optString("id").orEmpty()
         "rename_session" -> "${a?.optString("id")} → ${a?.optString("title")}"
         "wait_for" -> a?.optJSONArray("ids")?.let { ids -> (0 until ids.length()).joinToString(", ") { ids.getString(it) } }.orEmpty()

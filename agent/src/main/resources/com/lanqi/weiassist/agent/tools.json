@@ -346,7 +346,7 @@
 			}
 		},
 		{
-			"name": "send_message",
+			"name": "message_session",
 			"set": "supervisor",
 			"label": "Message a session",
 			"description": "Send a session a follow-up message or a new task (it must not be working; wait_for it first). Use it to pass one session's result to another.",

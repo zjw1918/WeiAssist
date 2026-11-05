@@ -132,7 +132,9 @@ test("phone tools: the app's specs reach the model, calls go through before_tool
 	app.send({ type: "prompt", session: id("p1"), text: "do it [[script:tap]]" });
 	await app.waitFor("idle", (m) => m.session === id("p1"));
 	const tools = JSON.parse(mock.requests[before].body).tools.map((t) => t.name);
-	assert.deepEqual(tools.sort(), specs("phone").map((t) => t.name).sort());
+	// The app's tools on top of dsh's own (it keeps its native capabilities).
+	for (const t of specs("phone")) assert.ok(tools.includes(t.name), t.name);
+	for (const native of ["read", "subagent", "todo_write", "web_fetch"]) assert.ok(tools.includes(native), native);
 	assert.deepEqual(order.map(([k, n]) => [k, n]), [["before_tool", "tap"], ["tool", "tap"]]);
 	assert.equal(order[0][2], order[1][2], "the same call id in both, so the app can match them");
 	const call = app.toolCalls.at(-1);
@@ -175,6 +177,67 @@ test("a call before_tool blocks never runs, and a terminating block ends the run
 	assert.equal(end.isError, true);
 	assert.match(end.output, /declined/);
 	assert.equal(mock.requests.length - before, 1, "ended: the model was not asked again");
+});
+
+test("dsh's own tool of the same name stays, and its calls go through the app's before_tool too", { skip }, async () => {
+	const checked = [];
+	const ran = [];
+	app.handlers = { before_tool: (m) => { checked.push(m.tool); return null; }, tool: (m) => { ran.push(m.name); return { text: "app" }; } };
+	const conf = await configure(id("n1"), { toolSpecs: specs("bash") });
+	assert.deepEqual(conf.skipped, ["bash"], "the app's bash is left out: dsh has its own");
+	app.send({ type: "prompt", session: id("n1"), text: "greet [[script:dsh_bash]]" });
+	await app.waitFor("idle", (m) => m.session === id("n1"));
+	assert.deepEqual(checked, ["bash"]);
+	assert.deepEqual(ran, [], "dsh ran it, not the app");
+	const end = app.messages.find((m) => m.type === "tool_end" && m.session === id("n1"));
+	assert.equal(end.isError, false, end.output);
+	assert.match(end.output, /hi from dsh/);
+});
+
+test("a subagent's calls go through the app's before_tool and show as steps of its session", { skip }, async () => {
+	const checked = [];
+	app.handlers = { before_tool: (m) => { checked.push([m.tool, m.subagent !== undefined]); return null; } };
+	await configure(id("sub"));
+	app.send({ type: "prompt", session: id("sub"), text: "plan [[script:delegate]]" });
+	// Subagents run in the background: the session answers at once, and its subagent works on.
+	await app.waitFor("assistant_end", (m) => m.session === id("sub") && m.text === "delegated", 60_000);
+	await app.waitFor("tool_end", (m) => m.session === id("sub") && m.tool === "↳ todo_write", 30_000);
+	assert.deepEqual(checked, [["subagent", false], ["todo_write", true]]);
+	const steps = app.messages.filter((m) => m.type === "tool_start" && m.session === id("sub")).map((m) => m.tool);
+	assert.deepEqual(steps, ["subagent", "↳ todo_write"]);
+	const child = app.messages.find((m) => m.type === "tool_end" && m.session === id("sub") && m.tool === "↳ todo_write");
+	assert.equal(child.isError, false, child.output);
+	// The subagent's own words ("listed") stay in dsh: only the session's answers are messages.
+	await app.waitFor("idle", (m) => m.session === id("sub"));
+	const answers = app.messages.filter((m) => m.type === "assistant_end" && m.session === id("sub")).map((m) => m.text).filter(Boolean);
+	assert.ok(answers.length > 0 && !answers.includes("listed"), JSON.stringify(answers));
+});
+
+test("Stop also stops the session's subagents", { skip }, async () => {
+	let release;
+	const held = new Promise((r) => { release = r; });
+	// The subagent's call waits at the app's gate, as a paused session's would.
+	app.handlers = { before_tool: (m) => (m.subagent ? held.then(() => null) : null) };
+	await configure(id("stop"));
+	app.send({ type: "prompt", session: id("stop"), text: "plan [[script:delegate]]" });
+	await app.waitFor("before_tool", (m) => m.session === id("stop") && m.subagent !== undefined, 30_000);
+	app.send({ type: "abort", session: id("stop") });
+	await new Promise((r) => setTimeout(r, 300));
+	release();
+	await new Promise((r) => setTimeout(r, 500));
+	const child = app.messages.filter((m) => m.type === "tool_end" && m.session === id("stop") && m.tool === "↳ todo_write");
+	assert.ok(child.length === 0 || child[0].isError, "the subagent's call didn't run after Stop");
+	assert.ok(!app.messages.some((m) => m.type === "assistant_end" && m.session === id("stop") && m.text === "listed"));
+});
+
+test("a native call the app blocks is denied", { skip }, async () => {
+	app.handlers = { before_tool: (m) => (m.tool === "bash" ? { block: true, terminate: false, reason: "Paused by the user." } : null) };
+	await configure(id("n2"));
+	app.send({ type: "prompt", session: id("n2"), text: "greet [[script:dsh_bash]]" });
+	await app.waitFor("idle", (m) => m.session === id("n2"));
+	const end = app.messages.find((m) => m.type === "tool_end" && m.session === id("n2"));
+	assert.equal(end.isError, true);
+	assert.match(end.output, /Paused by the user/);
 });
 
 test("a session comes back after its agent is gone (dispose, then configure again)", { skip }, async () => {

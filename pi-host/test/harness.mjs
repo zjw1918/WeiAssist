@@ -23,7 +23,7 @@ export function toolSpecsFor(cfg) {
 
 /** SessionCommands' action for each supervisor tool (ToolRouter.supervisorCall). */
 const SUPERVISOR_ACTIONS = {
-	list_sessions: "list", get_session: "get", create_session: "create", send_message: "send", wait_for: "wait",
+	list_sessions: "list", get_session: "get", create_session: "create", message_session: "send", wait_for: "wait",
 	pause_session: "pause", resume_session: "resume", stop_session: "stop", delete_session: "delete", rename_session: "rename",
 };
 

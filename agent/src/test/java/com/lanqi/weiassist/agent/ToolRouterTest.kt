@@ -38,7 +38,7 @@ class ToolRouterTest {
         assertEquals(emptyList<String>(), names(session(channel = "telegram", termux = false)))
         val sup = names(session(supervisor = true, phone = true, channel = "telegram"))
         assertEquals(10, sup.size)
-        assertTrue(sup.all { it.endsWith("_session") || it == "send_message" || it == "wait_for" || it == "list_sessions" })
+        assertTrue(sup.all { it.endsWith("_session") || it == "message_session" || it == "wait_for" || it == "list_sessions" })
     }
 
     private class Fakes(val summary: SessionSummary, var open: Boolean = true) {

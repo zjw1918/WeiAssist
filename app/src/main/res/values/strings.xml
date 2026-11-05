@@ -285,7 +285,7 @@
     <string name="tool_screenshot">Screenshot</string>
     <string name="tool_bash">Run command</string>
     <string name="tool_create_session">Start a session</string>
-    <string name="tool_send_message">Message a session</string>
+    <string name="tool_message_session">Message a session</string>
     <string name="tool_list_sessions">List sessions</string>
     <string name="tool_get_session">Check a session</string>
     <string name="tool_wait_for">Wait for sessions</string>

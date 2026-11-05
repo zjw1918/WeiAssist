@@ -41,7 +41,7 @@ class SessionTextTest {
         assertEquals("Taobao", SessionReducer.stepDetail("create_session", JSONObject().put("title", "Taobao").put("task", "find")))
         assertEquals("find the cheapest", SessionReducer.stepDetail("create_session", JSONObject().put("title", "").put("task", "find the cheapest")))
         assertEquals("a1, b2", SessionReducer.stepDetail("wait_for", JSONObject().put("ids", JSONArray(listOf("a1", "b2")))))
-        assertEquals("a1: “hi”", SessionReducer.stepDetail("send_message", JSONObject().put("id", "a1").put("text", "hi")))
+        assertEquals("a1: “hi”", SessionReducer.stepDetail("message_session", JSONObject().put("id", "a1").put("text", "hi")))
     }
 
     @Test fun `the supervisor flag survives storage`() {

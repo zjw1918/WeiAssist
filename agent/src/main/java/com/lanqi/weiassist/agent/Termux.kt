@@ -78,7 +78,7 @@ class Termux(context: Context) {
                 [ "${'$'}(tr '\0' ' ' < "${'$'}{p}/cmdline" 2> /dev/null)" = "node ./node_modules/.bin/dsh --profile weiassist " ] && kill "${'$'}{p#/proc/}" 2> /dev/null
             done
             tmux kill-session -t dsh 2> /dev/null
-            tmux new-session -d -s dsh proot-distro login ubuntu --termux-home -- env DSH_HOME=/root/.weiassist-dsh/linux/home "${'$'}@" sh -c 'cd /root/.weiassist-dsh/linux/run && exec node ./node_modules/.bin/dsh --profile weiassist > /root/.weiassist-dsh/dsh.log 2>&1'
+            tmux new-session -d -s dsh proot-distro login ubuntu --termux-home -- env DSH_HOME=/root/.weiassist-dsh/linux/home WEIASSIST_SESSIONS_DIR=/root/sessions "${'$'}@" sh -c 'cd /root/.weiassist-dsh/linux/run && exec node ./node_modules/.bin/dsh --profile weiassist > /root/.weiassist-dsh/dsh.log 2>&1'
             # A dsh that dies at once (a missing package, a native module): say why instead of letting the app wait.
             sleep 6
             tmux has-session -t dsh 2> /dev/null || { echo "DeepSeek Harness stopped at once:"; tail -15 "${'$'}{d}/dsh.log"; exit 4; }

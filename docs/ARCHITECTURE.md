@@ -68,7 +68,9 @@ Tests: [pi-host/test](../pi-host/test) runs the shipped bundle against a fake Ko
 ## AI cores
 
 An AI core is an agent harness that runs conversations. The app owns sessions, the UI, model settings and tools;
-a core owns its agent loop, context handling and transcript format. The contract is in `:core`:
+a core owns its agent loop, context handling and transcript format. **A core keeps its native capabilities**
+(subagents, web tools, todo lists, its own tools): the app adds its tools on top and gates every call, and never
+turns a core's features off because another core lacks them. The contract is in `:core`:
 
 - **`AgentCore`:** one agent per session id: `configure` (model, kind, tools, bash, channel, saved transcript),
   `prompt`, `steer`, `abort`, `dispose`, and `events`. Events use one vocabulary shared by all cores (`text_delta`,
@@ -117,10 +119,16 @@ entry in the registry.
   `android`, so dsh can't boot there. In Ubuntu (proot) Node is `linux-arm64` and the published binaries load.
   Set up with `dsh-host/termux/setup-proot.sh`: Ubuntu, Node 24 and dsh's 931 MB of packages.
 - **The bridge** (`dsh-host/src/index.ts`) is the dsh counterpart of `pi-host`. It is mounted by the profile
-  patch `dsh-host/profile/cordis.patch.yml`, which also turns off dsh's own model-facing tools, plan mode and its
-  titler, and declares the model routes. Each app session is a dsh Agent with the same id. Its tools are the
-  app's specs (`createMcpToolDefinition`, so a screenshot is an image), behind dsh's `tools/pre-execute` →
-  `before_tool`. A terminating block refuses the next step (`agent/pre-step`). Live text comes from
+  patch `dsh-host/profile/cordis.patch.yml`, which turns off only the one-shot runner, the titler (the app titles
+  sessions) and dsh's coding-agent persona, and declares the model routes.
+- **A session keeps all of dsh** and gets the app's tools on top. Each app session is a dsh Agent with the same
+  id, working in the app's folder for it (`~/sessions/<id>`), with dsh's own tools (files, bash and jobs,
+  subagents, web fetch, todo, goals, workflows, skills) and the app's specs (`createMcpToolDefinition`, so a
+  screenshot is an image). Where both have a tool of one name, dsh's stays and the app's is left out
+  (`configured.skipped`, e.g. `bash`). Every call of the session's tree, dsh's own tools and its subagents'
+  included, goes through dsh's `tools/pre-execute` → `before_tool`, so pause, Stop, the step limit and the user's
+  OK cover them. A subagent's calls show as the session's steps (`↳ todo_write`), and Stop cancels its
+  subagents too. The system prompt is the app's section for the session plus dsh's own guidance. A terminating block refuses the next step (`agent/pre-step`). Live text comes from
   `agent/assistant-stream`; dsh's own SDK and ACP servers send no live text. dsh keeps the conversation in its
   own log; the app saves a marker and the bridge resumes the session by id.
 - **Lifecycle:** the first task launches dsh (about 30 s to boot on a realme RMX2121; later tasks take about a
@@ -128,7 +136,7 @@ entry in the registry.
   after 3 minutes. A lost connection is `runtime_restarted`, and the bridge exits when the app goes away.
 - **Not yet:** keys go to dsh in its launch environment and command line, which anything running in Termux can
   read (the model's own bash commands included): a key proxy in the app should replace that. A key change
-  needs a dsh restart. The system prompt is a short placeholder (the app's prompts are still in `pi-host`).
+  needs a dsh restart. The app's prompt section is a short placeholder (its prompts are still in `pi-host`).
   Attached images aren't passed on, and thinking levels aren't mapped. Routes are only openai, deepseek and the
   dev mock.
 
@@ -234,11 +242,11 @@ and an unused display is blank). One Hide/Show switch for both, shown by default
 
 One session is the supervisor (pinned at the top of the list). It is a Pi Agent whose tools manage the other
 sessions instead of the phone (the catalog's supervisor tools): `list_sessions`, `get_session`,
-`create_session`, `send_message`, `wait_for`, `pause_session`, `resume_session`, `stop_session`,
+`create_session`, `message_session`, `wait_for`, `pause_session`, `resume_session`, `stop_session`,
 `delete_session`, `rename_session`. Each goes through `ToolRouter` → `SessionCommands`.
 
 - **Coordination** is `wait_for` (until sessions finish, the time is up, or the supervisor is stopped) plus
-  `send_message` (hand one session's result to another). Sessions may be named by id or exact title.
+  `message_session` (hand one session's result to another). Sessions may be named by id or exact title.
 - **Safety:** only a supervisor session may use these commands; deleting asks the user on the overlay card
   (no accessibility service: no deleting); at most 8 new sessions per request; the supervisor has no phone
   tools. Sessions' results come from apps and web pages, so they reach the supervisor fenced as data

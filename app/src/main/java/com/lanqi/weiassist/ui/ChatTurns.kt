@@ -253,7 +253,7 @@ private fun toolLabel(tool: String): String = when (tool) {
     "screenshot" -> stringResource(R.string.tool_screenshot)
     "bash" -> stringResource(R.string.tool_bash)
     "create_session" -> stringResource(R.string.tool_create_session)
-    "send_message" -> stringResource(R.string.tool_send_message)
+    "message_session", "send_message" -> stringResource(R.string.tool_message_session)
     "list_sessions" -> stringResource(R.string.tool_list_sessions)
     "get_session" -> stringResource(R.string.tool_get_session)
     "wait_for" -> stringResource(R.string.tool_wait_for)
@@ -266,7 +266,7 @@ private fun toolIcon(tool: String) = when (tool) {
     "tap", "tap_at", "long_press", "swipe", "scroll", "press_key" -> R.drawable.ic_touch
     "type_text", "note" -> R.drawable.ic_edit
     "read_screen", "screenshot" -> R.drawable.ic_phone
-    "create_session", "send_message", "list_sessions", "get_session", "wait_for", "pause_session", "resume_session",
+    "create_session", "message_session", "send_message", "list_sessions", "get_session", "wait_for", "pause_session", "resume_session",
     "stop_session", "delete_session", "rename_session" -> R.drawable.ic_forum
     else -> R.drawable.ic_code
 }
