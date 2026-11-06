@@ -29,6 +29,9 @@ import java.util.concurrent.Executors
  *   ones go back to the helper at once ([IShellService.frameDone]).
  * - **Adaptive rate:** the fastest rate any viewer of a display asks for ([Purpose]), lowered in battery
  *   saver and when the phone runs warm, never more than the display changes (a still screen sends nothing).
+ * - **On the live grid:** a frame is shown at the next mark of the grid the page's other live content uses
+ *   ([liveGridWait], every [STREAM_FRAME_MS]), so a new picture shares its redraw with streamed text and the
+ *   swimming fish instead of costing a frame of its own (the whole page is drawn again for any change).
  * - **Nothing when unseen:** a display is watched only while some flow from [frames] is collected; the UI
  *   collects only while it is on screen and the app is visible (collectAsStateWithLifecycle).
  *
@@ -36,7 +39,8 @@ import java.util.concurrent.Executors
  */
 class PreviewHub(context: Context, private val shell: ShellBackend) {
     /** What a preview is for: the rate it would like at best. */
-    enum class Purpose(val fps: Int) { Page(12), Thumbnail(3) }
+    /** Page: one frame per mark of the live grid (10 a second); faster would only wait for the next mark. */
+    enum class Purpose(val fps: Int) { Page((1000 / STREAM_FRAME_MS).toInt()), Thumbnail(3) }
 
     private val app = context.applicationContext
     private val main = Handler(Looper.getMainLooper())
@@ -51,6 +55,8 @@ class PreviewHub(context: Context, private val shell: ShellBackend) {
         val viewers = HashSet<Viewer>()
         /** Frames we hold: (seq, bitmap), oldest first. */
         val held = ArrayDeque<Pair<Int, Bitmap>>()
+        /** The newest frame, waiting for the next mark of the live grid to be shown. */
+        var pending: Pair<Int, Bitmap>? = null
         var fps = 0
     }
 
@@ -97,12 +103,25 @@ class PreviewHub(context: Context, private val shell: ShellBackend) {
             call { it.frameDone(display, listener, seq) }
             return
         }
+        // A newer frame while one waits: the waiting one is never shown. Its buffer goes back with the next
+        // frameDone (which returns every frame up to a seq), not now: that would return the shown ones too.
+        feed.pending?.second?.recycle()
+        val waiting = feed.pending != null
+        feed.pending = seq to bmp
+        if (!waiting) main.postDelayed({ show(feed) }, liveGridWait(STREAM_FRAME_MS))
+    }
+
+    /** The waiting frame becomes the shown one, at a mark of the live grid. */
+    private fun show(feed: Feed) {
+        val (seq, bmp) = feed.pending ?: return
+        feed.pending = null
+        if (feeds[feed.display] !== feed) return // stopped meanwhile (stop recycled it)
         feed.held.addLast(seq to bmp)
         feed.frame.value = bmp
         // Keep the shown frame and the one before it (it may still be in the frame being drawn).
         var done = -1
         while (feed.held.size > 2) feed.held.removeFirst().let { (s, b) -> b.recycle(); done = s }
-        if (done >= 0) call { it.frameDone(display, listener, done) }
+        if (done >= 0) call { it.frameDone(feed.display, listener, done) }
     }
 
     private fun stop(feed: Feed) {
@@ -110,8 +129,10 @@ class PreviewHub(context: Context, private val shell: ShellBackend) {
         call { it.unwatch(feed.display, listener) }
         feed.frame.value = null
         // The helper reclaims what it sent (unwatch); our wrappers can go.
+        feed.pending?.second?.recycle()
         feed.held.forEach { it.second.recycle() }
         feed.held.clear()
+        feed.pending = null
     }
 
     private fun updateRates() = feeds.values.forEach(::updateRate)
@@ -143,7 +164,10 @@ class PreviewHub(context: Context, private val shell: ShellBackend) {
 
     /** The helper restarted: watched displays are gone; viewers see their sessions get new ones. */
     fun reset() {
-        feeds.values.toList().forEach { it.held.forEach { h -> h.second.recycle() }; it.held.clear(); it.frame.value = null; it.fps = 0 }
+        feeds.values.toList().forEach {
+            it.pending?.second?.recycle(); it.pending = null
+            it.held.forEach { h -> h.second.recycle() }; it.held.clear(); it.frame.value = null; it.fps = 0
+        }
     }
 
     private companion object { const val TAG = "Previews" }
