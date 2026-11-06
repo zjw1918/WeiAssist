@@ -55,6 +55,17 @@ installs from your browser or file manager when Android asks.
 Both use the same providers, keys and sign-ins, and both get the app's phone tools and safety checks. Each
 conversation keeps the engine it started with.
 
+### Subagents
+
+<p align="center">
+  <a href="docs/images/subagents-demo.mp4"><img src="docs/images/subagents-demo.gif" width="320"
+    alt="A DeepSeek Harness session asked to compare Rust, Go and Zig with three subagents: each subagent works in its own live card with its time, steps and current step while the header counts how many are done; once all three are done the orchestrator's comparison table is the answer, and the Thinking and steps sheet shows each subagent's card with its report and its own work"></a>
+</p>
+
+With DeepSeek Harness, a task can run several subagents at once. Each one gets its own live card showing its
+reasoning, steps, time and report. The answer comes once all of them are done: the orchestrator's summary, with the
+rest of its work a tap away. [Watch the video](docs/images/subagents-demo.mp4) (sped up).
+
 ## What it can do
 
 ![Four WeiAssist screens: a DeepSeek Harness session with three subagents researching in parallel; its answer once they are done, one comparison table; Settings with the AI engine choice, Pi or DeepSeek Harness; and a Pi session answering the weather with curl in Termux](docs/images/showcase.png)
