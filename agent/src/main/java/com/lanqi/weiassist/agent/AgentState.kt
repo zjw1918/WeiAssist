@@ -92,7 +92,29 @@ sealed interface ChatItem {
      * agent's reply to it is a new part of the run, as dsh's own chat shows it ("Subtask status updated"); [text] is
      * the notice, shown on request.
      */
-    data class Trigger(val source: String, val text: String) : ChatItem
+    data class Trigger(val source: String, val text: String, val subagent: String = "") : ChatItem
+    /**
+     * A subagent the agent started (DeepSeek Harness), with its own work, as dsh's web chat gives each child its own
+     * conversation: [items] are its reasoning, steps and messages; [thinking] and [streaming] what it streams now.
+     * [label] is the task's short description. [outcome] is null until dsh reports it settled ("done", "stopped",
+     * "failed"), with its closing message in [result]; [ms] is how long it took.
+     */
+    data class Subagent(
+        val id: String,
+        val label: String = "",
+        val items: List<ChatItem> = emptyList(),
+        val running: Boolean = true,
+        val thinking: String = "",
+        val thinkingSince: Long? = null,
+        val streaming: String = "",
+        val startedAt: Long = 0,
+        val ms: Long = 0,
+        val outcome: String? = null,
+        val result: String = "",
+    ) : ChatItem {
+        val steps get() = items.count { it is Step }
+        val settled get() = outcome != null
+    }
     /** Ends a run (one task, from the user's message to idle): what it took. */
     data class Stats(val run: RunStats) : ChatItem
 }

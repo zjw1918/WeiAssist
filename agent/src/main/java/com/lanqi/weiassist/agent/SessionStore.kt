@@ -88,6 +88,10 @@ class SessionStore(root: File) {
                 .put("ok", i.ok ?: JSONObject.NULL).put("result", i.result).also { if (i.screen > 0) it.put("screen", i.screen) }
             is ChatItem.Thinking -> JSONObject().put("k", "thinking").put("text", i.text).put("ms", i.ms)
             is ChatItem.Trigger -> JSONObject().put("k", "trigger").put("source", i.source).put("text", i.text)
+                .also { if (i.subagent.isNotEmpty()) it.put("subagent", i.subagent) }
+            is ChatItem.Subagent -> JSONObject().put("k", "subagent").put("id", i.id).put("label", i.label)
+                .put("startedAt", i.startedAt).put("ms", i.ms).put("outcome", i.outcome ?: JSONObject.NULL).put("result", i.result)
+                .put("items", JSONArray(i.items.map(::itemJson)))
             is ChatItem.Stats -> i.run.let { r ->
                 JSONObject().put("k", "stats").put("startedAt", r.startedAt).put("ms", r.ms).put("thinkingMs", r.thinkingMs)
                     .put("steps", r.steps).put("calls", r.calls).put("input", r.input).put("output", r.output)
@@ -109,7 +113,14 @@ class SessionStore(root: File) {
                 // Only the first line is shown (a few builds kept whole screens here).
                 o.optString("result").lineSequence().first().take(80), o.optInt("screen"))
             "thinking" -> ChatItem.Thinking(o.optString("text"), o.optLong("ms"))
-            "trigger" -> ChatItem.Trigger(o.optString("source"), o.optString("text"))
+            "trigger" -> ChatItem.Trigger(o.optString("source"), o.optString("text"), o.optString("subagent"))
+            // Saved while it ran: the run is over now (the app's process ended with it).
+            "subagent" -> ChatItem.Subagent(
+                o.getString("id"), o.optString("label"),
+                o.optJSONArray("items")?.let { a -> (0 until a.length()).mapNotNull { itemFrom(a.getJSONObject(it)) } }.orEmpty(),
+                running = false, startedAt = o.optLong("startedAt"), ms = o.optLong("ms"),
+                outcome = if (o.isNull("outcome")) "stopped" else o.optString("outcome"), result = o.optString("result"),
+            )
             "stats" -> ChatItem.Stats(RunStats(
                 startedAt = o.optLong("startedAt"), ms = o.optLong("ms"), thinkingMs = o.optLong("thinkingMs"),
                 steps = o.optInt("steps"), calls = o.optInt("calls"), input = o.optLong("input"), output = o.optLong("output"),
