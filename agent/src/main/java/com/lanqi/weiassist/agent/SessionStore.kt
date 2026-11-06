@@ -111,7 +111,7 @@ class SessionStore(root: File) {
             "file" -> ChatItem.File(Attachment.fromJson(o.getJSONObject("file")), o.optString("caption"))
             "step" -> ChatItem.Step(o.getString("tool"), o.optString("detail"), if (o.isNull("ok")) null else o.getBoolean("ok"),
                 // Only the first line is shown (a few builds kept whole screens here).
-                o.optString("result").lineSequence().first().take(80), o.optInt("screen"))
+                SessionReducer.resultLine(o.optString("result")), o.optInt("screen"))
             "thinking" -> ChatItem.Thinking(o.optString("text"), o.optLong("ms"))
             "trigger" -> ChatItem.Trigger(o.optString("source"), o.optString("text"), o.optString("subagent"))
             // Saved while it ran: the run is over now (the app's process ended with it).
