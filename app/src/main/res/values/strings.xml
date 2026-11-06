@@ -465,8 +465,4 @@
         <item quantity="one">%1$d line</item>
         <item quantity="other">%1$d lines</item>
     </plurals>
-    <plurals name="output_gap">
-        <item quantity="one">%1$d line not kept</item>
-        <item quantity="other">%1$d lines not kept</item>
-    </plurals>
 </resources>

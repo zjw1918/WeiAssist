@@ -458,7 +458,4 @@
     <plurals name="code_lines">
         <item quantity="other">%1$d 行</item>
     </plurals>
-    <plurals name="output_gap">
-        <item quantity="other">中间 %1$d 行未保留</item>
-    </plurals>
 </resources>

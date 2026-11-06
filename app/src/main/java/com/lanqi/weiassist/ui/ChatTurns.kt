@@ -709,8 +709,7 @@ private fun ThoughtEntry(text: String, ms: Long, live: Boolean = false) {
 private fun StepsEntry(line: ProcessLine.Steps) {
     val c = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        // A command is its own terminal: no line above it.
-        if (line.tool == "bash") line.steps.forEach { st -> TerminalCard(st.detail, st.ok, st.output, st.result) }
+        if (line.tool == "bash") line.steps.forEach { st -> CommandRow(st) }
         else StepLine(line, shimmering = line.running && line.steps.size == 1)
         if (line.tool == "bash") Unit
         else if (line.steps.any { it.changes.isNotEmpty() }) Column(
@@ -746,6 +745,55 @@ private fun StepsEntry(line: ProcessLine.Steps) {
         }
     }
 }
+
+/**
+ * A command the agent ran, plainly: how it went, the command, and its output under it (its last lines; all of it
+ * on a tap). dsh calls a command a success whatever its exit code: a non-zero "[exit code: N]" marks it failed.
+ */
+@Composable
+private fun CommandRow(st: ChatItem.Step) {
+    val c = MaterialTheme.colorScheme
+    val out = st.output.ifEmpty { st.result }
+    val lines = remember(out) { if (out.isEmpty()) emptyList() else out.lines() }
+    val failed = st.ok == false || remember(lines) {
+        lines.lastOrNull()?.trim()?.let { EXIT_LINE.find(it) }?.groupValues?.get(1)?.let { it != "0" } == true
+    }
+    var all by rememberSaveable { mutableStateOf(false) }
+    val shown = if (all || lines.size <= COMMAND_PEEK + 2) lines else lines.takeLast(COMMAND_PEEK)
+    Column(Modifier.fillMaxWidth()) {
+        Row(verticalAlignment = Alignment.Top) {
+            val icon = Modifier.padding(top = 3.dp).size(14.dp)
+            when {
+                st.ok == null -> Box(icon, contentAlignment = Alignment.Center) { Box(Modifier.size(5.dp).background(c.outline, CircleShape)) }
+                failed -> AppIcon(R.drawable.ic_cancel, null, icon, tint = c.error)
+                else -> AppIcon(R.drawable.ic_terminal, null, icon, tint = c.outline)
+            }
+            Text(
+                st.detail, fontFamily = FontFamily.Monospace, fontSize = 13.sp, lineHeight = 18.sp, color = c.onSurface,
+                modifier = Modifier.padding(start = 8.dp).weight(1f),
+            )
+        }
+        if (shown.isNotEmpty()) Column(Modifier.padding(start = 22.dp, top = 4.dp)) {
+            if (shown.size < lines.size) Text("⋯", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = c.outline)
+            Text(
+                remember(shown) {
+                    shown.joinToString("\n") { l ->
+                        com.lanqi.weiassist.agent.SessionReducer.OUTPUT_GAP.find(l)?.let { "⋯" } ?: l.replace("\t", "    ")
+                    }
+                },
+                fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 17.sp, color = c.onSurfaceVariant,
+            )
+            if (lines.size > COMMAND_PEEK + 2) Text(
+                if (all) stringResource(R.string.code_show_less) else stringResource(R.string.diff_show_all, lines.size),
+                style = MaterialTheme.typography.labelMedium, color = c.primary,
+                modifier = Modifier.padding(top = 4.dp).clip(RoundedCornerShape(4.dp)).clickable { all = !all }.padding(vertical = 2.dp),
+            )
+        }
+    }
+}
+
+private const val COMMAND_PEEK = 8
+private val EXIT_LINE = Regex("""^\[exit code: (-?\d+)]$""")
 
 /** What the run took: time, steps, model calls, and tokens in detail. */
 @OptIn(ExperimentalMaterial3Api::class)
