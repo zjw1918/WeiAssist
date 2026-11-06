@@ -74,4 +74,5 @@
     <string name="tg_no_screen">This conversation isn\'t working on a screen now. It has one while it uses the phone\'s apps.</string>
     <string name="tg_file_unreadable">I can\'t read %1$s here: I read pictures, PDFs and text files. (With Linux commands allowed, I get every file in Termux.)</string>
     <string name="tg_file_not_fetched">Couldn\'t fetch %1$s from Telegram: %2$s</string>
+    <string name="confirm_typed">What it typed in this task</string>
 </resources>

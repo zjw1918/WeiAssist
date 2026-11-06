@@ -118,7 +118,7 @@ class AgentController(context: Context) {
      */
     val commands = SessionCommands(
         sessions,
-        confirm = { title, detail -> AgentAccessibilityService.instance?.confirm(title, detail) ?: false },
+        confirm = { title, detail -> AgentAccessibilityService.instance?.confirm(title, "", "", detail, danger = true) ?: false },
         confirmDeleteTitle = { appContext.getString(R.string.confirm_delete_session, it) },
     )
 
@@ -325,7 +325,9 @@ class AgentController(context: Context) {
         val question = if (title.isBlank()) head else "$head\n· $title"
         val payment = !c.blind && Confirmations.isPayment(c.label)
         val asks = listOfNotNull<suspend () -> Boolean?>(
-            AgentAccessibilityService.instance?.let { card -> suspend { card.confirm(question, detail) } },
+            AgentAccessibilityService.instance?.let { card ->
+                suspend { card.confirm(head, title, appContext.getString(R.string.confirm_typed), detail, danger = payment || c.blind) }
+            },
             if (gateway.canAsk(id)) suspend { gateway.confirm(id, "$question\n\n$detail", payment) } else null,
         )
         return if (asks.isEmpty()) false

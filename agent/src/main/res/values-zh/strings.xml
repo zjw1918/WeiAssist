@@ -72,4 +72,5 @@
     <string name="tg_no_screen">这个对话现在没有在操作屏幕。只有在使用手机应用时才会有屏幕。</string>
     <string name="tg_file_unreadable">这里读不了 %1$s：我能读图片、PDF 和文本文件。（允许运行 Linux 命令时，所有文件都会放进 Termux。）</string>
     <string name="tg_file_not_fetched">没能从 Telegram 取到 %1$s：%2$s</string>
+    <string name="confirm_typed">这次任务输入的内容</string>
 </resources>

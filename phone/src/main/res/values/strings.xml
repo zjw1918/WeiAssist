@@ -4,4 +4,6 @@
     <string name="accessibility_description">Lets WeiAssist operate your phone for you: it reads what is on the screen and taps, types and scrolls as you ask. It only works on tasks you give it, and asks you first before sending, paying or deleting.</string>
     <string name="confirm_cancel">Cancel</string>
     <string name="confirm_allow">Allow</string>
+    <string name="confirm_badge">Needs your OK</string>
+    <string name="confirm_badge_danger">Check carefully</string>
 </resources>

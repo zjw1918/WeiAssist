@@ -3,7 +3,6 @@ package com.lanqi.weiassist.phone
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.content.Intent
-import android.graphics.Color
 import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.Rect
@@ -12,9 +11,6 @@ import android.view.Gravity
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
-import android.widget.Button
-import android.widget.LinearLayout
-import android.widget.TextView
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 
@@ -405,24 +401,10 @@ class AgentAccessibilityService : AccessibilityService() {
      * A confirmation card drawn on top of whatever app is in front. Accessibility services may add
      * TYPE_ACCESSIBILITY_OVERLAY windows without the "display over other apps" permission.
      */
-    suspend fun confirm(title: String, detail: String): Boolean {
+    suspend fun confirm(title: String, session: String, detailLabel: String, detail: String, danger: Boolean): Boolean {
         val answer = CompletableDeferred<Boolean>()
         val wm = getSystemService(WindowManager::class.java)
-        val dp = resources.displayMetrics.density
-        val card = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.WHITE)
-            elevation = 24 * dp
-            val pad = (20 * dp).toInt()
-            setPadding(pad, pad, pad, pad)
-            addView(TextView(context).apply { text = title; textSize = 20f; setTextColor(Color.BLACK) })
-            addView(TextView(context).apply { text = detail; textSize = 15f; setTextColor(Color.DKGRAY); setPadding(0, pad / 2, 0, pad / 2) })
-            addView(LinearLayout(context).apply {
-                gravity = Gravity.END
-                addView(Button(context).apply { text = getString(R.string.confirm_cancel); setOnClickListener { answer.complete(false) } })
-                addView(Button(context).apply { text = getString(R.string.confirm_allow); setOnClickListener { answer.complete(true) } })
-            })
-        }
+        val card = ConfirmCard.build(this, title, session, detailLabel, detail, danger) { answer.complete(it) }
         val lp = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
