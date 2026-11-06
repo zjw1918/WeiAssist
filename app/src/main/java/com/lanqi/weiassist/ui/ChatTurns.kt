@@ -62,6 +62,7 @@ import com.lanqi.weiassist.R
 import com.lanqi.weiassist.agent.ChatItem
 import com.lanqi.weiassist.agent.Markdown
 import com.lanqi.weiassist.agent.RunStats
+import com.lanqi.weiassist.agent.liveGridWait
 import com.lanqi.weiassist.agent.SessionState
 import com.lanqi.weiassist.agent.SessionStatus
 import kotlinx.coroutines.delay
@@ -352,12 +353,12 @@ fun compactCount(n: Long): String = when {
 
 private fun groupedCount(n: Long) = String.format(Locale.getDefault(), "%,d", n)
 
-/** The wall clock, ticking each second while [ticking]. */
+/** The wall clock, ticking each second while [ticking], on the live grid (see LiveBeat.kt: no frames of its own). */
 @Composable
 private fun rememberNow(ticking: Boolean): Long = produceState(System.currentTimeMillis(), ticking) {
     value = System.currentTimeMillis()
     while (ticking) {
-        delay(1000 - value % 1000)
+        delay(liveGridWait(1000))
         value = System.currentTimeMillis()
     }
 }.value
@@ -489,20 +490,11 @@ private fun ProcessHeader(
     }
 }
 
-/**
- * A value that steps from 0 to [steps] - 1 and round again, one step every [stepMs]. Live work is shown with
- * these few steps a second, not a frame-by-frame animation: Android draws the whole window again for any change,
- * and a page of text costs this phone ~30 ms to draw, so a 60 fps animation kept it busy for the whole run.
- */
-@Composable
-private fun steppingPhase(steps: Int, stepMs: Long): Int = produceState(0, steps, stepMs) {
-    while (true) { delay(stepMs); value = (value + 1) % steps }
-}.value
-
 /** Three dots in a wave: the agent is working. */
 @Composable
 private fun PulsingDots() {
-    val phase = steppingPhase(3, 350)
+    // Every other tick of the live clock (LiveBeat.kt), shared with the other live indicators.
+    val phase by steppingPhase(3, beats = 2)
     val color = MaterialTheme.colorScheme.primary
     Row(Modifier.size(16.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
         repeat(3) { i -> Box(Modifier.size(4.dp).alpha(if (i == phase) 1f else 0.35f).background(color, CircleShape)) }
@@ -512,7 +504,7 @@ private fun PulsingDots() {
 /** Text in [base] color, gently brightening and dimming while the work it names goes on. */
 @Composable
 private fun shimmer(base: Color): Brush {
-    val phase = steppingPhase(SHIMMER_LEVELS.size, 160)
+    val phase by steppingPhase(SHIMMER_LEVELS.size)
     return SolidColor(base.copy(alpha = SHIMMER_LEVELS[phase]))
 }
 

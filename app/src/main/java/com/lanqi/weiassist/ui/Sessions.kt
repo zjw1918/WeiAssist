@@ -523,7 +523,7 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
                 },
                 actions = {
                     if (s == null) return@TopAppBar
-                    StatusBadge(s.status, Modifier.padding(end = 4.dp))
+                    StatusBadge(s.status, Modifier.padding(end = 4.dp), swim = true)
                     // The window the core reported, else the app's model's (DeepSeek Harness doesn't say).
                     val window = s.contextWindow.takeIf { it > 0 } ?: app.model?.contextWindow ?: 0
                     val lastRun = remember(session?.items) { session?.items?.lastOrNull { it is ChatItem.Stats }?.let { (it as ChatItem.Stats).run } }

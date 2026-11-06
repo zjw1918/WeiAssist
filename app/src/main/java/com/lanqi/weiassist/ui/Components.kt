@@ -33,6 +33,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.lanqi.weiassist.R
@@ -97,9 +99,12 @@ fun GroupRow(
 /** Padding for free content (text, buttons) inside a [Group]. */
 val GroupContentPadding = PaddingValues(horizontal = 16.dp, vertical = 14.dp)
 
-/** A session's status as a dot and a word; nothing while it is idle. */
+/**
+ * A session's status as a dot and a word; nothing while it is idle. [swim]: while it works, the app's fish swims
+ * in place of both (a few poses a second on the shared live clock, see LiveBeat.kt).
+ */
 @Composable
-fun StatusBadge(status: SessionStatus, modifier: Modifier = Modifier) {
+fun StatusBadge(status: SessionStatus, modifier: Modifier = Modifier, swim: Boolean = false) {
     val c = MaterialTheme.colorScheme
     val (label, color) = when (status) {
         SessionStatus.Running -> stringResource(R.string.status_running) to c.primary
@@ -109,8 +114,13 @@ fun StatusBadge(status: SessionStatus, modifier: Modifier = Modifier) {
         SessionStatus.Idle -> return
     }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        // A still dot, not a spinner: an endless animation would redraw the whole page 60 times a second
-        // for as long as a task runs (measured: most of the app's CPU while working).
+        // Never a spinner: an endless animation would redraw the whole page 60 times a second for as long as a
+        // task runs (measured: most of the app's CPU while working). The fish steps instead.
+        if (swim && status == SessionStatus.Running) {
+            // The fish says it all; the word stays for screen readers.
+            SwimmingFish(Modifier.semantics { contentDescription = label })
+            return@Row
+        }
         Box(Modifier.size(7.dp).background(color, CircleShape))
         Spacer(Modifier.width(6.dp))
         Text(label, style = MaterialTheme.typography.labelMedium, color = color, maxLines = 1, overflow = TextOverflow.Ellipsis)
