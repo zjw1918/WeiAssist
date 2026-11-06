@@ -185,6 +185,17 @@ class SessionReducerTest {
         assertEquals("stopped", s.items.filterIsInstance<ChatItem.Subagent>().first { it.id == "c3" }.outcome)
     }
 
+    @Test fun `DeepSeek Harness's tools show what they work on, and a long result line is kept whole enough to read`() {
+        assertEquals("https://ziglang.org/download/", SessionReducer.stepDetail("web_fetch", JSONObject().put("url", "https://ziglang.org/download/")))
+        assertEquals("zig 0.17 · zig cli", SessionReducer.stepDetail("web_search", JSONObject().put("queries", org.json.JSONArray(listOf("zig 0.17", "zig cli")))))
+        assertEquals("src/main.rs", SessionReducer.stepDetail("read", JSONObject().put("file_path", "src/main.rs")))
+        assertEquals("fn main  in  src", SessionReducer.stepDetail("grep", JSONObject().put("pattern", "fn main").put("path", "src")))
+        val long = "Fetched https://ziglang.org/download/0.17.1/release-notes.html (HTML, 182 KB) " + "x".repeat(300)
+        val s = SessionReducer.reduce(SessionReducer.reduce(running, msg("tool_start", "tool" to "web_fetch", "args" to JSONObject()), now = 2),
+            msg("tool_end", "tool" to "web_fetch", "output" to "\n$long\nmore"), now = 3)
+        assertEquals(long.take(SessionReducer.RESULT_MAX), (s.items.last() as ChatItem.Step).result)
+    }
+
     @Test fun `a session keeps its core, and one saved before cores existed runs on Pi`() {
         val s = SessionSummary("a1", "t", phone = false, status = SessionStatus.Idle, createdAt = 1, updatedAt = 2, core = "dsh")
         assertEquals("dsh", SessionStore.summaryFrom(SessionStore.summaryJson(s)).core)

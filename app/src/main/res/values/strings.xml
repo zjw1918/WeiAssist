@@ -336,6 +336,16 @@
     <string name="trigger_team">Message from the team</string>
     <string name="trigger_job">Background job update</string>
     <string name="trigger_other">Woken by an update</string>
+    <string name="tool_web_fetch">Fetch a page</string>
+    <string name="tool_web_search">Search the web</string>
+    <string name="tool_read_file">Read a file</string>
+    <string name="tool_write_file">Write a file</string>
+    <string name="tool_edit_file">Edit a file</string>
+    <string name="tool_grep">Search in files</string>
+    <string name="tool_glob">Find files</string>
+    <string name="tool_todo">Update the to-do list</string>
+    <string name="tool_interrupt_agent">Stop a subagent</string>
+    <string name="tool_list_agents">List subagents</string>
     <string name="tool_subagent">Start a subagent</string>
     <string name="run_waiting_subagents">Working %1$s · subagents done: %2$d/%3$d</string>
     <string name="subagent_untitled">Subagent</string>

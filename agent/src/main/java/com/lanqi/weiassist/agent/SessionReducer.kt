@@ -20,6 +20,11 @@ object SessionReducer {
     /** How dsh's settlement notice introduces the subagent's closing text. */
     const val CLOSING = "Its closing message:"
 
+    /** What a step keeps of its tool's output: its first line, whole enough to read a fetched page's address. */
+    const val RESULT_MAX = 300
+
+    fun resultLine(output: String) = output.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty().trim().take(RESULT_MAX)
+
     /** At most this many of a subagent's own items are kept. */
     const val MAX_SUBAGENT_ITEMS = 200
 
@@ -54,7 +59,7 @@ object SessionReducer {
         "tool_end" -> {
             val ok = !m.optBoolean("isError")
             val output = m.optString("output")
-            val out = output.lineSequence().firstOrNull().orEmpty().take(80)
+            val out = resultLine(output)
             // The open step of this tool is the last Step without a result.
             val i = s.items.indexOfLast { it is ChatItem.Step && it.ok == null && it.tool == m.optString("tool") }
             val items = if (i < 0) s.items else s.items.toMutableList().also {
@@ -122,7 +127,7 @@ object SessionReducer {
                 "tool_end" -> {
                     val i = k.items.indexOfLast { it is ChatItem.Step && it.ok == null && it.tool == m.optString("tool") }
                     if (i < 0) k else k.copy(items = k.items.toMutableList().also {
-                        it[i] = (it[i] as ChatItem.Step).copy(ok = !m.optBoolean("isError"), result = m.optString("output").lineSequence().firstOrNull().orEmpty().take(80))
+                        it[i] = (it[i] as ChatItem.Step).copy(ok = !m.optBoolean("isError"), result = resultLine(m.optString("output")))
                     })
                 }
                 "subagent_status" -> m.optBoolean("running").let { on -> (if (on) k else k.endThinking(null, now)).copy(running = on) }
@@ -203,11 +208,20 @@ object SessionReducer {
         // the supervisor's tools
         "create_session" -> a?.optString("title").orEmpty().ifBlank { a?.optString("task").orEmpty().take(40) }
         // send_message: its name before message_session, in saved chats.
-        "message_session", "send_message" -> "${a?.optString("id")}: “${a?.optString("text").orEmpty().take(40)}”"
+        "message_session", "send_message" -> a?.optString("message")?.takeIf { it.isNotEmpty() }?.let { "“${it.take(60)}”" }
+            ?: "${a?.optString("id")}: “${a?.optString("text").orEmpty().take(40)}”"
         "get_session", "pause_session", "resume_session", "stop_session", "delete_session" -> a?.optString("id").orEmpty()
         "rename_session" -> "${a?.optString("id")} → ${a?.optString("title")}"
         // DeepSeek Harness's subagent: the task's short description.
         "subagent", "subagent_fork" -> a?.optString("description").orEmpty().ifBlank { a?.optString("prompt").orEmpty().take(40) }
+        // DeepSeek Harness's own tools: what each one works on.
+        "web_fetch" -> a?.optString("url").orEmpty()
+        "web_search" -> a?.optJSONArray("queries")?.let { q -> (0 until q.length()).joinToString(" · ") { q.optString(it) } }
+            ?: a?.optString("query").orEmpty()
+        "read", "write", "edit", "read_image", "str_replace_editor" -> a?.optString("file_path").orEmpty().ifEmpty { a?.optString("path").orEmpty() }
+        "grep", "glob" -> listOfNotNull(a?.optString("pattern")?.ifEmpty { null }, a?.optString("path")?.ifEmpty { null }).joinToString("  in  ")
+        "interrupt_agent" -> a?.optString("agent_id").orEmpty()
+        "skill" -> a?.optString("name").orEmpty()
         "wait_for" -> a?.optJSONArray("ids")?.let { ids -> (0 until ids.length()).joinToString(", ") { ids.getString(it) } }.orEmpty()
         else -> ""
     }

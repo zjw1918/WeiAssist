@@ -317,6 +317,17 @@ private fun toolLabel(tool: String): String = when (tool) {
     "get_session" -> stringResource(R.string.tool_get_session)
     "wait_for" -> stringResource(R.string.tool_wait_for)
     "subagent", "subagent_fork" -> stringResource(R.string.tool_subagent)
+    // DeepSeek Harness's own tools
+    "web_fetch" -> stringResource(R.string.tool_web_fetch)
+    "web_search" -> stringResource(R.string.tool_web_search)
+    "read", "read_image" -> stringResource(R.string.tool_read_file)
+    "write" -> stringResource(R.string.tool_write_file)
+    "edit", "str_replace_editor", "apply_patch" -> stringResource(R.string.tool_edit_file)
+    "grep" -> stringResource(R.string.tool_grep)
+    "glob" -> stringResource(R.string.tool_glob)
+    "todo_write" -> stringResource(R.string.tool_todo)
+    "interrupt_agent" -> stringResource(R.string.tool_interrupt_agent)
+    "list_agents" -> stringResource(R.string.tool_list_agents)
     else -> tool
 }
 
@@ -328,7 +339,10 @@ private fun toolIcon(tool: String) = when (tool) {
     "read_screen", "screenshot" -> R.drawable.ic_phone
     "create_session", "message_session", "send_message", "list_sessions", "get_session", "wait_for", "pause_session", "resume_session",
     "stop_session", "delete_session", "rename_session" -> R.drawable.ic_forum
-    "subagent", "subagent_fork" -> R.drawable.ic_sparkle
+    "subagent", "subagent_fork", "list_agents" -> R.drawable.ic_sparkle
+    "web_fetch", "web_search" -> R.drawable.ic_open_in_new
+    "write", "edit", "str_replace_editor", "apply_patch", "todo_write" -> R.drawable.ic_edit
+    "interrupt_agent" -> R.drawable.ic_stop
     else -> R.drawable.ic_code
 }
 
@@ -625,16 +639,18 @@ private fun StepsEntry(line: ProcessLine.Steps) {
             Modifier.padding(start = 22.dp), verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             line.steps.forEach { st ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                // In full: what it worked on (an address, a search, a file) and what came back, wrapped, not cut.
+                Row(verticalAlignment = Alignment.Top) {
+                    val icon = Modifier.padding(top = 3.dp).size(12.dp)
                     when (st.ok) {
-                        null -> Box(Modifier.size(12.dp), contentAlignment = Alignment.Center) { Box(Modifier.size(5.dp).background(c.outline, CircleShape)) }
-                        true -> AppIcon(R.drawable.ic_check_circle, null, Modifier.size(12.dp), tint = c.outline)
-                        false -> AppIcon(R.drawable.ic_cancel, null, Modifier.size(12.dp), tint = c.error)
+                        null -> Box(icon, contentAlignment = Alignment.Center) { Box(Modifier.size(5.dp).background(c.outline, CircleShape)) }
+                        true -> AppIcon(R.drawable.ic_check_circle, null, icon, tint = c.outline)
+                        false -> AppIcon(R.drawable.ic_cancel, null, icon, tint = c.error)
                     }
                     Text(
-                        "  " + listOf(st.detail, st.result).filter { it.isNotBlank() }.joinToString("  →  "),
-                        fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = if (st.ok == false) c.error else c.onSurfaceVariant,
-                        maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
+                        listOf(st.detail, st.result).filter { it.isNotBlank() }.joinToString("  →  "),
+                        fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 17.sp, color = if (st.ok == false) c.error else c.onSurfaceVariant,
+                        modifier = Modifier.padding(start = 8.dp).weight(1f, fill = false),
                     )
                     if (st.screen > 0) Text(
                         "  · " + stringResource(R.string.step_screen, st.screen),

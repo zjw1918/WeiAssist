@@ -331,6 +331,16 @@
     <string name="trigger_team">团队消息</string>
     <string name="trigger_job">后台任务状态更新</string>
     <string name="trigger_other">收到状态更新</string>
+    <string name="tool_web_fetch">抓取网页</string>
+    <string name="tool_web_search">搜索网页</string>
+    <string name="tool_read_file">读取文件</string>
+    <string name="tool_write_file">写入文件</string>
+    <string name="tool_edit_file">编辑文件</string>
+    <string name="tool_grep">在文件中搜索</string>
+    <string name="tool_glob">查找文件</string>
+    <string name="tool_todo">更新待办</string>
+    <string name="tool_interrupt_agent">停止子智能体</string>
+    <string name="tool_list_agents">列出子智能体</string>
     <string name="tool_subagent">启动子智能体</string>
     <string name="run_waiting_subagents">正在执行 %1$s · 子智能体已完成 %2$d/%3$d</string>
     <string name="subagent_untitled">子智能体</string>
