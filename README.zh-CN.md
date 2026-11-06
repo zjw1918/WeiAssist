@@ -46,6 +46,8 @@
 
 两个引擎使用同样的 AI 服务、密钥和登录，也都有应用的手机工具和安全检查。每个对话一直使用它开始时的引擎。
 
+## 演示
+
 ### 子智能体
 
 <p align="center">
@@ -55,9 +57,17 @@
 
 用 DeepSeek Harness 时，一个任务可以同时运行多个子智能体。每个子智能体都有自己的实时卡片，显示它的思考、步骤、用时和报告。全部完成后才给出答案：主智能体的汇总，其余过程点开即可查看。[观看视频](docs/images/subagents-demo.mp4)（已加速）。
 
+### 用 Telegram 找它
+
+<p align="center">
+  <img src="docs/images/telegram-demo.gif" width="560" alt="Mac 上的 Telegram 和手机并排：问圣地亚哥的天气，助手用 Termux 回答；让它用 Gmail 发送天气预报，它在手机上写好邮件，点发送前在 Telegram 和手机上同时询问；在 Telegram 里点了拒绝，什么也没发出">
+</p>
+
+用 [BotFather](https://t.me/BotFather) 创建一个机器人，把它的 token 粘贴到 **设置 → Telegram**，再配对你的账号。每个聊天就是一个对话：回答实时显示，能收发照片和文件，有风险的操作前会先问你（✅ / ❌）。不需要服务器。详见 [docs/TELEGRAM.md](docs/TELEGRAM.md)。
+
 ## 它能做什么
 
-![小维助手的四个界面：DeepSeek Harness 会话里三个子智能体并行调研；全部完成后汇总成一张对比表；设置里的 AI 引擎选择（Pi 或 DeepSeek Harness）；以及 Pi 会话用 Termux 里的 curl 查天气](docs/images/showcase.png)
+![小维助手的四个界面：DeepSeek Harness 会话里三个子智能体并行调研；全部完成后汇总成一张对比表；设置里的 AI 引擎选择（Pi 或 DeepSeek Harness）；以及它用 Go 写好、测试通过并在 tmux 里运行的 Web 服务](docs/images/showcase.png)
 
 - **多家 AI 服务：** OpenAI、Anthropic、Google、DeepSeek、OpenRouter、xAI、Moonshot、Mistral、OpenCode，以及任何兼容 OpenAI 的服务（Ollama、vLLM、LM Studio 等）。
 - **照片和文件：** 发给它图片、PDF 和文档；它也会把做好的文件发回给你。
@@ -66,20 +76,11 @@
 - **手机任务：** 它能操作你的应用，遇到发送、支付、删除这类操作会先问你。
 - **中英文界面。**
 
-## 用 Telegram 找它
-
-<p align="center">
-  <img src="docs/images/telegram-demo.gif" width="560" alt="Mac 上的 Telegram 和手机并排：问圣地亚哥的天气，助手用 Termux 回答；让它用 Gmail 发送天气预报，它在手机上写好邮件，点发送前在 Telegram 和手机上同时询问；在 Telegram 里点了拒绝，什么也没发出">
-</p>
-
-用 [BotFather](https://t.me/BotFather) 创建一个机器人，把它的 token 粘贴到 **设置 → Telegram**，再配对你的账号。每个聊天就是一个对话：回答实时显示，能收发照片和文件，有风险的操作前会先问你（✅ / ❌）。不需要服务器。详见 [docs/TELEGRAM.md](docs/TELEGRAM.md)。
-
 ## 隐私与安全
 
 - 小维助手没有服务器。你的消息、附件、命令输出，以及手机任务中相关的屏幕内容，只会发给你选择的 AI 服务。密码输入框的内容永远不会发出。
 - 登录信息只保存在手机上，用 Android Keystore 加密。DeepSeek Harness 通过应用访问你的 AI 服务，自己不持有任何密钥。
 - 无论用哪个引擎，发送、支付、删除这类操作前都会先问你；随时可以停止。
-- 使用 Telegram 时，消息还会经过 Telegram 的服务器，机器人聊天不是端到端加密的。
 
 更多见 [SECURITY.md](SECURITY.md)。
 
