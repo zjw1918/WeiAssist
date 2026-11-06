@@ -114,7 +114,9 @@ class SessionReducerTest {
         assertEquals(s, SessionStore.summaryFrom(SessionStore.summaryJson(s)))
         assertEquals(null, SessionStore.summaryFrom(SessionStore.summaryJson(s.copy(app = null))).app)
         listOf(ChatItem.User("u"), ChatItem.Assistant("a"), ChatItem.Error("e"), ChatItem.Step("tap", "[3]", null), ChatItem.Step("tap", "[3]", false, "no"),
-            ChatItem.Trigger("subagent-settled", "Subagent rust finished. Its closing message: …"))
+            ChatItem.Trigger("subagent-settled", "Subagent rust finished. Its closing message: …", "c1"),
+            ChatItem.Subagent("c1", "Rust review", listOf(ChatItem.Thinking("hm", 900), ChatItem.Step("web_fetch", "", true, "ok"), ChatItem.Assistant("Rust: safe")),
+                running = false, startedAt = 3, ms = 9, outcome = "done", result = "Its closing message: Rust: safe"))
             .forEach { assertEquals(it, SessionStore.itemFrom(SessionStore.itemJson(it))) }
     }
 
@@ -137,6 +139,50 @@ class SessionReducerTest {
         assertEquals(ChatItem.Trigger("subagent-settled", "Subagent go finished."), s.items.last())
         assertTrue(s.busy)
         assertEquals(SessionStatus.Running, s.summary.status)
+    }
+
+    @Test fun `a subagent's work goes to its own section, and the notice it settled with ends it`() {
+        var s = SessionReducer.userMessage(idle, "compare", queued = false, now = 1)
+        s = SessionReducer.reduce(s, msg("tool_start", "tool" to "subagent", "args" to JSONObject().put("description", "Rust review")), now = 2)
+        s = SessionReducer.reduce(s, msg("subagent_start", "subagent" to "c1", "label" to "Rust review"), now = 2)
+        s = SessionReducer.reduce(s, msg("subagent_start", "subagent" to "c2", "label" to "Zig review"), now = 2)
+        // Two subagents at once: each one's events change its own section only.
+        s = SessionReducer.reduce(s, msg("thinking_start", "subagent" to "c1"), now = 3)
+        s = SessionReducer.reduce(s, msg("tool_start", "subagent" to "c2", "tool" to "web_fetch", "args" to JSONObject()), now = 3)
+        s = SessionReducer.reduce(s, msg("thinking_delta", "subagent" to "c1", "delta" to "Ownership…"), now = 4)
+        s = SessionReducer.reduce(s, msg("tool_end", "subagent" to "c2", "tool" to "web_fetch", "output" to "200 OK"), now = 4)
+        s = SessionReducer.reduce(s, msg("thinking_end", "subagent" to "c1", "text" to "Ownership rules."), now = 6)
+        s = SessionReducer.reduce(s, msg("text_delta", "subagent" to "c1", "delta" to "Rust: "), now = 6)
+        val c1 = s.items.filterIsInstance<ChatItem.Subagent>().first { it.id == "c1" }
+        assertEquals("Rust: ", c1.streaming)
+        assertEquals(listOf<ChatItem>(ChatItem.Thinking("Ownership rules.", 3)), c1.items)
+        val c2 = s.items.filterIsInstance<ChatItem.Subagent>().first { it.id == "c2" }
+        assertEquals(listOf<ChatItem>(ChatItem.Step("web_fetch", "", true, "200 OK")), c2.items)
+        // The session's own stream and items are untouched; only its step count includes the subagents'.
+        assertEquals("", s.streaming)
+        assertEquals(listOf("User", "Step", "Subagent", "Subagent"), s.items.map { it.javaClass.simpleName })
+        assertEquals(2, s.run?.steps)
+        s = SessionReducer.reduce(s, msg("assistant_end", "subagent" to "c1", "text" to "Rust: safe"), now = 7)
+        s = SessionReducer.reduce(s, msg("subagent_status", "subagent" to "c1", "running" to false), now = 7)
+        s = SessionReducer.reduce(s, msg("trigger", "source" to "subagent-settled", "subagent" to "c1", "outcome" to "done",
+            "text" to "Subagent c1 finished.\nIts closing message:\nRust: safe"), now = 8)
+        val done = s.items.filterIsInstance<ChatItem.Subagent>().first { it.id == "c1" }
+        assertEquals("done", done.outcome)
+        assertEquals(6L, done.ms)
+        assertFalse(done.running)
+        assertEquals(ChatItem.Assistant("Rust: safe"), done.items.last())
+        assertTrue(s.items.last() is ChatItem.Trigger)
+        // c2 sends its report as a message, then finishes without closing text: the message stays its report.
+        s = SessionReducer.reduce(s, msg("trigger", "source" to "agent-message", "subagent" to "c2", "text" to "Agent c2 sent a message: Zig: small"), now = 9)
+        s = SessionReducer.reduce(s, msg("trigger", "source" to "subagent-settled", "subagent" to "c2", "outcome" to "done",
+            "text" to "Subagent c2 finished.\nIt sent you a message just before finishing, so its closing message is omitted."), now = 9)
+        val c2done = s.items.filterIsInstance<ChatItem.Subagent>().first { it.id == "c2" }
+        assertEquals("Agent c2 sent a message: Zig: small", c2done.result)
+        assertEquals("done", c2done.outcome)
+        s = SessionReducer.reduce(s, msg("subagent_start", "subagent" to "c3", "label" to "Go"), now = 9)
+        // The run ends (Stop) before c3 reported: it ended with it.
+        s = SessionReducer.stopped(s, now = 10)
+        assertEquals("stopped", s.items.filterIsInstance<ChatItem.Subagent>().first { it.id == "c3" }.outcome)
     }
 
     @Test fun `a session keeps its core, and one saved before cores existed runs on Pi`() {

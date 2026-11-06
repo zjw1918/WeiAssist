@@ -12,7 +12,22 @@ object SessionReducer {
     const val MAX_ITEMS = 400
 
     /** [friendly] turns a provider error into advice for the user (localized by the caller). */
-    fun reduce(s: SessionState, m: JSONObject, now: Long, friendly: (String) -> String = { it }): SessionState = when (m.optString("type")) {
+    /** A subagent's own events (DeepSeek Harness marks them with its id): they go to its section, see [subagent]. */
+    private val SUBAGENT_EVENTS = setOf(
+        "thinking_start", "thinking_delta", "thinking_end", "text_delta", "assistant_end", "tool_start", "tool_end", "subagent_status",
+    )
+
+    /** How dsh's settlement notice introduces the subagent's closing text. */
+    const val CLOSING = "Its closing message:"
+
+    /** At most this many of a subagent's own items are kept. */
+    const val MAX_SUBAGENT_ITEMS = 200
+
+    fun reduce(s: SessionState, m: JSONObject, now: Long, friendly: (String) -> String = { it }): SessionState =
+        m.optString("subagent").takeIf { it.isNotEmpty() && m.optString("type") in SUBAGENT_EVENTS }
+            ?.let { subagent(s, it, m, now) } ?: own(s, m, now, friendly)
+
+    private fun own(s: SessionState, m: JSONObject, now: Long, friendly: (String) -> String): SessionState = when (m.optString("type")) {
         // Text after reasoning: the reasoning is over even if its end got lost.
         "text_delta" -> s.endThinking(null, now).copy(streaming = s.streaming + m.optString("delta"))
         "thinking_start" -> s.endThinking(null, now).copy(thinking = "", thinkingSince = now)
@@ -62,13 +77,77 @@ object SessionReducer {
         "agent_start" -> if (s.busy) s else s.copy(error = null, streaming = "", run = RunStats(now))
             .status(SessionStatus.Running, now).trace("the core started work by itself")
         // The core woke its agent with a notice (DeepSeek Harness: a subagent finished or wrote): what follows answers it.
-        "trigger" -> s.endThinking(null, now).add(ChatItem.Trigger(m.optString("source"), m.optString("text")), now)
-            .trace("woken · ${m.optString("source")}")
+        "trigger" -> {
+            val from = m.optString("subagent")
+            val outcome = m.optString("outcome").ifEmpty { null }
+            val text = m.optString("text")
+            val n = when {
+                from.isEmpty() || s.items.none { it is ChatItem.Subagent && it.id == from } -> s
+                // dsh's subagents send their result as a message before they finish: that is their report.
+                m.optString("source") == "agent-message" -> s.withSubagent(from, now) { it.copy(result = text) }
+                // Its settlement notice: it ended, with its closing message (unless it sent its report just before).
+                outcome != null -> s.withSubagent(from, now) {
+                    val closing = text.contains(CLOSING) || it.result.isBlank()
+                    it.endThinking(null, now).copy(running = false, outcome = outcome, result = if (closing) text else it.result, ms = (now - it.startedAt).coerceAtLeast(0))
+                }
+                else -> s
+            }
+            n.endThinking(null, now).add(ChatItem.Trigger(m.optString("source"), m.optString("text"), from), now)
+                .trace("woken · ${m.optString("source")}${if (from.isEmpty()) "" else " · $from"}${outcome?.let { " · $it" }.orEmpty()}")
+        }
+        // The agent started a subagent (DeepSeek Harness): its section, where its work shows as it goes.
+        "subagent_start" -> s.withSubagent(m.optString("subagent"), now) { it.copy(label = m.optString("label").ifEmpty { it.label }) }
+            .trace("subagent · ${m.optString("subagent")} · ${m.optString("label")}")
         // Pi took a steered message into the conversation: it is delivered.
         "message_end" -> if (m.optString("role") == "user") s.delivered(m.optString("text")) else s
         // A transcript is persisted by the manager; it doesn't change what the user sees.
         "transcript", "turn_end" -> s
         else -> s.trace(m.optString("type"))
+    }
+
+    /** [m] is a subagent's own event: it changes that subagent's section only (its steps count toward the run). */
+    private fun subagent(s: SessionState, id: String, m: JSONObject, now: Long): SessionState {
+        val n = s.withSubagent(id, now) { k ->
+            when (m.optString("type")) {
+                "thinking_start" -> k.endThinking(null, now).copy(thinking = "", thinkingSince = now)
+                "thinking_delta" -> k.copy(thinking = k.thinking + m.optString("delta"), thinkingSince = k.thinkingSince ?: now)
+                "thinking_end" -> k.endThinking(m.optString("text"), now)
+                "text_delta" -> k.endThinking(null, now).copy(streaming = k.streaming + m.optString("delta"))
+                "assistant_end" -> {
+                    val text = m.optString("text").ifEmpty { k.streaming }
+                    val e = k.endThinking(null, now).copy(streaming = "")
+                    if (text.isBlank()) e else e.addItem(ChatItem.Assistant(text))
+                }
+                "tool_start" -> k.endThinking(null, now).addItem(ChatItem.Step(m.optString("tool"), stepDetail(m.optString("tool"), m.optJSONObject("args"))))
+                "tool_end" -> {
+                    val i = k.items.indexOfLast { it is ChatItem.Step && it.ok == null && it.tool == m.optString("tool") }
+                    if (i < 0) k else k.copy(items = k.items.toMutableList().also {
+                        it[i] = (it[i] as ChatItem.Step).copy(ok = !m.optBoolean("isError"), result = m.optString("output").lineSequence().firstOrNull().orEmpty().take(80))
+                    })
+                }
+                "subagent_status" -> m.optBoolean("running").let { on -> (if (on) k else k.endThinking(null, now)).copy(running = on) }
+                else -> k
+            }
+        }
+        return if (m.optString("type") == "tool_start") n.copy(run = n.run?.let { it.copy(steps = it.steps + 1) }) else n
+    }
+
+    /** The session with subagent [id]'s section changed by [f] (a new section at the end when there is none yet). */
+    private fun SessionState.withSubagent(id: String, now: Long, f: (ChatItem.Subagent) -> ChatItem.Subagent): SessionState {
+        val i = items.indexOfLast { it is ChatItem.Subagent && it.id == id }
+        if (i < 0) return add(f(ChatItem.Subagent(id, startedAt = now)), now)
+        return copy(items = items.toMutableList().also { it[i] = f(it[i] as ChatItem.Subagent) })
+    }
+
+    private fun ChatItem.Subagent.addItem(item: ChatItem) = copy(items = (items + item).takeLast(MAX_SUBAGENT_ITEMS))
+
+    /** The subagent's reasoning streaming now is over: it becomes one of its items (see SessionState.endThinking). */
+    private fun ChatItem.Subagent.endThinking(text: String?, now: Long): ChatItem.Subagent {
+        val since = thinkingSince ?: return if (thinking.isEmpty()) this else copy(thinking = "")
+        val ms = (now - since).coerceAtLeast(0)
+        val body = text?.takeIf { it.isNotBlank() } ?: thinking
+        val n = copy(thinking = "", thinkingSince = null)
+        return if (body.isBlank() && ms < 1000) n else n.addItem(ChatItem.Thinking(body.trim(), ms))
     }
 
     /** The user's message starts a task (queued until the screen is free when it operates the phone). */
@@ -127,6 +206,8 @@ object SessionReducer {
         "message_session", "send_message" -> "${a?.optString("id")}: “${a?.optString("text").orEmpty().take(40)}”"
         "get_session", "pause_session", "resume_session", "stop_session", "delete_session" -> a?.optString("id").orEmpty()
         "rename_session" -> "${a?.optString("id")} → ${a?.optString("title")}"
+        // DeepSeek Harness's subagent: the task's short description.
+        "subagent", "subagent_fork" -> a?.optString("description").orEmpty().ifBlank { a?.optString("prompt").orEmpty().take(40) }
         "wait_for" -> a?.optJSONArray("ids")?.let { ids -> (0 until ids.length()).joinToString(", ") { ids.getString(it) } }.orEmpty()
         else -> ""
     }
@@ -179,7 +260,13 @@ object SessionReducer {
 
     /** The run is over: what it took becomes the last item of its turn (when the model was called at all). */
     private fun SessionState.endRun(now: Long): SessionState {
-        val n = endThinking(null, now)
+        val n = endThinking(null, now).let { st ->
+            // A subagent dsh never reported settled (Stop, an error) ended with the run.
+            if (st.items.none { it is ChatItem.Subagent && !it.settled }) st
+            else st.copy(items = st.items.map {
+                if (it is ChatItem.Subagent && !it.settled) it.endThinking(null, now).copy(running = false, streaming = "", outcome = "stopped", ms = (now - it.startedAt).coerceAtLeast(0)) else it
+            })
+        }
         val r = n.run ?: return n
         val done = n.copy(run = null)
         return if (r.calls == 0 && r.steps == 0) done else done.add(ChatItem.Stats(r.copy(ms = (now - r.startedAt).coerceAtLeast(0))), now)
