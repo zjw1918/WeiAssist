@@ -12,4 +12,5 @@ frames with English and Chinese captions. Render it with headless Chrome:
 2. The same session once done: one turn ("Worked for 2m 02s · 3 subagents", the results folded inside), answering
    with the comparison table.
 3. Settings → AI engine: Pi or DeepSeek Harness.
-4. A Pi session: the weather via curl in Termux, as a table.
+4. A Go web service with 7 tests, written, tested and left running in `tmux` (a Chinese chat; cut from the
+   previous showcase, 2026-11-03).
