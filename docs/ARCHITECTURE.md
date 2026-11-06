@@ -54,6 +54,7 @@ All messages are JSON.
 |---|---|---|
 | JS→K | `ready`, `status`, sign-in events | App-wide state ([AgentReducer](../agent/src/main/java/com/lanqi/weiassist/agent/AgentReducer.kt)) |
 | JS→K | `configured`, agent events (`text_delta`, `tool_start`, …), `idle`, `error`, all with `session` | A session's state ([SessionReducer](../agent/src/main/java/com/lanqi/weiassist/agent/SessionReducer.kt)) |
+| JS→K | `configured` {contextWindow, contextTokens?}, `compacted` {contextTokens} | How full the session's context is (the ring in its header); each `assistant_end`'s usage updates it too |
 | JS→K | `transcript` (`session`, `messages`) | After the user's message and every turn: Pi's transcript to save, without screenshots and old screens |
 | JS→K | `credentials_changed` | Pi's credential store was written. Kotlin persists it encrypted. |
 | JS→K | `fetch` / `fetch_abort` | Native HTTP for Pi (no CORS). The reply streams back as `fetchHead`, `fetchChunk`, `fetchEnd` or `fetchError`. |

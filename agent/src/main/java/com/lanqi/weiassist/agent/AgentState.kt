@@ -144,6 +144,10 @@ data class RunStats(
     val model: String = "",
 ) {
     val tokens get() = input + output + cacheRead + cacheWrite
+    /** Every prompt token sent: fresh ([input]), read from the provider's cache, and newly written to it. */
+    val prompt get() = input + cacheRead + cacheWrite
+    /** The share of [prompt] the provider served from its cache, 0..100; null before any call reported usage. */
+    val cacheHitPercent: Int? get() = if (prompt > 0) (cacheRead * 100 / prompt).toInt() else null
 }
 
 enum class Delivery {
@@ -175,6 +179,13 @@ data class SessionSummary(
     val termux: Boolean = true,
     /** The AI core that runs it (see CoreRegistry); fixed for the session's life, as transcripts don't carry over. */
     val core: String = DEFAULT_CORE,
+    /**
+     * How full the model's context is: the tokens the latest model call carried (its prompt plus its reply, as the
+     * provider counted them), or the core's estimate after it compacted or restored the conversation. 0 = not known yet.
+     */
+    val contextTokens: Long = 0,
+    /** The context window of the model the session last ran on (tokens); 0 = the core didn't say. */
+    val contextWindow: Int = 0,
 ) {
     companion object {
         /** Sessions saved before there was a choice of core ran on Pi. */

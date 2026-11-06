@@ -39,7 +39,7 @@ import { bridge, bridgeCall, settle } from "./bridge.ts";
 import { fetchEvents, nativeFetch } from "./native-fetch.ts";
 import { pruneOldScreens, pruneScreens } from "./phone-tools.ts";
 import { catalogTools, type ToolSpec } from "./catalog-tools.ts";
-import { compact, needsCompaction } from "./compact.ts";
+import { compact, estimateTokens, needsCompaction } from "./compact.ts";
 import { dispatch } from "./shims/http.ts";
 
 declare const __PI_VERSION__: string;
@@ -426,7 +426,9 @@ async function configure(cfg: Config) {
 	session.agent.subscribe((e) => forward(cfg.session, e));
 	sessions.set(cfg.session, session);
 	const auth = await credentials.read(cfg.provider);
-	bridge({ type: "configured", session: cfg.session, provider: model.provider, model: model.id, api: model.api, baseUrl: model.baseUrl, auth: auth?.type ?? null, thinkingLevel, messages: history.length });
+	bridge({ type: "configured", session: cfg.session, provider: model.provider, model: model.id, api: model.api, baseUrl: model.baseUrl, auth: auth?.type ?? null, thinkingLevel, messages: history.length,
+		// How full the context is (the app's ring): the window, and the restored conversation's size (an estimate).
+		contextWindow: model.contextWindow, ...(history.length ? { contextTokens: estimateTokens(history) } : {}) });
 }
 
 /** Content blocks the app attaches to a message (Kotlin Attachments.content): text, or image. */
@@ -495,7 +497,7 @@ async function compactSession(s: Session, dropFailed = false): Promise<boolean> 
 	});
 	if (!after) return false;
 	s.agent.state.messages = after;
-	bridge({ type: "compacted", session: s.id, before: before.length, after: after.length });
+	bridge({ type: "compacted", session: s.id, before: before.length, after: after.length, contextTokens: estimateTokens(after) });
 	saveTranscript(s.id);
 	return true;
 }

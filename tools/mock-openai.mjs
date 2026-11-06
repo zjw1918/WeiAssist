@@ -163,15 +163,30 @@ export const MOCK_MODELS = [
 	{ id: "mock-chat" },
 ];
 
+/**
+ * Plausible prompt usage, so the app's context ring and cache figures have something to show: the prompt's size
+ * (about 4 characters a token), and the part a provider's prefix cache would hold, which is what the same
+ * conversation (prompt_cache_key, else the user) sent last time.
+ */
+const lastPrompt = new Map();
+function promptUsage(body, raw) {
+	const prompt = Math.ceil(raw.length / 4);
+	const key = body.prompt_cache_key ?? body.user ?? "";
+	const cached = key ? Math.min(lastPrompt.get(key) ?? 0, prompt) : 0;
+	if (key) lastPrompt.set(key, prompt);
+	return { prompt, cached };
+}
+
 /** A streamed chat completion that answers MOCK_REPLY, chunk by chunk, as OpenAI-compatible servers do. */
-function chatCompletion(res, body, delayMs) {
+function chatCompletion(res, body, delayMs, raw = "") {
+	const { prompt, cached } = promptUsage(body, raw);
 	res.writeHead(200, { ...cors, "content-type": "text/event-stream", "cache-control": "no-cache" });
 	const base = { id: `chatcmpl_mock_${Date.now()}`, object: "chat.completion.chunk", created: Math.floor(Date.now() / 1000), model: body.model ?? "mock" };
 	const chunks = [
 		{ ...base, choices: [{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: null }] },
 		...[...MOCK_REPLY].map((ch) => ({ ...base, choices: [{ index: 0, delta: { content: ch }, finish_reason: null }] })),
 		{ ...base, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
-		{ ...base, choices: [], usage: { prompt_tokens: 12, completion_tokens: 9, total_tokens: 21 } },
+		{ ...base, choices: [], usage: { prompt_tokens: prompt, completion_tokens: 9, total_tokens: prompt + 9, prompt_tokens_details: { cached_tokens: cached } } },
 	];
 	let i = 0;
 	const tick = () => {
@@ -225,7 +240,7 @@ function handle(req, res, { requests, log, delayMs }) {
 			return;
 		}
 		if (req.method === "POST" && req.url?.endsWith("/chat/completions")) {
-			chatCompletion(res, JSON.parse(body || "{}"), delayMs);
+			chatCompletion(res, JSON.parse(body || "{}"), delayMs, body);
 			return;
 		}
 		if (req.method !== "POST" || !req.url?.endsWith("/responses")) {
@@ -246,7 +261,8 @@ function handle(req, res, { requests, log, delayMs }) {
 		const id = `resp_mock_${Date.now()}`;
 		const msg = { id: "msg_mock", type: "message", role: "assistant", status: "in_progress", content: [] };
 		const part = { type: "output_text", text: "", annotations: [] };
-		const usage = { input_tokens: 12, output_tokens: 9, total_tokens: 21, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } };
+		const { prompt, cached } = promptUsage(parsed, body);
+		const usage = { input_tokens: prompt, output_tokens: 9, total_tokens: prompt + 9, input_tokens_details: { cached_tokens: cached }, output_tokens_details: { reasoning_tokens: 0 } };
 		const base = { id, object: "response", model, created_at: Math.floor(Date.now() / 1000) };
 		const done = { ...msg, status: "completed", content: [{ ...part, text: turn?.text ?? MOCK_REPLY }] };
 		const call = turn?.tool && {

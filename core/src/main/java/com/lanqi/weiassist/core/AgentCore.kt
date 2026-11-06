@@ -15,7 +15,8 @@ import org.json.JSONObject
  * again (with its saved transcript) before its next prompt.
  *
  * **Events** ([events]) are JSON objects with a `type`, in one vocabulary shared by all cores:
- * - About a session (they carry `session`): `configured`, `agent_start`, `text_delta` {delta},
+ * - About a session (they carry `session`): `configured` {contextWindow?, contextTokens?}, `compacted`
+ *   {contextTokens?} (the context's size after the core shrank it), `agent_start`, `text_delta` {delta},
  *   `thinking_start`, `thinking_delta` {delta}, `thinking_end` {text}, `assistant_end` {text, stopReason,
  *   errorMessage, usage, provider, model}, `tool_start` {tool, args}, `tool_end` {tool, isError, output, screen},
  *   `message_end` {role, text}, `steer_late` {text}, `turn_end`, `idle`, `error` {message},

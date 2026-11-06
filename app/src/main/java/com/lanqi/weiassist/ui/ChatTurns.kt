@@ -817,9 +817,11 @@ fun StatsSheet(turn: ChatBlock.Turn, session: SessionState, onDismiss: () -> Uni
             StatRow(stringResource(R.string.stat_calls), run.calls.toString())
             if (run.model.isNotBlank() && run.model != "/") StatRow(stringResource(R.string.stat_model), run.model)
             HorizontalDivider(Modifier.padding(vertical = 8.dp), color = c.outlineVariant)
+            // The cache, always (a 0 says this provider or run had no hit, which is worth seeing too).
+            run.cacheHitPercent?.let { StatRow(stringResource(R.string.stat_cache_hit), "$it%") }
             StatRow(stringResource(R.string.stat_input), groupedCount(run.input))
-            if (run.cacheRead > 0) StatRow(stringResource(R.string.stat_cache_read), groupedCount(run.cacheRead))
-            if (run.cacheWrite > 0) StatRow(stringResource(R.string.stat_cache_write), groupedCount(run.cacheWrite))
+            StatRow(stringResource(R.string.stat_cache_read), groupedCount(run.cacheRead))
+            StatRow(stringResource(R.string.stat_cache_write), groupedCount(run.cacheWrite))
             StatRow(stringResource(R.string.stat_output), groupedCount(run.output))
             if (run.reasoning > 0) StatRow("    " + stringResource(R.string.stat_reasoning), groupedCount(run.reasoning), sub = true)
             if (run.cost > 0) StatRow(stringResource(R.string.stat_cost), String.format(Locale.US, "$%.4f", run.cost))

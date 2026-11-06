@@ -500,6 +500,7 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
     var rename by rememberSaveable { mutableStateOf(false) }
     var delete by rememberSaveable { mutableStateOf(false) }
     val s = session?.summary
+    val app by vm.state.collectAsStateWithLifecycle()
     val sessionId = s?.id
     val fileLinks: ((String) -> Unit)? = remember(sessionId) { sessionId?.let { id -> { link: String -> vm.openFileLink(id, link) } } }
     Scaffold(
@@ -523,6 +524,10 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
                 actions = {
                     if (s == null) return@TopAppBar
                     StatusBadge(s.status, Modifier.padding(end = 4.dp))
+                    // The window the core reported, else the app's model's (DeepSeek Harness doesn't say).
+                    val window = s.contextWindow.takeIf { it > 0 } ?: app.model?.contextWindow ?: 0
+                    val lastRun = remember(session?.items) { session?.items?.lastOrNull { it is ChatItem.Stats }?.let { (it as ChatItem.Stats).run } }
+                    ContextRing(s.contextTokens, window, session?.run ?: lastRun)
                     Box {
                         IconButton(onClick = { menu = true }) { AppIcon(R.drawable.ic_more_vert, stringResource(R.string.more)) }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {

@@ -367,4 +367,27 @@ class SessionReducerTest {
         // Other tools keep only their result line.
         assertEquals("", SessionReducer.stepOutput("read", long))
     }
+
+    @Test fun `the context ring follows each call, compaction and a restored conversation, and is saved`() {
+        var s = reduce(running, msg("configured", "model" to "m", "contextWindow" to 1_000_000))
+        assertEquals(0L, s.summary.contextTokens)
+        assertEquals(1_000_000, s.summary.contextWindow)
+        // The whole prompt (fresh, cached, newly cached) plus the reply.
+        val usage = JSONObject().put("input", 2_000).put("cacheRead", 80_000).put("cacheWrite", 6_000).put("output", 1_000)
+        s = reduce(s, msg("assistant_end", "text" to "", "stopReason" to "toolUse", "usage" to usage))
+        assertEquals(89_000L, s.summary.contextTokens)
+        // A stopped call reports no tokens: the last known size stays.
+        s = reduce(s, msg("assistant_end", "text" to "", "stopReason" to "aborted", "usage" to JSONObject().put("input", 0).put("output", 0)))
+        assertEquals(89_000L, s.summary.contextTokens)
+        s = reduce(s, msg("compacted", "before" to 40, "after" to 6, "contextTokens" to 12_000))
+        assertEquals(12_000L, s.summary.contextTokens)
+        // Configured again without a size (a new session's first configure) keeps it; with one, takes it.
+        s = reduce(s, msg("configured", "model" to "m"))
+        assertEquals(12_000L, s.summary.contextTokens)
+        assertEquals(1_000_000, s.summary.contextWindow)
+        s = reduce(s, msg("configured", "model" to "m2", "contextWindow" to 200_000, "contextTokens" to 15_000))
+        assertEquals(15_000L, s.summary.contextTokens)
+        assertEquals(200_000, s.summary.contextWindow)
+        assertEquals(s.summary, SessionStore.summaryFrom(SessionStore.summaryJson(s.summary)))
+    }
 }

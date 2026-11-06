@@ -246,6 +246,10 @@
     <string name="run_details">Run details</string>
     <string name="run_thought">Thought · %1$s</string>
     <string name="run_thought_hidden">This provider doesn\'t show the model\'s reasoning.</string>
+    <string name="context_title">Context</string>
+    <string name="context_used">%1$s of %2$s tokens (%3$s)</string>
+    <string name="context_cache">Last run: %1$d%% of input from cache</string>
+    <string name="context_hint">What the latest model call carried. When it nears 70%, older messages are summarized to make room.</string>
     <string name="run_tokens">%1$s tokens</string>
     <string name="run_stopped_early">The run ended before any step.</string>
     <string name="dur_s">%1$ds</string>
@@ -264,7 +268,8 @@
     <string name="stat_steps">Steps</string>
     <string name="stat_calls">Model calls</string>
     <string name="stat_tokens">Tokens</string>
-    <string name="stat_input">Input</string>
+    <string name="stat_cache_hit">Cache hit rate</string>
+    <string name="stat_input">Input (not cached)</string>
     <string name="stat_cache_read">Input from cache</string>
     <string name="stat_cache_write">Written to cache</string>
     <string name="stat_output">Output</string>

@@ -62,6 +62,7 @@ object SessionReducer {
             val err = if (m.optString("stopReason") == "error" && s.busy) friendly(m.optString("errorMessage")) else null
             var n = s.endThinking(null, now).copy(streaming = "", error = err ?: s.error)
                 .countUsage(m.optJSONObject("usage"), "${m.optString("provider")}/${m.optString("model")}")
+                .context(contextOf(m.optJSONObject("usage")), 0)
             if (text.isNotBlank()) n = n.add(ChatItem.Assistant(text), now).preview(Markdown.plain(text), now)
             if (err != null) n = n.add(ChatItem.Error(err), now).preview(err, now, error = true)
             n.trace("assistant_end · ${m.optString("provider")}/${m.optString("model")} · stop=${m.optString("stopReason")} · tokens=${m.optJSONObject("usage")?.optInt("totalTokens")}")
@@ -87,7 +88,7 @@ object SessionReducer {
             val app = APP_LINE.find(output)?.groupValues?.get(1)
             s.copy(items = items, summary = if (app != null) s.summary.copy(app = app) else s.summary).trace("  ${if (ok) "✓" else "✗"} $out")
         }
-        "configured" -> s.trace("configured · ${m.optString("model")} · thinking=${m.optString("thinkingLevel")} → ${m.optString("baseUrl")} · auth=${m.optString("auth")} · history=${m.optInt("messages")}" +
+        "configured" -> s.context(m.optLong("contextTokens", -1), m.optInt("contextWindow")).trace("configured · ${m.optString("model")} · thinking=${m.optString("thinkingLevel")} → ${m.optString("baseUrl")} · auth=${m.optString("auth")} · history=${m.optInt("messages")}" +
             (m.optJSONArray("skipped")?.takeIf { it.length() > 0 }?.let { " · the core's own: ${it.join(", ")}" } ?: ""))
         "error" -> {
             val err = friendly(m.optString("message"))
@@ -123,6 +124,9 @@ object SessionReducer {
             .trace("subagent · ${m.optString("subagent")} · ${m.optString("label")}")
         // Pi took a steered message into the conversation: it is delivered.
         "message_end" -> if (m.optString("role") == "user") s.delivered(m.optString("text")) else s
+        // The core summarised the older part of the conversation: the context is that much smaller now.
+        "compacted" -> s.context(m.optLong("contextTokens", -1), 0)
+            .trace("compacted · ${m.optInt("before")} → ${m.optInt("after")} messages${if (m.has("contextTokens")) " · ~${m.optLong("contextTokens")} tokens" else ""}")
         // A transcript is persisted by the manager; it doesn't change what the user sees.
         "transcript", "turn_end" -> s
         else -> s.trace(m.optString("type"))
@@ -305,6 +309,24 @@ object SessionReducer {
         val body = text?.takeIf { it.isNotBlank() } ?: thinking
         val n = copy(thinking = "", thinkingSince = null, run = run?.let { it.copy(thinkingMs = it.thinkingMs + ms) })
         return if (body.isBlank() && ms < 1000) n else n.add(ChatItem.Thinking(body.trim(), ms), now)
+    }
+
+    /**
+     * The tokens a model call carried, from its usage: the whole prompt (fresh, cached and newly cached input) plus
+     * the reply, which the next call carries too. -1 when it doesn't say (a failed or stopped call reports 0).
+     */
+    fun contextOf(u: JSONObject?): Long {
+        if (u == null) return -1
+        val prompt = u.optLong("input") + u.optLong("cacheRead") + u.optLong("cacheWrite")
+        return if (prompt > 0) prompt + u.optLong("output") else -1
+    }
+
+    /** How full the context is now ([tokens] < 0: unchanged), and the model's window ([window] 0: unchanged). */
+    private fun SessionState.context(tokens: Long, window: Int): SessionState {
+        val t = if (tokens >= 0) tokens else summary.contextTokens
+        val w = if (window > 0) window else summary.contextWindow
+        return if (t == summary.contextTokens && w == summary.contextWindow) this
+        else copy(summary = summary.copy(contextTokens = t, contextWindow = w))
     }
 
     /** One model call's tokens (Pi's Usage) added to the run. */
