@@ -93,8 +93,11 @@ sealed interface ChatBlock {
         val live: Boolean,
     ) : ChatBlock {
         val steps get() = process.count { it is ChatItem.Step }
-        /** The subagents that finished in it (DeepSeek Harness), for its header. */
-        val subagents get() = process.count { it is ChatItem.Trigger && it.source == "subagent-settled" }
+        /** Its subagents (DeepSeek Harness), each with its own section; runs saved before had only their notices. */
+        val agents get() = process.filterIsInstance<ChatItem.Subagent>()
+        val subagents get() = agents.size.takeIf { it > 0 } ?: process.count { it is ChatItem.Trigger && it.source == "subagent-settled" }
+        /** Its subagents still work: the agent's answer comes when all of them are done. */
+        val waiting get() = live && agents.any { !it.settled }
         val answerText get() = answer.filterIsInstance<ChatItem.Assistant>().joinToString("\n\n") { it.text }
     }
 }
@@ -103,14 +106,12 @@ sealed interface ChatBlock {
  * Groups a session's items into blocks: each user message, then the agent's turn up to its [ChatItem.Stats].
  * The last turn is [ChatBlock.Turn.live] while the session works (it may have no items yet).
  */
-/** How a subagent's step is named (dsh-host marks them so). */
+/** How a subagent's step was named in runs saved before subagents had their own sections. */
 private const val SUBAGENT_STEP = "↳"
 
-/** The run around [i] is over: its stats (or the next message) come after it, or nothing works any more. */
-private fun runEnded(items: List<ChatItem>, i: Int, busy: Boolean): Boolean {
-    for (j in i + 1 until items.size) if (items[j] is ChatItem.Stats || items[j] is ChatItem.User) return true
-    return !busy
-}
+/** A reply laid out as a report: a table, a heading or code. */
+private fun structured(text: String) =
+    text.contains("```") || text.lines().any { it.trimStart().startsWith("|") || it.trimStart().startsWith("#") }
 
 /** A short reply without a table or code: a remark on a late result, not a report. */
 private fun remark(text: String) = text.length < 300 && !text.contains("```") && text.lines().none { it.trimStart().startsWith("|") }
@@ -121,23 +122,43 @@ fun chatBlocks(items: List<ChatItem>, busy: Boolean): List<ChatBlock> {
     val turn = mutableListOf<ChatItem>()
     fun close(stats: RunStats?, live: Boolean) {
         if (turn.isEmpty() && stats == null && !live) return
-        // The answer is the text after the agent's own last step or reasoning. Its subagents' steps (↳) go on in the
-        // background after it answered: they belong to the process, but don't push the answer into it.
+        // The answer is the text after the agent's own last step, reasoning, subagent or notice. (Old runs' subagent
+        // steps, ↳, went on in the background after it answered: they don't push the answer into the process.)
         val sub = { it: ChatItem -> it is ChatItem.Step && it.tool.startsWith(SUBAGENT_STEP) }
-        val boundary = { it: ChatItem -> it is ChatItem.Trigger || ((it is ChatItem.Step || it is ChatItem.Thinking) && !sub(it)) }
+        val boundary = { it: ChatItem ->
+            it is ChatItem.Trigger || it is ChatItem.Subagent || ((it is ChatItem.Step || it is ChatItem.Thinking) && !sub(it))
+        }
         val last = turn.indexOfLast(boundary)
         val said = (last + 1 until turn.size).filter { turn[it] is ChatItem.Assistant }.toMutableList()
-        // A finished run its subagents woke again (folded: see the Trigger case below) ends with the agent's reply to
-        // the last result. When that is only a remark ("the table above has it all"), the reply before it is the
-        // report: it shows too.
+        // While its subagents work, what the agent says (dsh wakes it as each one reports back) is part of the work:
+        // the answer is what it writes once all of them are done.
+        val waiting = live && turn.any { it is ChatItem.Subagent && !it.settled }
+        // Its subagents are joined (none works any more): the answer is its report, its main reply since it started
+        // them (the in-between ones are short updates), and whatever it wrote after it. Whether it wrote the report
+        // before the last notice reached it or after is up to the model, so the notices' order doesn't decide.
+        val started = turn.indexOfLast { it is ChatItem.Subagent }
+        val joined = started >= 0 && !waiting
+        if (waiting) said.clear()
+        else if (joined) {
+            // While it still runs, the report is being written: only what came after the latest result can be it.
+            val from = if (live) maxOf(started, turn.indexOfLast { it is ChatItem.Trigger }) else started
+            val replies = (from + 1 until turn.size).filter { turn[it] is ChatItem.Assistant }
+            replies.maxWithOrNull(compareBy({ !remark((turn[it] as ChatItem.Assistant).text) && structured((turn[it] as ChatItem.Assistant).text) },
+                { (turn[it] as ChatItem.Assistant).text.length }))?.let { report ->
+                said.clear()
+                said += replies.filter { it >= report }
+            }
+        }
+        // Runs saved before subagents had sections: one its subagents woke ends with the agent's reply to the last
+        // result. When that is only a remark ("the table above has it all"), the reply before it is the report.
         val woke = turn.indexOfLast { it is ChatItem.Trigger }
-        if (woke >= 0 && said.all { remark((turn[it] as ChatItem.Assistant).text) }) {
+        if (!waiting && !joined && woke >= 0 && (said.isNotEmpty() || !live) && said.all { remark((turn[it] as ChatItem.Assistant).text) }) {
             val from = turn.subList(0, woke).indexOfLast(boundary)
             said.addAll(0, (from + 1 until woke).filter { turn[it] is ChatItem.Assistant })
         }
         // Errors and files given to the user are part of the answer, wherever they came in the run.
         val inAnswer = { i: Int, it: ChatItem -> it is ChatItem.Error || it is ChatItem.File || i in said }
-        val process = turn.filterIndexed { i, it -> !inAnswer(i, it) && !(i > last && it is ChatItem.Assistant) }
+        val process = turn.filterIndexed { i, it -> !inAnswer(i, it) }
         val answer = turn.filterIndexed { i, it -> inAnswer(i, it) }
         out += ChatBlock.Turn("t:${if (start < 0) items.size else start}", process, answer, stats, live)
         turn.clear(); start = -1
@@ -146,13 +167,6 @@ fun chatBlocks(items: List<ChatItem>, busy: Boolean): List<ChatBlock> {
         when (item) {
             // A message typed while it works (steering) splits the run's process around it, as it happened.
             is ChatItem.User -> {
-                close(null, false)
-                out += ChatBlock.Message("m:$i", item)
-            }
-            // A notice the core woke its agent with (DeepSeek Harness: a subagent finished or wrote). While the run
-            // goes on, each one starts a part of its own, so the results show as they come. Once it is over, the run
-            // is one turn again: the notices and the replies to them fold into its process (see close).
-            is ChatItem.Trigger -> if (runEnded(items, i, busy)) { if (start < 0) start = i; turn += item } else {
                 close(null, false)
                 out += ChatBlock.Message("m:$i", item)
             }
@@ -302,6 +316,7 @@ private fun toolLabel(tool: String): String = when (tool) {
     "list_sessions" -> stringResource(R.string.tool_list_sessions)
     "get_session" -> stringResource(R.string.tool_get_session)
     "wait_for" -> stringResource(R.string.tool_wait_for)
+    "subagent", "subagent_fork" -> stringResource(R.string.tool_subagent)
     else -> tool
 }
 
@@ -313,6 +328,7 @@ private fun toolIcon(tool: String) = when (tool) {
     "read_screen", "screenshot" -> R.drawable.ic_phone
     "create_session", "message_session", "send_message", "list_sessions", "get_session", "wait_for", "pause_session", "resume_session",
     "stop_session", "delete_session", "rename_session" -> R.drawable.ic_forum
+    "subagent", "subagent_fork" -> R.drawable.ic_sparkle
     else -> R.drawable.ic_code
 }
 
@@ -325,6 +341,7 @@ private sealed interface ProcessLine {
     data class Thought(val item: ChatItem.Thinking) : ProcessLine
     data class Said(val text: String) : ProcessLine
     data class Woken(val item: ChatItem.Trigger) : ProcessLine
+    data class Agent(val item: ChatItem.Subagent) : ProcessLine
 }
 
 private fun processLines(process: List<ChatItem>): List<ProcessLine> {
@@ -339,6 +356,7 @@ private fun processLines(process: List<ChatItem>): List<ProcessLine> {
         is ChatItem.Thinking -> out += ProcessLine.Thought(item)
         is ChatItem.Assistant -> out += ProcessLine.Said(item.text)
         is ChatItem.Trigger -> out += ProcessLine.Woken(item)
+        is ChatItem.Subagent -> out += ProcessLine.Agent(item)
         else -> Unit
     }
     return out
@@ -365,6 +383,7 @@ private fun ProcessHeader(
     val label = when {
         turn.live && status == SessionStatus.Queued -> stringResource(R.string.run_waiting)
         turn.live && status == SessionStatus.Paused -> stringResource(R.string.run_paused, duration(elapsed ?: 0))
+        turn.waiting -> turn.agents.let { a -> stringResource(R.string.run_waiting_subagents, duration(elapsed ?: 0), a.count { it.settled }, a.size) }
         turn.live && thinking -> stringResource(R.string.run_thinking, duration(elapsed ?: 0))
         turn.live -> stringResource(R.string.run_working, duration(elapsed ?: 0))
         run != null && run.thinkingMs > 0 && turn.steps == 0 -> stringResource(R.string.run_thought_for, duration(run.ms))
@@ -418,7 +437,11 @@ private fun shimmer(base: Color): Brush {
 @Composable
 private fun LiveProcess(turn: ChatBlock.Turn, session: SessionState, modifier: Modifier = Modifier) {
     val now = rememberNow(true)
-    val lines = remember(turn.process) { processLines(turn.process).filterNot { it is ProcessLine.Thought } }
+    // The agent's own latest work; its subagents show below it, each in its own section.
+    val lines = remember(turn.process) {
+        processLines(turn.process).filterNot { it is ProcessLine.Thought || it is ProcessLine.Woken || it is ProcessLine.Agent }
+    }
+    val agents = remember(turn.process) { turn.agents }
     val shown = lines.takeLast(MAX_LIVE_LINES)
     val c = MaterialTheme.colorScheme
     Column(modifier.fillMaxWidth().padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -435,9 +458,12 @@ private fun LiveProcess(turn: ChatBlock.Turn, session: SessionState, modifier: M
                     style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(start = 22.dp),
                 )
-                // A live run's notices are parts of their own (see chatBlocks): none here.
-                is ProcessLine.Thought, is ProcessLine.Woken -> Unit
+                // Notices are in the subagents' sections (their results), reasoning below.
+                is ProcessLine.Thought, is ProcessLine.Woken, is ProcessLine.Agent -> Unit
             }
+        }
+        if (agents.isNotEmpty()) Column(Modifier.padding(top = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            agents.forEach { SubagentCard(it, now, live = true, turn.process) }
         }
         AnimatedVisibility(session.thinkingSince != null || session.thinking.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
             LiveThinking(session.thinking, session.thinkingSince?.let { now - it })
@@ -477,7 +503,9 @@ private fun StepLine(line: ProcessLine.Steps, shimmering: Boolean, showDetail: B
             label, style = MaterialTheme.typography.bodyMedium.let { if (shimmering) it.copy(brush = shimmer(c.onSurface)) else it },
             color = if (shimmering) Color.Unspecified else color, maxLines = 1,
         )
-        if (showDetail && last.detail.isNotBlank()) Text(
+        // Several subagents started together: one task's name would read as the line's; their cards name them all.
+        val grouped = line.steps.size > 1 && (line.tool == "subagent" || line.tool == "subagent_fork")
+        if (showDetail && !grouped && last.detail.isNotBlank()) Text(
             "  " + last.detail.lineSequence().first(), fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = c.outline,
             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
         )
@@ -546,7 +574,8 @@ fun ProcessSheet(turn: ChatBlock.Turn, session: SessionState, onDismiss: () -> U
                     is ProcessLine.Thought -> ThoughtEntry(line.item.text, line.item.ms)
                     is ProcessLine.Steps -> StepsEntry(line)
                     is ProcessLine.Said -> MarkdownText(line.text, Modifier.fillMaxWidth())
-                    is ProcessLine.Woken -> TriggerCard(line.item)
+                    is ProcessLine.Woken -> TriggerCard(line.item, label = turn.agents.firstOrNull { it.id == line.item.subagent }?.label)
+                    is ProcessLine.Agent -> SubagentCard(line.item, now, live = turn.live, turn.process)
                 }
             }
             session.thinkingSince?.takeIf { turn.live }?.let { since -> item { ThoughtEntry(session.thinking, now - since, live = true) } }
@@ -675,7 +704,7 @@ private fun StatRow(label: String, value: String, sub: Boolean = false) {
  * it starts, as dsh's own chat shows it. Tap to read the notice itself.
  */
 @Composable
-private fun TriggerCard(item: ChatItem.Trigger, modifier: Modifier = Modifier) {
+private fun TriggerCard(item: ChatItem.Trigger, modifier: Modifier = Modifier, label: String? = null) {
     val c = MaterialTheme.colorScheme
     var open by rememberSaveable(item) { mutableStateOf(false) }
     val (icon, title) = when (item.source) {
@@ -692,7 +721,8 @@ private fun TriggerCard(item: ChatItem.Trigger, modifier: Modifier = Modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AppIcon(icon, null, Modifier.size(16.dp), tint = c.onSurfaceVariant)
             Spacer(Modifier.width(10.dp))
-            Text(stringResource(title), style = MaterialTheme.typography.bodyMedium, color = c.onSurfaceVariant, modifier = Modifier.weight(1f))
+            val text = stringResource(title).let { t -> if (label.isNullOrBlank()) t else stringResource(R.string.subagent_settled, label, t) }
+            Text(text, style = MaterialTheme.typography.bodyMedium, color = c.onSurfaceVariant, modifier = Modifier.weight(1f))
             if (item.text.isNotBlank()) AppIcon(R.drawable.ic_chevron_right, null,
                 Modifier.size(16.dp).rotate(if (open) 90f else 0f), tint = c.onSurfaceVariant)
         }
@@ -700,5 +730,108 @@ private fun TriggerCard(item: ChatItem.Trigger, modifier: Modifier = Modifier) {
             item.text.trim(), style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, lineHeight = 17.sp),
             color = c.onSurfaceVariant, modifier = Modifier.padding(start = 26.dp, top = 8.dp).heightIn(max = 240.dp).verticalScroll(rememberScrollState()),
         )
+    }
+}
+
+/**
+ * A subagent's report from dsh's notice: the message it sent ("Agent … sent a message: …"), or the closing text of
+ * its settlement notice ("Subagent … finished … Its closing message: …").
+ */
+private fun closingMessage(notice: String): String {
+    MESSAGE.find(notice)?.let { return notice.substring(it.range.last + 1).trim() }
+    val at = notice.indexOf(com.lanqi.weiassist.agent.SessionReducer.CLOSING)
+    return if (at >= 0) notice.substring(at + com.lanqi.weiassist.agent.SessionReducer.CLOSING.length).trim() else ""
+}
+
+private val MESSAGE = Regex("""^Agent \S+ sent a message: ?""")
+
+/**
+ * One subagent's own section (DeepSeek Harness), as dsh's web chat gives each child its own conversation: what it
+ * works on, how it goes (its reasoning or latest step as it streams, or how it ended), its time and steps. Tap for
+ * all of its work and its report.
+ */
+@Composable
+private fun SubagentCard(item: ChatItem.Subagent, now: Long, live: Boolean, turn: List<ChatItem>, modifier: Modifier = Modifier) {
+    val c = MaterialTheme.colorScheme
+    var open by rememberSaveable(item.id) { mutableStateOf(false) }
+    val working = live && !item.settled
+    // Its report: what dsh's notices carried (sessions saved before kept only its last message as a notice).
+    val report = remember(item.result, turn) {
+        closingMessage(item.result).ifBlank {
+            turn.lastOrNull { it is ChatItem.Trigger && it.subagent == item.id && it.source == "agent-message" }
+                ?.let { closingMessage((it as ChatItem.Trigger).text) }.orEmpty()
+        }
+    }
+    val lines = remember(item.items) { processLines(item.items) }
+    val since = item.thinkingSince
+    Column(
+        modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.surfaceContainer)
+            .clickable { open = !open }.padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(16.dp), contentAlignment = Alignment.Center) {
+                when {
+                    working -> PulsingDots()
+                    item.outcome == "done" -> AppIcon(R.drawable.ic_check_circle, null, Modifier.size(16.dp), tint = c.primary)
+                    item.outcome == "failed" -> AppIcon(R.drawable.ic_cancel, null, Modifier.size(16.dp), tint = c.error)
+                    else -> AppIcon(R.drawable.ic_stop, null, Modifier.size(16.dp), tint = c.onSurfaceVariant)
+                }
+            }
+            Spacer(Modifier.width(10.dp))
+            Text(
+                item.label.ifBlank { stringResource(R.string.subagent_untitled) }, style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+            )
+            val ms = if (item.settled || !live) item.ms else now - item.startedAt
+            val facts = buildList {
+                if (ms > 0) add(duration(ms))
+                if (item.steps > 0) add(pluralStringResource(R.plurals.run_steps, item.steps, item.steps))
+            }
+            Text(facts.joinToString(" · "), style = MaterialTheme.typography.labelMedium, color = c.outline, maxLines = 1, modifier = Modifier.padding(start = 8.dp))
+            AppIcon(R.drawable.ic_chevron_right, null, Modifier.padding(start = 2.dp).size(16.dp).rotate(if (open) 90f else 0f), tint = c.outline)
+        }
+        // Closed: one line of how it goes, or how it ended.
+        if (!open) Box(Modifier.padding(start = 26.dp, top = 6.dp)) {
+            val quiet = MaterialTheme.typography.bodySmall
+            when {
+                working && since != null -> Text(
+                    item.thinking.trimEnd().takeLast(300).replace('\n', ' ').ifBlank { stringResource(R.string.run_thinking, duration(now - since)) },
+                    style = quiet.copy(fontStyle = FontStyle.Italic), color = c.onSurfaceVariant.copy(alpha = 0.8f), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                )
+                working && item.streaming.isNotBlank() -> Text(
+                    stringResource(R.string.subagent_writing), style = quiet.copy(brush = shimmer(c.onSurfaceVariant)), maxLines = 1,
+                )
+                working -> (lines.lastOrNull() as? ProcessLine.Steps)?.let { StepLine(it, shimmering = it.running) }
+                    ?: Text(stringResource(if (item.running) R.string.subagent_starting else R.string.subagent_waiting), style = quiet, color = c.onSurfaceVariant)
+                report.isNotBlank() -> Text(
+                    remember(report) { Markdown.plain(report).replace('\n', ' ') }, style = quiet, color = c.onSurfaceVariant,
+                    maxLines = 2, overflow = TextOverflow.Ellipsis,
+                )
+                else -> Text(
+                    stringResource(when (item.outcome) { "done" -> R.string.subagent_done; "failed" -> R.string.subagent_failed; else -> R.string.subagent_stopped }),
+                    style = quiet, color = c.onSurfaceVariant,
+                )
+            }
+        }
+        // Open: all of its work in order, what it streams now, and its report (its text a size below the answer's).
+        AnimatedVisibility(open) { MaterialTheme(MaterialTheme.colorScheme, typography = MaterialTheme.typography.let { it.copy(bodyLarge = it.bodyMedium) }) {
+            Column(Modifier.padding(top = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                lines.forEach { line ->
+                    when (line) {
+                        is ProcessLine.Thought -> ThoughtEntry(line.item.text, line.item.ms)
+                        is ProcessLine.Steps -> StepsEntry(line)
+                        // Its report is below; its other messages (to its parent, along the way) here.
+                        is ProcessLine.Said -> if (report.trim() != line.text.trim()) MarkdownText(line.text, Modifier.fillMaxWidth())
+                        is ProcessLine.Woken, is ProcessLine.Agent -> Unit
+                    }
+                }
+                if (working && since != null) ThoughtEntry(item.thinking, now - since, live = true)
+                if (working && item.streaming.isNotBlank()) MarkdownText(item.streaming, Modifier.fillMaxWidth())
+                if (report.isNotBlank()) Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(stringResource(R.string.subagent_result), style = MaterialTheme.typography.labelMedium, color = c.outline)
+                    MarkdownText(report, Modifier.fillMaxWidth())
+                }
+            }
+        } }
     }
 }

@@ -555,7 +555,8 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
             val liveFooter = entries.lastOrNull()?.takeIf { it is ChatEntry.Footer && it.turn.live }
             val body = remember(entries) { if (liveFooter != null) entries.subList(0, entries.size - 1) else entries }
             val stream = remember(session.id) { StreamingMarkdown() }
-            val streamBlocks = if (liveFooter != null && session.streaming.isNotEmpty()) stream.blocks(session.streaming) else emptyList()
+            // While its subagents work, what the agent writes is part of the work (see chatBlocks), not the answer.
+            val streamBlocks = if (liveFooter != null && !(liveFooter as ChatEntry.Footer).turn.waiting && session.streaming.isNotEmpty()) stream.blocks(session.streaming) else emptyList()
             FollowEnd(list, session, rowsKey = entries.size + streamBlocks.size)
             // The turn whose details are open (by key, so a live turn's sheet follows it as it runs).
             var processOf by rememberSaveable(session.id) { mutableStateOf<String?>(null) }
