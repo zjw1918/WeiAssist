@@ -46,6 +46,15 @@
 
 两个引擎使用同样的 AI 服务、密钥和登录，也都有应用的手机工具和安全检查。每个对话一直使用它开始时的引擎。
 
+### 子智能体
+
+<p align="center">
+  <a href="docs/images/subagents-demo.mp4"><img src="docs/images/subagents-demo.gif" width="320"
+    alt="DeepSeek Harness 会话用三个子智能体对比 Rust、Go 和 Zig：每个子智能体在自己的实时卡片里工作，显示用时、步数和当前步骤，顶部统计已完成的数量；三个都完成后，主智能体的对比表就是答案；“思考内容”里有每个子智能体的卡片、报告和它自己的工作过程"></a>
+</p>
+
+用 DeepSeek Harness 时，一个任务可以同时运行多个子智能体。每个子智能体都有自己的实时卡片，显示它的思考、步骤、用时和报告。全部完成后才给出答案：主智能体的汇总，其余过程点开即可查看。[观看视频](docs/images/subagents-demo.mp4)（已加速）。
+
 ## 它能做什么
 
 ![小维助手的四个界面：DeepSeek Harness 会话里三个子智能体并行调研；全部完成后汇总成一张对比表；设置里的 AI 引擎选择（Pi 或 DeepSeek Harness）；以及 Pi 会话用 Termux 里的 curl 查天气](docs/images/showcase.png)
