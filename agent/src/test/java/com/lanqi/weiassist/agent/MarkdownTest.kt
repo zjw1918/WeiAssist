@@ -39,7 +39,7 @@ class MarkdownTest {
         val md = "1. 打开 Termux，运行：\n   ```sh\n   mkdir -p ~/.termux && termux-reload-settings\n   ```\n2. 允许权限。"
         val list = Markdown.parse(md).single() as Markdown.ListBlock
         assertEquals(listOf("1.", "2."), list.items.map { it.marker })
-        assertEquals(listOf(Markdown.Code("mkdir -p ~/.termux && termux-reload-settings")), list.items[0].code)
+        assertEquals(listOf(Markdown.Code("mkdir -p ~/.termux && termux-reload-settings", "sh")), list.items[0].code)
         assertEquals(listOf(Span("打开 Termux，运行：")), list.items[0].text)
         assertEquals(listOf(Span("允许权限。")), list.items[1].text)
     }
@@ -94,8 +94,13 @@ class MarkdownTest {
         assertEquals(listOf("1.", "2.", "•"), list.items.map { it.marker })
         assertEquals(listOf(0, 0, 1), list.items.map { it.depth })
         assertEquals(Markdown.Rule, b[2])
-        assertEquals(Markdown.Code("func main() {}"), b[3])
+        assertEquals(Markdown.Code("func main() {}", "go"), b[3])
         assertEquals(Markdown.Quote(listOf(Markdown.Paragraph(listOf(Span("note"))))), b[4])
+    }
+
+    @Test fun fenceLanguageTag() {
+        assertEquals(listOf(Markdown.Code("x", "python")), Markdown.parse("```Python title=a.py\nx\n```"))
+        assertEquals(listOf(Markdown.Code("x", "js")), Markdown.parse("~~~ {.js}\nx\n~~~"))
     }
 
     @Test fun unclosedFenceWhileStreaming() {

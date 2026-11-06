@@ -200,6 +200,8 @@ sealed interface ChatEntry {
     /** A file the agent gave the user. */
     data class File(override val key: String, override val gap: Dp, val item: ChatItem.File) : ChatEntry
     data class Footer(override val key: String, override val gap: Dp, val turn: ChatBlock.Turn) : ChatEntry
+    /** The files the turn changed, each with its +/− (tap one for its diff). */
+    data class Changes(override val key: String, override val gap: Dp, val files: List<ChangedFile>) : ChatEntry
 
     /** Rows of one kind reuse each other's composition as they scroll in and out (like RecyclerView's view types). */
     val contentType: Any get() = if (this is Answer) block.javaClass else javaClass
@@ -227,6 +229,7 @@ fun chatEntries(blocks: List<ChatBlock>): List<ChatEntry> {
                         else -> Unit
                     }
                 }
+                if (!b.live) changedFiles(b.process).takeIf { it.isNotEmpty() }?.let { out += ChatEntry.Changes("${b.key}:c", next(), it) }
                 // The live turn's streaming answer goes before its footer (see SessionScreen). A footer with nothing to
                 // show (a run split by a message sent while it worked: no answer to copy, its totals come at its end)
                 // is no row: an empty row still takes the list's spacing, a gap before the next message.
@@ -249,6 +252,7 @@ fun ChatEntryView(e: ChatEntry, session: SessionState, onProcess: (String) -> Un
         is ChatEntry.Failure -> ErrorText(e.text, m)
         is ChatEntry.File -> FileCard(e.item.file, e.item.caption, m)
         is ChatEntry.Footer -> TurnFooterRow(e.turn, session, onStats, m)
+        is ChatEntry.Changes -> ChangesCard(e.files, m)
     }
 }
 
@@ -265,6 +269,72 @@ private fun TurnFooterRow(turn: ChatBlock.Turn, session: SessionState, onStats: 
     if (turn.live) TurnFooter(turn, session.run, onClick, modifier)
     else TurnFooter(turn, turn.stats, onClick, modifier)
 }
+
+/** A file a turn changed: its [path], and every change made to it in order (by the agent or its subagents). */
+data class ChangedFile(val path: String, val changes: List<com.lanqi.weiassist.agent.FileChange>)
+
+/** The files [process] changed, in the order first changed; changes a tool refused don't count. */
+fun changedFiles(process: List<ChatItem>): List<ChangedFile> {
+    val steps = process.flatMap { item ->
+        when (item) {
+            is ChatItem.Step -> listOf(item)
+            is ChatItem.Subagent -> item.items.filterIsInstance<ChatItem.Step>()
+            else -> emptyList()
+        }
+    }.filter { it.changes.isNotEmpty() && it.ok != false && it.detail.isNotBlank() }
+    return steps.groupBy { it.detail }.map { (path, st) -> ChangedFile(path, st.flatMap { it.changes }) }
+}
+
+/**
+ * "2 files changed +61 −3" and a row per file (its name, its folder, +/−) after the answer, as coding agents end a
+ * turn. Tap a file for its diff.
+ */
+@Composable
+private fun ChangesCard(files: List<ChangedFile>, modifier: Modifier = Modifier) {
+    val c = MaterialTheme.colorScheme
+    var openFile by rememberSaveable(files.map { it.path }) { mutableStateOf<String?>(null) }
+    var all by rememberSaveable(files.map { it.path }) { mutableStateOf(false) }
+    val total = remember(files) { diffStat(files.flatMap { it.changes }) }
+    val shown = if (all || files.size <= MAX_FILES + 1) files else files.take(MAX_FILES)
+    Column(
+        modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(c.surfaceContainer).padding(vertical = 6.dp),
+    ) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            AppIcon(R.drawable.ic_edit, null, Modifier.size(14.dp), tint = c.onSurfaceVariant)
+            Spacer(Modifier.width(8.dp))
+            Text(
+                pluralStringResource(R.plurals.files_changed, files.size, files.size), style = MaterialTheme.typography.labelLarge,
+                color = c.onSurfaceVariant, modifier = Modifier.weight(1f),
+            )
+            DiffStatText(total)
+        }
+        shown.forEach { f ->
+            val open = openFile == f.path
+            Row(
+                Modifier.fillMaxWidth().clickable { openFile = if (open) null else f.path }.padding(horizontal = 14.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                val name = f.path.substringAfterLast('/')
+                Text(name, fontFamily = FontFamily.Monospace, fontSize = 13.sp, color = c.onSurface, maxLines = 1)
+                Text(
+                    "  " + f.path.removeSuffix(name).removeSuffix("/"), fontFamily = FontFamily.Monospace, fontSize = 11.sp, color = c.outline,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                )
+                DiffStatText(remember(f) { diffStat(f.changes) }, Modifier.padding(start = 8.dp))
+                AppIcon(R.drawable.ic_chevron_right, null, Modifier.padding(start = 4.dp).size(14.dp).rotate(if (open) 90f else 0f), tint = c.outline)
+            }
+            AnimatedVisibility(open) {
+                DiffView(f.path, f.changes, Modifier.padding(horizontal = 8.dp).clip(RoundedCornerShape(8.dp)))
+            }
+        }
+        if (shown.size < files.size) Text(
+            stringResource(R.string.files_more, files.size - shown.size), style = MaterialTheme.typography.labelMedium, color = c.primary,
+            modifier = Modifier.fillMaxWidth().clickable { all = true }.padding(horizontal = 14.dp, vertical = 8.dp),
+        )
+    }
+}
+
+private const val MAX_FILES = 5
 
 // ---- formatting ---------------------------------------------------------------------------------------
 
@@ -519,10 +589,17 @@ private fun StepLine(line: ProcessLine.Steps, shimmering: Boolean, showDetail: B
         )
         // Several subagents started together: one task's name would read as the line's; their cards name them all.
         val grouped = line.steps.size > 1 && (line.tool == "subagent" || line.tool == "subagent_fork")
-        if (showDetail && !grouped && last.detail.isNotBlank()) Text(
-            "  " + last.detail.lineSequence().first(), fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = c.outline,
+        // A file tool: the file's name (several: how many files) and what it changed in them, +12 −3.
+        val changed = line.steps.filter { it.changes.isNotEmpty() }
+        val detail = when {
+            changed.isEmpty() -> last.detail.lineSequence().first()
+            else -> changed.map { it.detail }.distinct().let { f -> if (f.size == 1) f[0].substringAfterLast('/') else pluralStringResource(R.plurals.files_changed, f.size, f.size) }
+        }
+        if (showDetail && !grouped && detail.isNotBlank()) Text(
+            "  $detail", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = c.outline,
             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
         )
+        if (changed.isNotEmpty()) DiffStatText(remember(changed) { diffStat(changed.flatMap { it.changes }) }, Modifier.padding(start = 8.dp))
         if (line.failed > 0 && !failed) AppIcon(R.drawable.ic_cancel, null, Modifier.padding(start = 6.dp).size(12.dp), tint = c.error)
     }
 }
@@ -634,6 +711,13 @@ private fun StepsEntry(line: ProcessLine.Steps) {
                     HorizontalDivider(Modifier.padding(vertical = 6.dp), color = c.outlineVariant)
                     Text(st.result, style = CodeStyle, color = if (st.ok == false) c.error else c.onSurfaceVariant)
                 }
+            }
+        } else if (line.steps.any { it.changes.isNotEmpty() }) Column(
+            Modifier.fillMaxWidth().padding(start = 22.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            // Each file change as its diff; a refused one in red, with why.
+            line.steps.forEach { st ->
+                FileDiffCard(st.detail, st.changes, failed = st.ok == false, note = if (st.ok == false) st.result else "")
             }
         } else if (line.steps.size > 1 || line.steps.any { it.result.isNotBlank() }) Column(
             Modifier.padding(start = 22.dp), verticalArrangement = Arrangement.spacedBy(3.dp),

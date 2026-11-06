@@ -448,4 +448,16 @@
     <string name="file_missing">This file is no longer on the phone.</string>
     <string name="file_fetching">Getting %1$s…</string>
     <string name="file_fetch_failed">Couldn\'t get the file: %1$s</string>
+    <string name="diff_show_all">Show all %1$d lines</string>
+    <string name="diff_cut">Too long to keep whole: the rest isn’t shown.</string>
+    <string name="diff_written">written</string>
+    <string name="files_more">%1$d more</string>
+    <plurals name="diff_unchanged">
+        <item quantity="one">%1$d unchanged line</item>
+        <item quantity="other">%1$d unchanged lines</item>
+    </plurals>
+    <plurals name="files_changed">
+        <item quantity="one">%1$d file changed</item>
+        <item quantity="other">%1$d files changed</item>
+    </plurals>
 </resources>

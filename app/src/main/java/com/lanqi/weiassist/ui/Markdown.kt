@@ -140,23 +140,8 @@ private fun Block(b: Markdown.Block) {
                 }
             }
         }
-        // A tinted, outlined block on the page; long lines scroll sideways instead of wrapping. Copy at its top right.
-        is Markdown.Code -> {
-            val c = MaterialTheme.colorScheme
-            val ctx = LocalContext.current
-            val shape = RoundedCornerShape(10.dp)
-            Box(Modifier.fillMaxWidth().clip(shape).background(c.surfaceContainerHigh).border(1.dp, c.outlineVariant.copy(alpha = 0.6f), shape)) {
-                Box(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(start = 12.dp, end = 44.dp, top = 10.dp, bottom = 10.dp)) {
-                    Text(b.text, style = CodeStyle, color = c.onSurface, softWrap = false)
-                }
-                IconButton(
-                    onClick = { copyText(ctx, b.text) },
-                    modifier = Modifier.align(Alignment.TopEnd).padding(2.dp).size(36.dp).clip(RoundedCornerShape(8.dp)).background(c.surfaceContainerHigh),
-                ) {
-                    AppIcon(R.drawable.ic_copy, stringResource(R.string.copy), Modifier.size(16.dp), tint = c.onSurfaceVariant)
-                }
-            }
-        }
+        // On a dark editor surface, coloured by its language; long lines scroll sideways. Copy in its header.
+        is Markdown.Code -> CodeBlock(b.text, b.lang)
         is Markdown.Quote -> Row(Modifier.height(IntrinsicSize.Min)) {
             Box(Modifier.width(3.dp).fillMaxHeight().background(MaterialTheme.colorScheme.outlineVariant))
             Column(Modifier.padding(start = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { b.blocks.forEach { Block(it) } }

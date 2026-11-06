@@ -79,8 +79,12 @@ sealed interface ChatItem {
      * A tool the agent used: [ok] is null while it runs; [result] is the first line of what it returned.
      * [screen] counts the elements of the screen the model got with it (actions return the screen they
      * leave, read_screen is one), 0 if none: the page shows that a step read the screen without keeping it.
+     * [changes]: what a file tool (write, edit) changed in the file [detail] names, for its diff card.
      */
-    data class Step(val tool: String, val detail: String, val ok: Boolean? = null, val result: String = "", val screen: Int = 0) : ChatItem
+    data class Step(
+        val tool: String, val detail: String, val ok: Boolean? = null, val result: String = "", val screen: Int = 0,
+        val changes: List<FileChange> = emptyList(),
+    ) : ChatItem
     data class Error(val text: String) : ChatItem
     /** A file the agent gave the user (send_file), kept in the app with the session; [caption] as the model wrote it. */
     data class File(val file: Attachment, val caption: String = "") : ChatItem
@@ -198,4 +202,20 @@ data class SessionState(
     val id get() = summary.id
     val status get() = summary.status
     val busy get() = summary.status.active
+}
+
+/**
+ * A change a step made to a file: [old] replaced by [new]. A file written whole has an empty [old] (what it held
+ * before isn't known: it shows as all new). [cut]: the texts were too long to keep whole, and end early.
+ */
+data class FileChange(val old: String, val new: String, val cut: Boolean = false) {
+    companion object {
+        /** The most of each text a step keeps (the app keeps sessions in memory and on disk). */
+        const val MAX = 24_000
+
+        fun of(old: String, new: String): FileChange {
+            fun clip(t: String) = if (t.length <= MAX) t else t.substring(0, t.lastIndexOf('\n', MAX).let { if (it > 0) it else MAX })
+            return FileChange(clip(old), clip(new), old.length > MAX || new.length > MAX)
+        }
+    }
 }

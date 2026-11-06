@@ -25,6 +25,34 @@ class SessionReducerTest {
         assertEquals(SessionStatus.Queued, SessionReducer.userMessage(idle, "x", queued = true, now = 1).status)
     }
 
+    @Test fun `file tools keep what they change, and it is saved with the step`() {
+        val edit = JSONObject().put("file_path", "/w/main.go").put("old_string", "a := 1").put("new_string", "a := 2")
+        var s = reduce(running, msg("tool_start", "tool" to "edit", "args" to edit))
+        val step = s.items.last() as ChatItem.Step
+        assertEquals("/w/main.go", step.detail)
+        assertEquals(listOf(FileChange("a := 1", "a := 2")), step.changes)
+        assertEquals(step, SessionStore.itemFrom(SessionStore.itemJson(step)))
+
+        s = reduce(s, msg("tool_start", "tool" to "write", "args" to JSONObject().put("file_path", "go.mod").put("content", "module x\n")))
+        assertEquals(listOf(FileChange("", "module x\n")), (s.items.last() as ChatItem.Step).changes)
+
+        val many = JSONObject().put("path", "a.kt").put("edits", org.json.JSONArray()
+            .put(JSONObject().put("oldText", "x").put("newText", "y")).put(JSONObject().put("oldText", "p").put("newText", "q")))
+        assertEquals(listOf(FileChange("x", "y"), FileChange("p", "q")), SessionReducer.stepChanges("edit", many))
+        val create = JSONObject().put("command", "create").put("path", "b.py").put("file_text", "print(1)")
+        assertEquals(listOf(FileChange("", "print(1)")), SessionReducer.stepChanges("str_replace_editor", create))
+        assertEquals(emptyList<FileChange>(), SessionReducer.stepChanges("str_replace_editor", JSONObject().put("command", "view")))
+        assertEquals(emptyList<FileChange>(), SessionReducer.stepChanges("bash", JSONObject().put("command", "ls")))
+    }
+
+    @Test fun `a long file is kept up to a line end, marked cut`() {
+        val line = "x".repeat(99) + "\n"
+        val c = FileChange.of("", line.repeat(FileChange.MAX / 100 + 10))
+        assertTrue(c.cut)
+        assertTrue(c.new.length <= FileChange.MAX && c.new.endsWith("x"))
+        assertFalse(FileChange.of("a", "b").cut)
+    }
+
     @Test fun `text deltas stream, and the finished answer becomes a chat item`() {
         var s = running
         listOf("你", "好", "！").forEach { s = reduce(s, msg("text_delta", "delta" to it)) }

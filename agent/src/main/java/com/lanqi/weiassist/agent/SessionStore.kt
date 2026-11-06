@@ -86,6 +86,9 @@ class SessionStore(root: File) {
             is ChatItem.File -> JSONObject().put("k", "file").put("file", i.file.toJson()).also { if (i.caption.isNotEmpty()) it.put("caption", i.caption) }
             is ChatItem.Step -> JSONObject().put("k", "step").put("tool", i.tool).put("detail", i.detail)
                 .put("ok", i.ok ?: JSONObject.NULL).put("result", i.result).also { if (i.screen > 0) it.put("screen", i.screen) }
+                .also { if (i.changes.isNotEmpty()) it.put("changes", JSONArray(i.changes.map { c ->
+                    JSONObject().put("old", c.old).put("new", c.new).also { o -> if (c.cut) o.put("cut", true) }
+                })) }
             is ChatItem.Thinking -> JSONObject().put("k", "thinking").put("text", i.text).put("ms", i.ms)
             is ChatItem.Trigger -> JSONObject().put("k", "trigger").put("source", i.source).put("text", i.text)
                 .also { if (i.subagent.isNotEmpty()) it.put("subagent", i.subagent) }
@@ -111,7 +114,10 @@ class SessionStore(root: File) {
             "file" -> ChatItem.File(Attachment.fromJson(o.getJSONObject("file")), o.optString("caption"))
             "step" -> ChatItem.Step(o.getString("tool"), o.optString("detail"), if (o.isNull("ok")) null else o.getBoolean("ok"),
                 // Only the first line is shown (a few builds kept whole screens here).
-                SessionReducer.resultLine(o.optString("result")), o.optInt("screen"))
+                SessionReducer.resultLine(o.optString("result")), o.optInt("screen"),
+                o.optJSONArray("changes")?.let { a -> (0 until a.length()).map { k ->
+                    a.getJSONObject(k).let { c -> FileChange(c.optString("old"), c.optString("new"), c.optBoolean("cut")) }
+                } }.orEmpty())
             "thinking" -> ChatItem.Thinking(o.optString("text"), o.optLong("ms"))
             "trigger" -> ChatItem.Trigger(o.optString("source"), o.optString("text"), o.optString("subagent"))
             // Saved while it ran: the run is over now (the app's process ended with it).

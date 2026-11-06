@@ -51,7 +51,7 @@ object SessionReducer {
         "tool_start" -> {
             val args = m.optJSONObject("args")
             val app = if (m.optString("tool") == "open_app") args?.optString("app") else null
-            s.endThinking(null, now).add(ChatItem.Step(m.optString("tool"), stepDetail(m.optString("tool"), args)), now)
+            s.endThinking(null, now).add(step(m.optString("tool"), args), now)
                 .copy(run = s.run?.let { it.copy(steps = it.steps + 1) })
                 .let { if (app != null) it.copy(summary = it.summary.copy(app = app)) else it }
                 .trace("→ ${m.optString("tool")} ${args?.toString().orEmpty()}")
@@ -123,7 +123,7 @@ object SessionReducer {
                     val e = k.endThinking(null, now).copy(streaming = "")
                     if (text.isBlank()) e else e.addItem(ChatItem.Assistant(text))
                 }
-                "tool_start" -> k.endThinking(null, now).addItem(ChatItem.Step(m.optString("tool"), stepDetail(m.optString("tool"), m.optJSONObject("args"))))
+                "tool_start" -> k.endThinking(null, now).addItem(step(m.optString("tool"), m.optJSONObject("args")))
                 "tool_end" -> {
                     val i = k.items.indexOfLast { it is ChatItem.Step && it.ok == null && it.tool == m.optString("tool") }
                     if (i < 0) k else k.copy(items = k.items.toMutableList().also {
@@ -191,6 +191,34 @@ object SessionReducer {
         if (s.status == SessionStatus.Queued && status == SessionStatus.Running && s.run?.let { it.calls == 0 && it.steps == 0 } == true)
             s.copy(run = RunStats(now)).status(status, now)
         else s.status(status, now)
+
+    /** The step a tool call starts: what it works on, and what it changes in a file (a write's or an edit's diff). */
+    fun step(tool: String, args: JSONObject?) = ChatItem.Step(tool, stepDetail(tool, args), changes = stepChanges(tool, args))
+
+    /**
+     * What a file tool's call changes, from its arguments: DeepSeek Harness's write (file_path, content) and edit
+     * (old_string, new_string), the str_replace_editor's str_replace, create and insert, and the oldText/newText
+     * spelling (one edit, or several as `edits`). Other tools change no file.
+     */
+    fun stepChanges(tool: String, a: JSONObject?): List<FileChange> {
+        if (a == null) return emptyList()
+        fun JSONObject.text(vararg keys: String): String? = keys.firstNotNullOfOrNull { k -> if (has(k) && !isNull(k)) optString(k) else null }
+        fun pair(o: JSONObject): FileChange? {
+            val new = o.text("new_string", "newText", "new_str") ?: return null
+            return FileChange.of(o.text("old_string", "oldText", "old_str").orEmpty(), new)
+        }
+        return when (tool) {
+            "write" -> a.text("content", "file_text")?.let { listOf(FileChange.of("", it)) }.orEmpty()
+            "edit", "multi_edit" -> a.optJSONArray("edits")?.let { e -> (0 until e.length()).mapNotNull { e.optJSONObject(it)?.let(::pair) } }
+                ?: listOfNotNull(pair(a))
+            "str_replace_editor" -> when (a.optString("command")) {
+                "create" -> a.text("file_text")?.let { listOf(FileChange.of("", it)) }.orEmpty()
+                "str_replace", "insert" -> listOfNotNull(pair(a))
+                else -> emptyList()
+            }
+            else -> emptyList()
+        }
+    }
 
     /** A short, readable account of a tool call for the step card (typed text is shown, it's the user's task). */
     fun stepDetail(tool: String, a: JSONObject?): String = when (tool) {

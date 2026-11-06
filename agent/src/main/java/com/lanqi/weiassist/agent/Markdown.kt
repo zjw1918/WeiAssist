@@ -16,7 +16,8 @@ object Markdown {
      */
     data class Item(val marker: String, val depth: Int, val text: List<Span>, val code: List<Code> = emptyList())
     data class ListBlock(val items: List<Item>) : Block
-    data class Code(val text: String) : Block
+    /** [lang]: the fence's language tag (```go → "go"), lower-cased; empty when it has none. */
+    data class Code(val text: String, val lang: String = "") : Block
     data class Quote(val blocks: List<Block>) : Block
     enum class Align { Start, Center, End }
     data class Table(val header: List<List<Span>>, val rows: List<List<List<Span>>>, val align: List<Align>) : Block
@@ -40,6 +41,10 @@ object Markdown {
     private val fence = Regex("^\\s{0,3}(```|~~~)")
     private val tableDivider = Regex("^\\s*\\|?\\s*:?-{1,}:?\\s*(\\|\\s*:?-{1,}:?\\s*)*\\|?\\s*$")
 
+    /** The info string's first word after the opening [mark] ("```go title=x" → "go"; "```{.py}" → "py"). */
+    private fun langOf(line: String, mark: String): String =
+        line.trim().removePrefix(mark).trim().substringBefore(' ').trim('{', '}', '.').lowercase()
+
     fun parse(text: String): List<Block> = blocks(text.replace("\r\n", "\n").split("\n"))
 
     private fun blocks(lines: List<String>): List<Block> {
@@ -57,11 +62,12 @@ object Markdown {
                 fence.containsMatchIn(line) -> {
                     flush()
                     val mark = fence.find(line)!!.groupValues[1]
+                    val lang = langOf(line, mark)
                     val code = mutableListOf<String>()
                     i++
                     while (i < lines.size && !lines[i].trimStart().startsWith(mark)) code += lines[i++]
                     i++ // the closing fence (or past the end while streaming)
-                    out += Code(code.joinToString("\n"))
+                    out += Code(code.joinToString("\n"), lang)
                 }
                 heading.matches(line) -> {
                     flush()
@@ -101,6 +107,7 @@ object Markdown {
                             // A code block inside the item: its lines lose the fence's indentation.
                             val indent = l.length - l.trimStart().length
                             val mark = fence.find(l.trimStart())!!.groupValues[1]
+                            val lang = langOf(l, mark)
                             val code = mutableListOf<String>()
                             i++
                             while (i < lines.size && !lines[i].trimStart().startsWith(mark)) {
@@ -110,7 +117,7 @@ object Markdown {
                             }
                             i++ // the closing fence (or past the end while streaming)
                             val last = items.removeAt(items.lastIndex)
-                            items += last.copy(code = last.code + Code(code.joinToString("\n")))
+                            items += last.copy(code = last.code + Code(code.joinToString("\n"), lang))
                         } else if (m != null && !rule.matches(l)) {
                             val depth = m.groupValues[1].replace("\t", "    ").length / 2
                             items += Item(if (b != null) "•" else "${n!!.groupValues[2]}.", depth, inline(m.groupValues[3]))
