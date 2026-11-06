@@ -19,6 +19,9 @@ android {
         versionCode = providers.gradleProperty("versionCode").orNull?.toInt() ?: 1
         versionName = providers.gradleProperty("versionName").orNull ?: "0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // -PdevTools=true: a release build with the developer tools of debug builds (the mock model, the test
+        // intents), to measure performance as users get it. Never for builds that ship.
+        buildConfigField("boolean", "DEV_TOOLS", (providers.gradleProperty("devTools").orNull == "true").toString())
     }
 
     // Release signing: keystore.properties (storeFile, storePassword, keyAlias, keyPassword) from the
@@ -35,9 +38,13 @@ android {
     } else null
 
     buildTypes {
+        debug {
+            buildConfigField("boolean", "DEV_TOOLS", "true")
+        }
         release {
             releaseSigning?.let { signingConfig = it }
             proguardFiles("proguard-rules.pro")
+            if (providers.gradleProperty("profiling").orNull == "true") proguardFiles("proguard-profiling.pro")
             optimization {
                 enable = true
                 packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")

@@ -107,7 +107,7 @@ fun SettingsTab(vm: AppViewModel, s: AgentState) {
                 }
             }
 
-            if (BuildConfig.DEBUG) {
+            if (BuildConfig.DEV_TOOLS) {
                 SectionHeader(stringResource(R.string.section_developer))
                 Group {
                     GroupRow(

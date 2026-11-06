@@ -42,7 +42,7 @@ import com.lanqi.weiassist.ui.WelcomeScreen
 
 class MainActivity : ComponentActivity() {
     /**
-     * Debug builds: a task passed with `--es task "…"`. `--ez run true` starts it at once in a new session,
+     * Debug builds (and -PdevTools=true release builds): a task passed with `--es task "…"`. `--ez run true` starts it at once in a new session,
      * `--ez phone false` makes it a chat, `--ez mock true` sends it to the local mock model.
      */
     val debugTask = androidx.compose.runtime.mutableStateOf<String?>(null)
@@ -58,7 +58,7 @@ class MainActivity : ComponentActivity() {
     val debugSupervise = androidx.compose.runtime.mutableStateOf<String?>(null)
 
     private fun readDebug(i: android.content.Intent) {
-        if (!BuildConfig.DEBUG) return
+        if (!BuildConfig.DEV_TOOLS) return
         i.getStringExtra("supervise")?.let { debugSupervise.value = it; debugMock = if (i.hasExtra("mock")) i.getBooleanExtra("mock", false) else null }
         if (i.hasExtra("mainOnly")) debugMainOnly = i.getBooleanExtra("mainOnly", false)
         i.getStringExtra("core")?.let { debugCore = it }

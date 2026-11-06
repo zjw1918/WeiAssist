@@ -101,6 +101,9 @@ export const SCRIPTS = {
 	dsh_where: [{ tool: "bash", args: { description: "Show the working folder", command: "pwd; echo made by dsh > from-dsh.txt; ls" } }, { text: "looked around" }],
 	delegate: [{ tool: "subagent", args: { description: "Keep a todo list", prompt: "Write the todo list [[script:child_todo]]" } }, { text: "delegated" }],
 	child_todo: [{ tool: "todo_write", args: { todos: [{ content: "Check the inbox", status: "pending" }] } }, { text: "listed" }],
+	// Performance on a device: about 20 s of streamed reasoning, then a ~250-line code answer streamed over ~20 s
+	// (chunks of 12 characters, one per event).
+	perf: [{ think: perfThinking(), text: perfAnswer(), chunk: 12 }],
 	douban: [
 		{ tool: "open_app", args: { app: "com.douban.frodo" } },
 		{ tool: "read_screen", args: {} },
@@ -110,6 +113,27 @@ export const SCRIPTS = {
 		{ text: "looked at Douban" },
 	],
 };
+
+function perfThinking() {
+	const s = "The user wants a small library catalog in Kotlin. I should model books, members and loans, keep it in memory, " +
+		"and show a short demo at the end. Let me think about the classes: Book with isbn, title, author, year and copies; " +
+		"Member with an id and a name; Loan linking them with a due date. The catalog needs add, find, lend and return. ";
+	return s.repeat(10);
+}
+
+function perfAnswer() {
+	const lines = ["Here is the catalog:", "", "```kotlin", "import java.time.LocalDate", ""];
+	for (let i = 0; lines.length < 250; i++) {
+		lines.push(`/** Book number ${i}: a title held by the library. */`);
+		lines.push(`data class Book${i}(val isbn: String, val title: String, val copies: Int = ${i % 4 + 1}) {`);
+		lines.push(`    fun available(loans: List<String>): Boolean = loans.count { it == isbn } < copies // ${i}`);
+		lines.push(`    override fun toString() = "$title ($isbn)"`);
+		lines.push("}");
+		lines.push("");
+	}
+	lines.push("```", "", "Run it with `kotlinc catalog.kt -include-runtime -d catalog.jar`.");
+	return lines.join("\n");
+}
 
 function scriptedTurn(body) {
 	const input = JSON.stringify(body.input ?? []);
@@ -230,6 +254,19 @@ function handle(req, res, { requests, log, delayMs }) {
 			call_id: `call_${Date.now()}`, name: turn.tool, arguments: JSON.stringify(turn.args),
 		};
 		const text = turn?.text ?? MOCK_REPLY;
+		const chunk = turn?.chunk ?? 1;
+		const pieces = (t) => { const out = []; for (let k = 0; k < t.length; k += chunk) out.push(t.slice(k, k + chunk)); return out; };
+		const think = turn?.think;
+		const reasoning = think && { id: "rs_mock", type: "reasoning", summary: [] };
+		const thinkEvents = think ? [
+			{ type: "response.output_item.added", output_index: 0, item: reasoning },
+			{ type: "response.reasoning_summary_part.added", item_id: reasoning.id, output_index: 0, summary_index: 0, part: { type: "summary_text", text: "" } },
+			...pieces(think).map((d) => ({ type: "response.reasoning_summary_text.delta", item_id: reasoning.id, output_index: 0, summary_index: 0, delta: d })),
+			{ type: "response.reasoning_summary_text.done", item_id: reasoning.id, output_index: 0, summary_index: 0, text: think },
+			{ type: "response.reasoning_summary_part.done", item_id: reasoning.id, output_index: 0, summary_index: 0, part: { type: "summary_text", text: think } },
+			{ type: "response.output_item.done", output_index: 0, item: { ...reasoning, summary: [{ type: "summary_text", text: think }] } },
+		] : [];
+		const at = think ? 1 : 0;
 		const events = call ? [
 			{ type: "response.created", response: { ...base, status: "in_progress", output: [] } },
 			{ type: "response.output_item.added", output_index: 0, item: { ...call, status: "in_progress", arguments: "" } },
@@ -239,13 +276,14 @@ function handle(req, res, { requests, log, delayMs }) {
 			{ type: "response.completed", response: { ...base, status: "completed", output: [call], usage } },
 		] : [
 			{ type: "response.created", response: { ...base, status: "in_progress", output: [] } },
-			{ type: "response.output_item.added", output_index: 0, item: msg },
-			{ type: "response.content_part.added", item_id: msg.id, output_index: 0, content_index: 0, part },
-			...[...text].map((ch) => ({ type: "response.output_text.delta", item_id: msg.id, output_index: 0, content_index: 0, delta: ch })),
-			{ type: "response.output_text.done", item_id: msg.id, output_index: 0, content_index: 0, text },
-			{ type: "response.content_part.done", item_id: msg.id, output_index: 0, content_index: 0, part: { ...part, text } },
-			{ type: "response.output_item.done", output_index: 0, item: done },
-			{ type: "response.completed", response: { ...base, status: "completed", output: [done], usage } },
+			...thinkEvents,
+			{ type: "response.output_item.added", output_index: at, item: msg },
+			{ type: "response.content_part.added", item_id: msg.id, output_index: at, content_index: 0, part },
+			...(chunk > 1 ? pieces(text) : [...text]).map((d) => ({ type: "response.output_text.delta", item_id: msg.id, output_index: at, content_index: 0, delta: d })),
+			{ type: "response.output_text.done", item_id: msg.id, output_index: at, content_index: 0, text },
+			{ type: "response.content_part.done", item_id: msg.id, output_index: at, content_index: 0, part: { ...part, text } },
+			{ type: "response.output_item.done", output_index: at, item: done },
+			{ type: "response.completed", response: { ...base, status: "completed", output: [...(think ? [{ ...reasoning, summary: [{ type: "summary_text", text: think }] }] : []), done], usage } },
 		];
 		res.writeHead(200, { ...cors, "content-type": "text/event-stream", "cache-control": "no-cache" });
 		let i = 0;
