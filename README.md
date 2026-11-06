@@ -55,6 +55,8 @@ installs from your browser or file manager when Android asks.
 Both use the same providers, keys and sign-ins, and both get the app's phone tools and safety checks. Each
 conversation keeps the engine it started with.
 
+## Demos
+
 ### Subagents
 
 <p align="center">
@@ -66,9 +68,20 @@ With DeepSeek Harness, a task can run several subagents at once. Each one gets i
 reasoning, steps, time and report. The answer comes once all of them are done: the orchestrator's summary, with the
 rest of its work a tap away. [Watch the video](docs/images/subagents-demo.mp4) (sped up).
 
+### Talk to it from Telegram
+
+<p align="center">
+  <img src="docs/images/telegram-demo.gif" width="560"
+    alt="Telegram on a Mac and the phone side by side: asked for San Diego's weather, the assistant answers using Termux; asked to email the forecast with Gmail, it writes the email on the phone and asks before tapping Send, in Telegram and on the phone; Deny is tapped in Telegram and nothing is sent">
+</p>
+
+Create a bot with [BotFather](https://t.me/BotFather), paste its token in **Settings → Telegram** and pair your account. Each chat is a
+conversation; it streams answers, takes photos and files, and asks you (✅ / ❌) before anything risky. No server
+needed. Details: [docs/TELEGRAM.md](docs/TELEGRAM.md).
+
 ## What it can do
 
-![Four WeiAssist screens: a DeepSeek Harness session with three subagents researching in parallel; its answer once they are done, one comparison table; Settings with the AI engine choice, Pi or DeepSeek Harness; and a Pi session answering the weather with curl in Termux](docs/images/showcase.png)
+![Four WeiAssist screens: a DeepSeek Harness session with three subagents researching in parallel; its answer once they are done, one comparison table; Settings with the AI engine choice, Pi or DeepSeek Harness; and a Go web service it wrote, tested and left running in tmux](docs/images/showcase.png)
 
 - **Many providers:** OpenAI, Anthropic, Google, DeepSeek, OpenRouter, xAI, Moonshot, Mistral, OpenCode, and any
   OpenAI-compatible server (Ollama, vLLM, LM Studio…).
@@ -80,17 +93,6 @@ rest of its work a tap away. [Watch the video](docs/images/subagents-demo.mp4) (
 - **Phone tasks:** it can use your apps, and asks before anything like Send, Pay or Delete.
 - **English and Chinese UI.**
 
-## Talk to it from Telegram
-
-<p align="center">
-  <img src="docs/images/telegram-demo.gif" width="560"
-    alt="Telegram on a Mac and the phone side by side: asked for San Diego's weather, the assistant answers using Termux; asked to email the forecast with Gmail, it writes the email on the phone and asks before tapping Send, in Telegram and on the phone; Deny is tapped in Telegram and nothing is sent">
-</p>
-
-Create a bot with [BotFather](https://t.me/BotFather), paste its token in **Settings → Telegram** and pair your account. Each chat is a
-conversation; it streams answers, takes photos and files, and asks you (✅ / ❌) before anything risky. No server
-needed. Details: [docs/TELEGRAM.md](docs/TELEGRAM.md).
-
 ## Privacy and safety
 
 - WeiAssist has no servers. Your messages, attachments, command output and, for phone tasks, the relevant screen
@@ -98,7 +100,6 @@ needed. Details: [docs/TELEGRAM.md](docs/TELEGRAM.md).
 - Sign-ins are stored only on the phone, encrypted with the Android Keystore. DeepSeek Harness reaches your
   provider through the app and never holds a key.
 - Before anything like Send, Pay or Delete, it asks you, whichever engine is running. Stop works at any time.
-- With Telegram, messages also pass through Telegram's servers, which are not end-to-end encrypted.
 
 More in [SECURITY.md](SECURITY.md).
 
