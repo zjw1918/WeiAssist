@@ -79,7 +79,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val openInBrowser = controller.flatMapLatest { it?.openInBrowser ?: emptyFlow() }
 
     // screen-local input
-    var input by mutableStateOf(prefs.getString("input", null) ?: app.getString(R.string.default_input))
+    /** The new-session box: empty each time (a started task doesn't come back as the next one's text). */
+    var input by mutableStateOf("")
     /** Reply box on a session's page. */
     var reply by mutableStateOf("")
     /** Files attached to the new-session box ([inputAttachments]) and the reply box, not sent yet. */
@@ -227,7 +228,9 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val text = input.trim()
         val files = inputAttachments.toList()
         if (text.isEmpty() && files.isEmpty()) return
-        prefs.edit().putBoolean("phoneMode", phoneMode).putString("input", input).apply()
+        // "input": earlier builds kept the last task here, to fill the box with it again.
+        prefs.edit().putBoolean("phoneMode", phoneMode).remove("input").apply()
+        input = ""
         inputAttachments.clear()
         viewModelScope.launch { open(c.startTask(text, phoneMode, files)) }
     }

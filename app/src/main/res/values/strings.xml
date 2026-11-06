@@ -18,7 +18,6 @@
     <string name="sign_out_text">Signing out deletes the sign-in saved on this phone. You\'ll need to sign in again.</string>
     <string name="sign_out_confirm">Sign out</string>
     <string name="cancel">Cancel</string>
-    <string name="default_input">Hello</string>
     <string name="welcome_title">Hi, I\'m WeiAssist</string>
     <string name="welcome_body">First, connect me to an AI model. I talk to models through Pi %1$s: pick a provider below.</string>
     <string name="method_sub_title">Sign in with ChatGPT</string>
