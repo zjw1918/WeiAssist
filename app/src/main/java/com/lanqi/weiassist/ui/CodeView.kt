@@ -128,11 +128,14 @@ private const val CODE_PEEK = 20
 fun CodeBlock(text: String, lang: String, modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val shape = RoundedCornerShape(10.dp)
-    val code = remember(text, lang) { highlighted(text.trimEnd('\n'), lang) }
-    val lines = remember(code) { code.count { it == '\n' } + 1 }
+    val body = remember(text) { text.trimEnd('\n') }
+    val lines = remember(body) { body.count { it == '\n' } + 1 }
     val long = lines > CODE_FOLD
     var all by rememberSaveable { mutableStateOf(false) }
-    val shown = if (long && !all) code.subSequence(0, lineStart(code, CODE_PEEK).let { if (it > 0) it - 1 else it }) else code
+    // Folded, only the lines shown are coloured: while the answer streams, they stop changing once written, and
+    // the colouring is kept instead of redone for every chunk.
+    val visible = if (long && !all) body.substring(0, lineStart(body, CODE_PEEK).let { if (it > 0) it - 1 else it }) else body
+    val shown = remember(visible, lang) { highlighted(visible, lang) }
     Column(modifier.fillMaxWidth().clip(shape).background(CodeColors.background).border(1.dp, CodeColors.border, shape)) {
         Row(Modifier.fillMaxWidth().background(CodeColors.header).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(lang, style = CodeStyle.copy(fontSize = 12.sp), color = CodeColors.dim, maxLines = 1, modifier = Modifier.weight(1f))

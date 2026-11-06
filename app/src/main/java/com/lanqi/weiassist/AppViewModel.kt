@@ -16,6 +16,7 @@ import com.lanqi.weiassist.agent.Attachments
 import com.lanqi.weiassist.agent.AuthMethod
 import com.lanqi.weiassist.agent.SessionState
 import com.lanqi.weiassist.agent.SessionSummary
+import com.lanqi.weiassist.agent.pacedStreaming
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -61,7 +62,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             if (c == null || id == null) flowOf<SessionState?>(null)
             else flow<SessionState?> {
                 val live = c.sessions.attach(id)
-                try { if (live == null) emit(null) else emitAll(live) } finally { c.sessions.detach(id) }
+                try { if (live == null) emit(null) else emitAll(live.pacedStreaming()) } finally { c.sessions.detach(id) }
             }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(2_000), null)

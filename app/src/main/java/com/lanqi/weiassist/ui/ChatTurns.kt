@@ -5,12 +5,6 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.widget.Toast
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -51,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
@@ -494,28 +489,34 @@ private fun ProcessHeader(
     }
 }
 
+/**
+ * A value that steps from 0 to [steps] - 1 and round again, one step every [stepMs]. Live work is shown with
+ * these few steps a second, not a frame-by-frame animation: Android draws the whole window again for any change,
+ * and a page of text costs this phone ~30 ms to draw, so a 60 fps animation kept it busy for the whole run.
+ */
+@Composable
+private fun steppingPhase(steps: Int, stepMs: Long): Int = produceState(0, steps, stepMs) {
+    while (true) { delay(stepMs); value = (value + 1) % steps }
+}.value
+
 /** Three dots in a wave: the agent is working. */
 @Composable
 private fun PulsingDots() {
-    val t = rememberInfiniteTransition(label = "dots")
-    val phase by t.animateFloat(0f, 3f, infiniteRepeatable(tween(1200, easing = LinearEasing)), label = "phase")
+    val phase = steppingPhase(3, 350)
     val color = MaterialTheme.colorScheme.primary
     Row(Modifier.size(16.dp), horizontalArrangement = Arrangement.spacedBy(2.dp), verticalAlignment = Alignment.CenterVertically) {
-        repeat(3) { i ->
-            val d = ((phase - i + 3) % 3).let { if (it > 1.5f) 3 - it else it } // 0 at its peak, 1.5 farthest
-            Box(Modifier.size(4.dp).alpha(1f - d / 2f).background(color, CircleShape))
-        }
+        repeat(3) { i -> Box(Modifier.size(4.dp).alpha(if (i == phase) 1f else 0.35f).background(color, CircleShape)) }
     }
 }
 
-/** A highlight sweeping across text in [base] color. */
+/** Text in [base] color, gently brightening and dimming while the work it names goes on. */
 @Composable
 private fun shimmer(base: Color): Brush {
-    val t = rememberInfiniteTransition(label = "shimmer")
-    val x by t.animateFloat(-300f, 900f, infiniteRepeatable(tween(1600, easing = LinearEasing), RepeatMode.Restart), label = "x")
-    val dim = base.copy(alpha = 0.45f)
-    return Brush.linearGradient(listOf(dim, base, dim), start = androidx.compose.ui.geometry.Offset(x, 0f), end = androidx.compose.ui.geometry.Offset(x + 300f, 0f))
+    val phase = steppingPhase(SHIMMER_LEVELS.size, 160)
+    return SolidColor(base.copy(alpha = SHIMMER_LEVELS[phase]))
 }
+
+private val SHIMMER_LEVELS = floatArrayOf(0.45f, 0.6f, 0.75f, 0.9f, 1f, 0.9f, 0.75f, 0.6f)
 
 /** While it runs: its reasoning as it streams, and its latest steps (the newest one shimmering while it runs). */
 @Composable
