@@ -84,6 +84,8 @@ sealed interface ChatItem {
     data class Step(
         val tool: String, val detail: String, val ok: Boolean? = null, val result: String = "", val screen: Int = 0,
         val changes: List<FileChange> = emptyList(),
+        /** A command's output (bash), clipped by SessionReducer.stepOutput; empty for other tools. */
+        val output: String = "",
     ) : ChatItem
     data class Error(val text: String) : ChatItem
     /** A file the agent gave the user (send_file), kept in the app with the session; [caption] as the model wrote it. */

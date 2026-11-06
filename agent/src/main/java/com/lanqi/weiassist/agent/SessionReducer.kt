@@ -25,6 +25,24 @@ object SessionReducer {
 
     fun resultLine(output: String) = output.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty().trim().take(RESULT_MAX)
 
+    /** Of a long command output, the first lines and the last ones are kept, the rest a gap line ([OUTPUT_GAP]). */
+    const val OUTPUT_HEAD = 20
+    const val OUTPUT_TAIL = 80
+    const val OUTPUT_LINE_MAX = 300
+
+    /** A gap in a kept output: "⋯ N" on a line of its own, N the lines left out. */
+    val OUTPUT_GAP = Regex("""^⋯ (\d+)$""")
+
+    /** What a step keeps of its tool's output to show whole: a command's (bash), clipped; nothing for other tools. */
+    fun stepOutput(tool: String, output: String): String {
+        if (tool != "bash") return ""
+        val lines = output.trimEnd().lines().dropWhile { it.isBlank() }.map { if (it.length > OUTPUT_LINE_MAX) it.take(OUTPUT_LINE_MAX) + "…" else it }
+        if (lines.isEmpty()) return ""
+        val kept = if (lines.size <= OUTPUT_HEAD + OUTPUT_TAIL + 1) lines
+        else lines.take(OUTPUT_HEAD) + "⋯ ${lines.size - OUTPUT_HEAD - OUTPUT_TAIL}" + lines.takeLast(OUTPUT_TAIL)
+        return kept.joinToString("\n")
+    }
+
     /** At most this many of a subagent's own items are kept. */
     const val MAX_SUBAGENT_ITEMS = 200
 
@@ -63,7 +81,7 @@ object SessionReducer {
             // The open step of this tool is the last Step without a result.
             val i = s.items.indexOfLast { it is ChatItem.Step && it.ok == null && it.tool == m.optString("tool") }
             val items = if (i < 0) s.items else s.items.toMutableList().also {
-                it[i] = (it[i] as ChatItem.Step).copy(ok = ok, result = out, screen = m.optInt("screen"))
+                it[i] = (it[i] as ChatItem.Step).let { st -> st.copy(ok = ok, result = out, screen = m.optInt("screen"), output = stepOutput(st.tool, output)) }
             }
             // The screen's app line: at the start of read_screen, after "Screen now:" for an action.
             val app = APP_LINE.find(output)?.groupValues?.get(1)
@@ -127,7 +145,9 @@ object SessionReducer {
                 "tool_end" -> {
                     val i = k.items.indexOfLast { it is ChatItem.Step && it.ok == null && it.tool == m.optString("tool") }
                     if (i < 0) k else k.copy(items = k.items.toMutableList().also {
-                        it[i] = (it[i] as ChatItem.Step).copy(ok = !m.optBoolean("isError"), result = resultLine(m.optString("output")))
+                        it[i] = (it[i] as ChatItem.Step).let { st ->
+                            st.copy(ok = !m.optBoolean("isError"), result = resultLine(m.optString("output")), output = stepOutput(st.tool, m.optString("output")))
+                        }
                     })
                 }
                 "subagent_status" -> m.optBoolean("running").let { on -> (if (on) k else k.endThinking(null, now)).copy(running = on) }

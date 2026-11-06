@@ -349,4 +349,22 @@ class SessionReducerTest {
         // Nothing happened yet: no stats.
         assertTrue(SessionReducer.stopped(s, now = 6_000).items.none { it is ChatItem.Stats })
     }
+
+    @Test fun `a command keeps its output, the middle of a long one left out, and saves it`() {
+        var s = SessionReducer.reduce(idle, msg("tool_start", "tool" to "bash", "args" to JSONObject().put("command", "go test ./...")), now = 0)
+        s = SessionReducer.reduce(s, msg("tool_end", "tool" to "bash", "isError" to false, "output" to "\nok  a\nok  b\n"), now = 0)
+        val step = s.items.last() as ChatItem.Step
+        assertEquals("ok  a\nok  b", step.output)
+        assertEquals("ok  a", step.result)
+        assertEquals(step, SessionStore.itemFrom(SessionStore.itemJson(step)))
+
+        val long = (1..500).joinToString("\n") { "line $it" }
+        val kept = SessionReducer.stepOutput("bash", long).lines()
+        assertEquals(SessionReducer.OUTPUT_HEAD + 1 + SessionReducer.OUTPUT_TAIL, kept.size)
+        assertEquals("line 1", kept.first())
+        assertEquals("⋯ 400", kept[SessionReducer.OUTPUT_HEAD])
+        assertEquals("line 500", kept.last())
+        // Other tools keep only their result line.
+        assertEquals("", SessionReducer.stepOutput("read", long))
+    }
 }

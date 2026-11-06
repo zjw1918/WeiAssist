@@ -5,8 +5,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -71,6 +75,7 @@ object CodeColors {
     val addedLine = Color(0x2E2EA043)
     val removedLine = Color(0x2EF85149)
     val fold = Color(0xFF1C2A3A)
+    val stderr = Color(0xFFFFA198)
 }
 
 private fun style(kind: CodeHighlight.Kind): SpanStyle = when (kind) {
@@ -106,24 +111,145 @@ fun highlighted(code: String, lang: String): AnnotatedString {
     }
 }
 
-/** A fenced code block of an answer: its language and a copy button in a header, the code below, scrolling sideways. */
+/** Where line [n] of [text] starts (its length when it has fewer lines). */
+private fun lineStart(text: CharSequence, n: Int): Int {
+    var at = 0
+    repeat(n) { at = text.indexOf('\n', at).let { i -> if (i < 0) return text.length else i + 1 } }
+    return at
+}
+
+/** Code longer than this many lines shows its first [CODE_PEEK] lines, and the rest on a tap. */
+private const val CODE_FOLD = 30
+private const val CODE_PEEK = 20
+
+/**
+ * A fenced code block of an answer: its language, size and a copy button in a header, the code below, scrolling
+ * sideways. A long one shows its start, fading out, and "Show all N lines".
+ */
 @Composable
 fun CodeBlock(text: String, lang: String, modifier: Modifier = Modifier) {
     val ctx = LocalContext.current
     val shape = RoundedCornerShape(10.dp)
-    val shown = remember(text, lang) { highlighted(text, lang) }
+    val code = remember(text, lang) { highlighted(text.trimEnd('\n'), lang) }
+    val lines = remember(code) { code.count { it == '\n' } + 1 }
+    val long = lines > CODE_FOLD
+    var all by rememberSaveable { mutableStateOf(false) }
+    val shown = if (long && !all) code.subSequence(0, lineStart(code, CODE_PEEK).let { if (it > 0) it - 1 else it }) else code
     Column(modifier.fillMaxWidth().clip(shape).background(CodeColors.background).border(1.dp, CodeColors.border, shape)) {
         Row(Modifier.fillMaxWidth().background(CodeColors.header).padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(lang, style = CodeStyle.copy(fontSize = 12.sp), color = CodeColors.dim, maxLines = 1, modifier = Modifier.weight(1f))
+            if (long) Text(
+                pluralStringResource(R.plurals.code_lines, lines, lines), style = CodeStyle.copy(fontSize = 11.sp),
+                color = CodeColors.dim.copy(alpha = 0.7f), maxLines = 1,
+            )
             IconButton(onClick = { copyText(ctx, text) }, modifier = Modifier.size(34.dp)) {
                 AppIcon(R.drawable.ic_copy, stringResource(R.string.copy), Modifier.size(15.dp), tint = CodeColors.dim)
             }
         }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 10.dp)) {
-            Text(shown, style = CodeStyle, color = CodeColors.text, softWrap = false)
+        Box {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 10.dp)) {
+                Text(shown, style = CodeStyle, color = CodeColors.text, softWrap = false)
+            }
+            // The cut-off code fades into the "show all" bar.
+            if (long && !all) Box(
+                Modifier.matchParentSize().background(Brush.verticalGradient(0.6f to Color.Transparent, 1f to CodeColors.background)),
+            )
+        }
+        if (long) ExpandBar(all, lines) { all = !all }
+    }
+}
+
+/** "⌄ Show all N lines" under folded code or output, "⌃ Show less" once open. */
+@Composable
+fun ExpandBar(open: Boolean, lines: Int, onToggle: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onToggle).background(CodeColors.header).padding(vertical = 7.dp),
+        horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
+    ) {
+        AppIcon(R.drawable.ic_chevron_right, null, Modifier.size(13.dp).rotate(if (open) -90f else 90f), tint = CodeColors.meta)
+        Text(
+            if (open) stringResource(R.string.code_show_less) else stringResource(R.string.diff_show_all, lines),
+            style = MaterialTheme.typography.labelMedium, color = CodeColors.meta, modifier = Modifier.padding(start = 6.dp),
+        )
+    }
+}
+
+// ---- commands -------------------------------------------------------------------------------------------
+
+/**
+ * A command the agent ran, as a terminal shows it: "$ command" coloured as shell, how it went on the right, and
+ * its output below, dimmer (its last lines; all of it on a tap). [result]: the first line, for chats saved before
+ * outputs were kept.
+ */
+@Composable
+fun TerminalCard(command: String, ok: Boolean?, output: String, result: String, modifier: Modifier = Modifier) {
+    val shape = RoundedCornerShape(10.dp)
+    val ctx = LocalContext.current
+    val cmd = remember(command) { highlighted(command, "sh") }
+    val out = output.ifEmpty { result }
+    // dsh ends a command's output with "[exit code: N]" (and calls it a success even when N isn't 0): shown as a
+    // badge, not a line.
+    val (outLines, exit) = remember(out) {
+        val all = if (out.isEmpty()) emptyList() else out.lines()
+        val code = all.lastOrNull()?.let { EXIT_LINE.find(it.trim()) }?.groupValues?.get(1)?.toIntOrNull()
+        (if (code != null) all.dropLast(1).dropLastWhile { it.isBlank() } else all) to code
+    }
+    val failed = ok == false || (exit != null && exit != 0)
+    val long = outLines.size > TERMINAL_PEEK + 4
+    var all by rememberSaveable(command, out.length) { mutableStateOf(false) }
+    val small = CodeStyle.copy(fontSize = 12.sp, lineHeight = 17.sp)
+    Column(modifier.fillMaxWidth().clip(shape).background(CodeColors.background).border(1.dp, CodeColors.border, shape)) {
+        Row(Modifier.fillMaxWidth().padding(start = 12.dp, top = 8.dp, bottom = if (out.isEmpty()) 8.dp else 4.dp, end = 4.dp)) {
+            Text("$", style = small, color = CodeColors.added, modifier = Modifier.padding(end = 8.dp))
+            Text(cmd, style = small, color = CodeColors.text, modifier = Modifier.weight(1f))
+            if (exit != null && exit != 0) Text(
+                "exit $exit", style = small, color = CodeColors.removed,
+                modifier = Modifier.padding(start = 8.dp).background(CodeColors.removedLine, RoundedCornerShape(4.dp)).padding(horizontal = 5.dp),
+            )
+            Box(Modifier.padding(start = 8.dp, end = 4.dp).size(20.dp), contentAlignment = Alignment.Center) {
+                when {
+                    ok == null -> Box(Modifier.size(7.dp).background(CodeColors.meta.copy(alpha = 0.8f), CircleShape))
+                    failed -> AppIcon(R.drawable.ic_cancel, null, Modifier.size(14.dp), tint = CodeColors.removed)
+                    else -> AppIcon(R.drawable.ic_check_circle, null, Modifier.size(14.dp), tint = CodeColors.added)
+                }
+            }
+            IconButton(onClick = { copyText(ctx, command) }, modifier = Modifier.size(20.dp)) {
+                AppIcon(R.drawable.ic_copy, stringResource(R.string.copy), Modifier.size(13.dp), tint = CodeColors.dim)
+            }
+        }
+        if (outLines.isNotEmpty()) {
+            // Its end is what tells how it went: a long output shows its last lines first.
+            val shown = if (long && !all) outLines.takeLast(TERMINAL_PEEK) else outLines
+            val hidden = outLines.size - shown.size
+            val color = if (ok == false) CodeColors.removed.copy(alpha = 0.9f) else CodeColors.dim
+            // After dsh's "[stderr]" line: the command's errors, in a soft red.
+            val stderrAt = outLines.indexOfFirst { it.trim() == "[stderr]" }
+            val shownFrom = outLines.size - shown.size
+            Column(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                    .padding(start = 12.dp, end = 12.dp, top = 2.dp, bottom = if (long) 6.dp else 10.dp),
+            ) {
+                if (hidden > 0) Text("⋯", style = small, color = CodeColors.dim.copy(alpha = 0.6f))
+                shown.forEachIndexed { k, l ->
+                    val gap = com.lanqi.weiassist.agent.SessionReducer.OUTPUT_GAP.find(l)?.groupValues?.get(1)?.toIntOrNull()
+                    if (gap != null) Text(
+                        "⋯  " + pluralStringResource(R.plurals.output_gap, gap, gap), style = small, color = CodeColors.dim.copy(alpha = 0.7f),
+                        modifier = Modifier.background(CodeColors.fold).padding(horizontal = 6.dp),
+                    )
+                    else if (l.trim() == "[stderr]") Text("stderr", style = small.copy(fontSize = 10.sp), color = CodeColors.dim.copy(alpha = 0.7f))
+                    else Text(
+                        untab(l), style = small, softWrap = false, maxLines = 1,
+                        color = if (stderrAt in 0 until shownFrom + k) CodeColors.stderr else color,
+                    )
+                }
+            }
+            if (long) ExpandBar(all, outLines.size) { all = !all }
         }
     }
 }
+
+private const val TERMINAL_PEEK = 8
+private val EXIT_LINE = Regex("""^\[exit code: (-?\d+)]$""")
 
 // ---- diffs ---------------------------------------------------------------------------------------------
 

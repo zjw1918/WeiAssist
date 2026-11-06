@@ -582,10 +582,16 @@ private fun StepLine(line: ProcessLine.Steps, shimmering: Boolean, showDetail: B
     Row(verticalAlignment = Alignment.CenterVertically) {
         AppIcon(toolIcon(line.tool), null, Modifier.size(14.dp), tint = if (failed) c.error else c.outline)
         Spacer(Modifier.width(8.dp))
-        val label = toolLabel(line.tool) + if (line.steps.size > 1) " ×${line.steps.size}" else ""
+        // A command reads as itself, as in a terminal: "$ go build ./...".
+        val command = line.tool == "bash" && showDetail && last.detail.isNotBlank()
+        val label = if (command) last.detail.lineSequence().first()
+        else toolLabel(line.tool) + if (line.steps.size > 1) " ×${line.steps.size}" else ""
         Text(
-            label, style = MaterialTheme.typography.bodyMedium.let { if (shimmering) it.copy(brush = shimmer(c.onSurface)) else it },
-            color = if (shimmering) Color.Unspecified else color, maxLines = 1,
+            label,
+            style = (if (command) MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+            else MaterialTheme.typography.bodyMedium).let { if (shimmering) it.copy(brush = shimmer(c.onSurface)) else it },
+            color = if (shimmering) Color.Unspecified else color, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            modifier = if (command) Modifier.weight(1f, fill = false) else Modifier,
         )
         // Several subagents started together: one task's name would read as the line's; their cards name them all.
         val grouped = line.steps.size > 1 && (line.tool == "subagent" || line.tool == "subagent_fork")
@@ -595,7 +601,7 @@ private fun StepLine(line: ProcessLine.Steps, shimmering: Boolean, showDetail: B
             changed.isEmpty() -> last.detail.lineSequence().first()
             else -> changed.map { it.detail }.distinct().let { f -> if (f.size == 1) f[0].substringAfterLast('/') else pluralStringResource(R.plurals.files_changed, f.size, f.size) }
         }
-        if (showDetail && !grouped && detail.isNotBlank()) Text(
+        if (showDetail && !grouped && !command && detail.isNotBlank()) Text(
             "  $detail", fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = c.outline,
             maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false),
         )
@@ -703,16 +709,11 @@ private fun ThoughtEntry(text: String, ms: Long, live: Boolean = false) {
 private fun StepsEntry(line: ProcessLine.Steps) {
     val c = MaterialTheme.colorScheme
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        StepLine(line, shimmering = line.running && line.steps.size == 1, showDetail = line.tool != "bash")
-        if (line.tool == "bash") line.steps.forEach { st ->
-            Column(Modifier.fillMaxWidth().padding(start = 22.dp).background(c.surfaceContainerHigh, MaterialTheme.shapes.small).padding(10.dp)) {
-                Text(st.detail, style = CodeStyle)
-                if (st.result.isNotBlank()) {
-                    HorizontalDivider(Modifier.padding(vertical = 6.dp), color = c.outlineVariant)
-                    Text(st.result, style = CodeStyle, color = if (st.ok == false) c.error else c.onSurfaceVariant)
-                }
-            }
-        } else if (line.steps.any { it.changes.isNotEmpty() }) Column(
+        // A command is its own terminal: no line above it.
+        if (line.tool == "bash") line.steps.forEach { st -> TerminalCard(st.detail, st.ok, st.output, st.result) }
+        else StepLine(line, shimmering = line.running && line.steps.size == 1)
+        if (line.tool == "bash") Unit
+        else if (line.steps.any { it.changes.isNotEmpty() }) Column(
             Modifier.fillMaxWidth().padding(start = 22.dp), verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             // Each file change as its diff; a refused one in red, with why.

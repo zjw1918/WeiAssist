@@ -89,6 +89,7 @@ class SessionStore(root: File) {
                 .also { if (i.changes.isNotEmpty()) it.put("changes", JSONArray(i.changes.map { c ->
                     JSONObject().put("old", c.old).put("new", c.new).also { o -> if (c.cut) o.put("cut", true) }
                 })) }
+                .also { if (i.output.isNotEmpty()) it.put("output", i.output) }
             is ChatItem.Thinking -> JSONObject().put("k", "thinking").put("text", i.text).put("ms", i.ms)
             is ChatItem.Trigger -> JSONObject().put("k", "trigger").put("source", i.source).put("text", i.text)
                 .also { if (i.subagent.isNotEmpty()) it.put("subagent", i.subagent) }
@@ -117,7 +118,7 @@ class SessionStore(root: File) {
                 SessionReducer.resultLine(o.optString("result")), o.optInt("screen"),
                 o.optJSONArray("changes")?.let { a -> (0 until a.length()).map { k ->
                     a.getJSONObject(k).let { c -> FileChange(c.optString("old"), c.optString("new"), c.optBoolean("cut")) }
-                } }.orEmpty())
+                } }.orEmpty(), o.optString("output"))
             "thinking" -> ChatItem.Thinking(o.optString("text"), o.optLong("ms"))
             "trigger" -> ChatItem.Trigger(o.optString("source"), o.optString("text"), o.optString("subagent"))
             // Saved while it ran: the run is over now (the app's process ended with it).

@@ -460,4 +460,13 @@
         <item quantity="one">%1$d file changed</item>
         <item quantity="other">%1$d files changed</item>
     </plurals>
+    <string name="code_show_less">Show less</string>
+    <plurals name="code_lines">
+        <item quantity="one">%1$d line</item>
+        <item quantity="other">%1$d lines</item>
+    </plurals>
+    <plurals name="output_gap">
+        <item quantity="one">%1$d line not kept</item>
+        <item quantity="other">%1$d lines not kept</item>
+    </plurals>
 </resources>
