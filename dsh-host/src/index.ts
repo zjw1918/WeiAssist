@@ -50,8 +50,10 @@ interface Live {
 	thinking?: string;
 	/** A tool call was blocked for good (before_tool said terminate): the run ends before the model's next step. */
 	stop: boolean;
-	/** Tool names by call id, for tool_end (a subagent's marked ↳). */
+	/** Tool names by call id, for tool_end. */
 	calls: Map<string, string>;
+	/** What each subagent (by its session id) streams now, sent a few times a second (see flush). */
+	kids: Map<string, Stream>;
 	/** The app's tools left out because dsh has its own of that name. */
 	skipped: string[];
 	/**
@@ -62,6 +64,16 @@ interface Live {
 	/** Waiting to say idle: until dsh's own test says the work is over (see settle). */
 	settling?: boolean;
 }
+
+/** A subagent's reasoning or text as it streams, held back a moment so three of them don't flood the app. */
+interface Stream { thinking?: string; pending: { kind: "thinking" | "text"; delta: string }[]; timer?: ReturnType<typeof setTimeout> }
+
+/** How often a subagent's streaming reaches the app. */
+const KID_FLUSH_MS = 250;
+
+/** dsh's settlement notice says how the subagent ended (dsh-subagent's settlementSummary). */
+const outcomeOf = (summary: string) =>
+	/ finished\b/u.test(summary) ? "done" : / was stopped\b/u.test(summary) ? "stopped" : "failed";
 
 const textOf = (content: readonly any[] | undefined) =>
 	(content ?? []).filter((b) => b?.type === "text").map((b) => b.text).join("");
@@ -308,7 +320,7 @@ export class Bridge {
 			if (handle === undefined) {
 				handle = await this.ctx.agents.create({ sessionId: c.session, meta: { cwd: await this.workDir(c.session) }, agentOptions, setup });
 			}
-			s = { handle, agent: handle.agent, shape, stop: false, calls: new Map(), skipped: this.lastSkipped, running: new Set() };
+			s = { handle, agent: handle.agent, shape, stop: false, calls: new Map(), kids: new Map(), skipped: this.lastSkipped, running: new Set() };
 			this.sessions.set(c.session, s);
 		}
 		// The session's model for its next steps, with the app's thinking level as the nearest effort the model offers
@@ -385,6 +397,39 @@ export class Bridge {
 			id = this.ctx.sessions?.get?.(id)?.header?.parentSession;
 		}
 		return undefined;
+	}
+
+	/** The session's own subagent that [own] is, or works for (a subagent's subagent); undefined for the session itself. */
+	childOf(own: string, session: string): string | undefined {
+		let id: string | undefined = own;
+		for (let depth = 0; id !== undefined && id !== session && depth < 16; depth++) {
+			const parent: string | undefined = this.ctx.sessions?.get?.(id)?.header?.parentSession;
+			if (parent === session) return id;
+			id = parent;
+		}
+		return undefined;
+	}
+
+	/** Send what [child] streamed since the last time (thinking_delta / text_delta, marked with the subagent). */
+	private flush(session: string, child: string, k: Stream) {
+		if (k.timer !== undefined) clearTimeout(k.timer);
+		k.timer = undefined;
+		let last: { kind: string; delta: string } | undefined;
+		const merged: { kind: string; delta: string }[] = [];
+		for (const p of k.pending) {
+			if (last?.kind === p.kind) last.delta += p.delta;
+			else merged.push(last = { ...p });
+		}
+		k.pending = [];
+		for (const p of merged) this.send({ type: p.kind === "thinking" ? "thinking_delta" : "text_delta", session, subagent: child, delta: p.delta });
+	}
+
+	/** [child]'s reasoning is over: what is left of it, then thinking_end with the whole of it. */
+	private endKidThinking(session: string, child: string, k: Stream) {
+		this.flush(session, child, k);
+		if (k.thinking === undefined) return;
+		this.send({ type: "thinking_end", session, subagent: child, text: k.thinking });
+		k.thinking = undefined;
 	}
 
 	/** Stop: the session's agent and its subagents (they work in the background, and would go on). */
@@ -510,6 +555,11 @@ export class Bridge {
 			const s = session === undefined ? undefined : this.sessions.get(session);
 			if (!s || session === undefined) return;
 			const was = s.running.size > 0;
+			if (on !== s.running.has(own) && own !== session && this.childOf(own, session) === own) {
+				const k = s.kids.get(own);
+				if (!on && k) this.endKidThinking(session, own, k);
+				this.send({ type: "subagent_status", session, subagent: own, running: on });
+			}
 			if (on) s.running.add(own); else s.running.delete(own);
 			const now = s.running.size > 0;
 			if (!was && now) this.send({ type: "agent_start", session });
@@ -520,7 +570,7 @@ export class Bridge {
 		ctx.on("agent/assistant-stream", ({ agent, frame }: any) => {
 			const session = idOf(agent);
 			const s = session ? this.sessions.get(session) : undefined;
-			if (!s) return;
+			if (!s) return this.kidStream(agent, frame);
 			if (frame.type === "chunk") {
 				const c = frame.chunk;
 				if (c.type === "reasoning-delta") {
@@ -543,21 +593,32 @@ export class Bridge {
 			const s = session === undefined ? undefined : this.sessions.get(session);
 			if (!s || session === undefined) return;
 			const d = event.data;
-			// A subagent's work shows as steps of its session (marked ↳); its own messages and turns stay in dsh.
+			// A subagent's work goes to its own section of the turn, as dsh's web chat gives each child its own
+			// conversation: its steps, reasoning and messages, marked with its id (a subagent's subagent counts as its).
 			if (own !== session) {
+				const child = this.childOf(own, session);
+				if (child === undefined) return;
 				if (event.type === "tool/call") {
-					s.calls.set(String(d.callId), `↳ ${d.name}`);
+					s.calls.set(String(d.callId), d.name);
 					let args: unknown = {};
 					try { args = JSON.parse(d.arguments || "{}"); } catch { /* the model's malformed arguments */ }
-					this.send({ type: "tool_start", session, tool: `↳ ${d.name}`, args });
+					this.send({ type: "tool_start", session, subagent: child, tool: d.name, args });
 				} else if (event.type === "tool/result") {
 					const call = String(d.message.toolCallId);
-					this.send({ type: "tool_end", session, tool: s.calls.get(call) ?? "↳", isError: d.message.isError === true, output: textOf(d.message.content) });
+					this.send({ type: "tool_end", session, subagent: child, tool: s.calls.get(call) ?? "", isError: d.message.isError === true, output: textOf(d.message.content) });
 					s.calls.delete(call);
+				} else if (event.type === "assistant/message" && own === child) {
+					const k = s.kids.get(child);
+					if (k) this.endKidThinking(session, child, k);
+					this.send({ type: "assistant_end", session, subagent: child, text: textOf(d.message.content) });
 				}
 				return;
 			}
 			switch (event.type) {
+				// The session started a subagent: dsh records it with the task's short description (its web chat's label).
+				case "subagent/catalog":
+					this.send({ type: "subagent_start", session, subagent: String(d.childId), label: String(d.label ?? "") });
+					break;
 				case "tool/call": {
 					s.calls.set(String(d.callId), d.name);
 					let args: unknown = {};
@@ -585,7 +646,15 @@ export class Bridge {
 					if (d.source?.kind === "user") this.send({ type: "message_end", session, role: "user", text: textOf(d.content) });
 					// dsh woke the agent with a notice (its subagent finished or wrote, a job ended): the app shows it where
 					// the agent's reply to it starts, as dsh's own chat does.
-					else if (TRIGGERS.has(d.source?.kind)) this.send({ type: "trigger", session, source: d.source.kind, text: textOf(d.content) });
+					else if (TRIGGERS.has(d.source?.kind)) {
+						const from = typeof d.source.senderSessionId === "string" ? d.source.senderSessionId : undefined;
+						const settled = d.source.kind === "subagent-settled";
+						this.send({
+							type: "trigger", session, source: d.source.kind, text: textOf(d.content),
+							...(from ? { subagent: from } : {}),
+							...(settled ? { outcome: outcomeOf(String(d.source.summary ?? textOf(d.content))) } : {}),
+						});
+					}
 					break;
 				case "turn/start":
 					s.stop = false; // a new run starts clean
@@ -596,6 +665,32 @@ export class Bridge {
 					break;
 			}
 		});
+	}
+
+	/** A subagent's reasoning and text as it streams: in its own section of the app's turn (marked with its id). */
+	private kidStream(agent: any, frame: any) {
+		const own = String(agent?.session?.id ?? agent?.id ?? "");
+		const session = this.rootOf(own);
+		const s = session === undefined ? undefined : this.sessions.get(session);
+		if (!s || session === undefined || this.childOf(own, session) !== own) return;
+		let k = s.kids.get(own);
+		if (k === undefined) s.kids.set(own, k = { pending: [] });
+		if (frame.type === "chunk") {
+			const c = frame.chunk;
+			if (c.type === "reasoning-delta") {
+				if (k.thinking === undefined) {
+					this.flush(session, own, k);
+					k.thinking = "";
+					this.send({ type: "thinking_start", session, subagent: own });
+				}
+				k.thinking += c.text;
+				k.pending.push({ kind: "thinking", delta: c.text });
+			} else if (c.type === "text-delta") {
+				if (k.thinking !== undefined) this.endKidThinking(session, own, k);
+				k.pending.push({ kind: "text", delta: c.text });
+			} else return;
+			k.timer ??= setTimeout(() => this.flush(session, own, k!), KID_FLUSH_MS);
+		} else if (frame.type === "end") this.endKidThinking(session, own, k);
 	}
 
 	private endThinking(session: string, s: Live) {

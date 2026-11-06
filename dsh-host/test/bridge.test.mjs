@@ -205,31 +205,41 @@ test("dsh's own tool of the same name stays, and its calls go through the app's 
 	assert.match(end.output, /hi from dsh/);
 });
 
-test("a subagent's calls go through the app's before_tool and show as steps of its session", { skip }, async () => {
+test("a subagent's calls go through the app's before_tool, and its work shows in its own section", { skip }, async () => {
 	const checked = [];
 	app.handlers = { before_tool: (m) => { checked.push([m.tool, m.subagent !== undefined]); return null; } };
 	await configure(id("sub"));
 	app.send({ type: "prompt", session: id("sub"), text: "plan [[script:delegate]]" });
 	// Subagents run in the background: the session answers at once, and its subagent works on.
 	await app.waitFor("assistant_end", (m) => m.session === id("sub") && m.text === "delegated", 60_000);
-	const childEnd = await app.waitFor("tool_end", (m) => m.session === id("sub") && m.tool === "↳ todo_write", 30_000);
+	const childEnd = await app.waitFor("tool_end", (m) => m.session === id("sub") && m.subagent !== undefined && m.tool === "todo_write", 30_000);
+	const kid = childEnd.subagent;
+	// The session announced its subagent (dsh's catalog: its id and label) before the subagent's work.
+	const started = app.messages.findIndex((m) => m.type === "subagent_start" && m.session === id("sub") && m.subagent === kid);
+	assert.ok(started >= 0 && started < app.messages.indexOf(childEnd), "no subagent_start before its work");
+	assert.ok(app.messages.some((m) => m.type === "subagent_status" && m.subagent === kid && m.running === true), "no running status");
 	assert.deepEqual(checked, [["subagent", false], ["todo_write", true]]);
 	// The session works until its subagent is done too: no idle while it ran (the app would end the task, and its
 	// gate would refuse the subagent's calls as "stopped").
 	const at = app.messages.indexOf(childEnd);
 	assert.ok(!app.messages.slice(0, at).some((m) => m.type === "idle" && m.session === id("sub")), "idle came while the subagent worked");
-	const steps = app.messages.filter((m) => m.type === "tool_start" && m.session === id("sub")).map((m) => m.tool);
-	assert.deepEqual(steps, ["subagent", "↳ todo_write"]);
-	const child = app.messages.find((m) => m.type === "tool_end" && m.session === id("sub") && m.tool === "↳ todo_write");
-	assert.equal(child.isError, false, child.output);
-	// The subagent's own words ("listed") stay in dsh: only the session's answers are messages.
+	const steps = app.messages.filter((m) => m.type === "tool_start" && m.session === id("sub")).map((m) => [m.tool, m.subagent ?? null]);
+	assert.deepEqual(steps, [["subagent", null], ["todo_write", kid]]);
+	assert.equal(childEnd.isError, false, childEnd.output);
+	// The subagent's own words ("listed") are its section's, marked with its id; the session's answers are not.
 	await app.waitFor("idle", (m) => m.session === id("sub"));
-	const answers = app.messages.filter((m) => m.type === "assistant_end" && m.session === id("sub")).map((m) => m.text).filter(Boolean);
+	const said = (sub) => app.messages.filter((m) => m.type === "assistant_end" && m.session === id("sub") && m.subagent === sub).map((m) => m.text).filter(Boolean);
+	const answers = said(undefined);
 	assert.ok(answers.length > 0 && !answers.includes("listed"), JSON.stringify(answers));
+	assert.deepEqual(said(kid), ["listed"]);
+	assert.ok(app.messages.some((m) => m.type === "subagent_status" && m.subagent === kid && m.running === false), "no idle status");
 	// dsh woke the session when its subagent finished: the app gets that notice, before the session's reply to it.
 	const trigger = app.messages.findIndex((m) => m.type === "trigger" && m.session === id("sub") && m.source === "subagent-settled");
 	assert.ok(trigger > app.messages.indexOf(childEnd), "no trigger after the subagent finished");
 	assert.ok(app.messages[trigger].text.length > 0, "the notice's text");
+	// It names the subagent and how it ended.
+	assert.equal(app.messages[trigger].subagent, kid);
+	assert.equal(app.messages[trigger].outcome, "done");
 	assert.ok(app.messages.slice(trigger).some((m) => m.type === "assistant_end" && m.session === id("sub")), "no reply after the notice");
 	// And the session said idle only after that reply, as dsh's own hosts decide (agent idle, no subagent left).
 	const idles = app.messages.map((m, i) => (m.type === "idle" && m.session === id("sub") ? i : -1)).filter((i) => i >= 0);
