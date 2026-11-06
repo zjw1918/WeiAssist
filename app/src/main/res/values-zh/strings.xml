@@ -331,6 +331,17 @@
     <string name="trigger_team">团队消息</string>
     <string name="trigger_job">后台任务状态更新</string>
     <string name="trigger_other">收到状态更新</string>
+    <string name="tool_subagent">启动子智能体</string>
+    <string name="run_waiting_subagents">正在执行 %1$s · 子智能体已完成 %2$d/%3$d</string>
+    <string name="subagent_untitled">子智能体</string>
+    <string name="subagent_starting">正在启动…</string>
+    <string name="subagent_writing">正在撰写报告…</string>
+    <string name="subagent_waiting">正在汇报…</string>
+    <string name="subagent_done">已完成</string>
+    <string name="subagent_stopped">已停止</string>
+    <string name="subagent_failed">失败</string>
+    <string name="subagent_result">它的报告</string>
+    <string name="subagent_settled">%1$s：%2$s</string>
     <plurals name="run_subagents">
         <item quantity="other">%d 个子智能体</item>
     </plurals>

@@ -336,6 +336,17 @@
     <string name="trigger_team">Message from the team</string>
     <string name="trigger_job">Background job update</string>
     <string name="trigger_other">Woken by an update</string>
+    <string name="tool_subagent">Start a subagent</string>
+    <string name="run_waiting_subagents">Working %1$s · subagents done: %2$d/%3$d</string>
+    <string name="subagent_untitled">Subagent</string>
+    <string name="subagent_starting">Starting…</string>
+    <string name="subagent_writing">Writing its report…</string>
+    <string name="subagent_waiting">Reporting back…</string>
+    <string name="subagent_done">Done</string>
+    <string name="subagent_stopped">Stopped</string>
+    <string name="subagent_failed">Failed</string>
+    <string name="subagent_result">Its report</string>
+    <string name="subagent_settled">%1$s: %2$s</string>
     <plurals name="run_subagents">
         <item quantity="one">%d subagent</item>
         <item quantity="other">%d subagents</item>

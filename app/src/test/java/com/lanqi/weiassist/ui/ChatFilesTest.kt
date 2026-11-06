@@ -32,15 +32,53 @@ class ChatFilesTest {
     private val note = ChatItem.Assistant("The table above already has Zig.")
     private val subagentRun = listOf(ChatItem.User("compare"), spawn, running, fetch, goDone, goNote, zigMsg, table, zigDone, thought, note)
 
-    @Test fun `while subagents work, each notice starts a part of its own, so results show as they come`() {
-        val blocks = chatBlocks(subagentRun, busy = true)
-        assertEquals(listOf("Message", "Turn", "Message", "Turn", "Message", "Turn", "Message", "Turn"), blocks.map { it.javaClass.simpleName })
-        val turns = blocks.filterIsInstance<ChatBlock.Turn>()
-        // The subagent's step after "running" doesn't fold that reply away.
-        assertEquals(listOf(running), turns[0].answer)
-        assertEquals(listOf(spawn, fetch), turns[0].process)
-        assertEquals(listOf(table), turns[2].answer)
-        assertTrue(turns.last().live)
+    @Test fun `while subagents work, the run is one turn and the agent's replies wait in its process`() {
+        val rust = ChatItem.Subagent("c1", "Rust review", outcome = "done")
+        val zig = ChatItem.Subagent("c2", "Zig review")
+        val items = listOf(ChatItem.User("compare"), spawn, rust, zig, running, goDone, goNote)
+        val blocks = chatBlocks(items, busy = true)
+        assertEquals(listOf("Message", "Turn"), blocks.map { it.javaClass.simpleName })
+        val turn = blocks.last() as ChatBlock.Turn
+        assertTrue(turn.live && turn.waiting)
+        // Zig still works: what the agent said so far is part of the work, not the answer.
+        assertEquals(emptyList<ChatItem>(), turn.answer)
+        assertEquals(listOf(spawn, rust, zig, running, goDone, goNote), turn.process)
+        assertEquals(listOf(rust, zig), turn.agents)
+        // Once Zig is done, the agent's reply to it is the answer.
+        val done = items.map { if (it == zig) zig.copy(outcome = "done") else it } + zigDone + table
+        val after = chatBlocks(done, busy = true).last() as ChatBlock.Turn
+        assertFalse(after.waiting)
+        assertEquals(listOf(table), after.answer)
+        // While that reply hasn't come yet, an earlier remark doesn't stand in for it.
+        assertEquals(emptyList<ChatItem>(), (chatBlocks(done.dropLast(1), busy = true).last() as ChatBlock.Turn).answer)
+    }
+
+    @Test fun `the answer starts when every subagent has handed in its result, by message or by finishing`() {
+        val rust = ChatItem.Subagent("c1", "Rust", outcome = "done")
+        val zig = ChatItem.Subagent("c2", "Zig", outcome = "done")
+        val rustIn = ChatItem.Trigger("subagent-settled", "Subagent c1 finished.", "c1")
+        val zigReport = ChatItem.Trigger("agent-message", "Zig: …", "c2")
+        val zigIn = ChatItem.Trigger("subagent-settled", "Subagent c2 finished.", "c2")
+        val wrapUp = ChatItem.Assistant("That was Zig's completion notice, already in the table above.\n\n- Drill into one language\n- Export the comparison as a file you can keep, Markdown or PDF, whichever you prefer for later reading on the phone")
+        val items = listOf(ChatItem.User("compare"), spawn, rust, zig, running, rustIn, goNote, zigReport, table, zigIn, thought, wrapUp,
+            ChatItem.Stats(RunStats(0)))
+        val turn = chatBlocks(items, busy = false).last() as ChatBlock.Turn
+        assertEquals(listOf(table, wrapUp), turn.answer)
+        assertEquals(listOf(spawn, rust, zig, running, rustIn, goNote, zigReport, zigIn, thought), turn.process)
+    }
+
+    @Test fun `once its subagents are joined, the answer is its report, even when a notice came after it`() {
+        val rust = ChatItem.Subagent("c1", "Rust", outcome = "done")
+        val zig = ChatItem.Subagent("c2", "Zig", outcome = "stopped")
+        val rustIn = ChatItem.Trigger("subagent-settled", "Subagent c1 finished.", "c1")
+        val stop = ChatItem.Step("interrupt_agent", "", ok = true)
+        val zigStopped = ChatItem.Trigger("subagent-settled", "Subagent c2 was stopped before it finished.", "c2")
+        val ack = ChatItem.Assistant("Zig stopped as asked.")
+        val items = listOf(ChatItem.User("compare"), spawn, rust, zig, running, rustIn, goNote, stop, table, zigStopped, ack,
+            ChatItem.Stats(RunStats(0)))
+        val turn = chatBlocks(items, busy = false).last() as ChatBlock.Turn
+        assertEquals(listOf(table, ack), turn.answer)
+        assertEquals(listOf(spawn, rust, zig, running, rustIn, goNote, stop, zigStopped), turn.process)
     }
 
     @Test fun `a finished subagent run is one turn, ending with the report and the remark after it`() {
