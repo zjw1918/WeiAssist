@@ -101,6 +101,12 @@ export const SCRIPTS = {
 	dsh_where: [{ tool: "bash", args: { description: "Show the working folder", command: "pwd; echo made by dsh > from-dsh.txt; ls" } }, { text: "looked around" }],
 	delegate: [{ tool: "subagent", args: { description: "Keep a todo list", prompt: "Write the todo list [[script:child_todo]]" } }, { text: "delegated" }],
 	child_todo: [{ tool: "todo_write", args: { todos: [{ content: "Check the inbox", status: "pending" }] } }, { text: "listed" }],
+	// Three subagents that work for a while (to talk with the session meanwhile), each reporting back when done.
+	research: ["Rust", "Go", "Zig"].map((l, i) => ({ tool: "subagent", args: { description: `Research ${l}`, prompt: `Look into ${l} [[script:child_slow${i}]]` } }))
+		.concat([{ text: "Three researchers are working." }]),
+	...Object.fromEntries([40, 60, 80].map((s, i) => [`child_slow${i}`, [
+		{ tool: "bash", args: { description: "Read for a while", command: `sleep ${s}; echo found it` } }, { text: `Found it after ${s} s.` },
+	]])),
 	// Performance on a device: about 20 s of streamed reasoning, then a ~250-line code answer streamed over ~20 s
 	// (chunks of 12 characters, one per event).
 	perf: [{ think: perfThinking(), text: perfAnswer(), chunk: 12 }],
