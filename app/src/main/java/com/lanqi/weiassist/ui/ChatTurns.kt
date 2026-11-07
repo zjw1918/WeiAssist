@@ -79,7 +79,8 @@ sealed interface ChatBlock {
     /**
      * One run of the agent: its [process] (reasoning, steps, what it said between steps), then its [answer]
      * (the text after its last step, and any errors), then what it took ([stats]; null for runs saved before
-     * the app counted them, and for the run in progress, see [live]).
+     * the app counted them, and for the run in progress, see [live]). [ongoing]: the run it is part of still goes on
+     * (it is the live turn, or a part of the run a message sent while it worked split off, see [chatBlocks]).
      */
     data class Turn(
         override val key: String,
@@ -87,13 +88,17 @@ sealed interface ChatBlock {
         val answer: List<ChatItem>,
         val stats: RunStats?,
         val live: Boolean,
+        val ongoing: Boolean = live,
     ) : ChatBlock {
         val steps get() = process.count { it is ChatItem.Step }
         /** Its subagents (DeepSeek Harness), each with its own section; runs saved before had only their notices. */
         val agents get() = process.filterIsInstance<ChatItem.Subagent>()
         val subagents get() = agents.size.takeIf { it > 0 } ?: process.count { it is ChatItem.Trigger && it.source == "subagent-settled" }
-        /** Its subagents still work: the agent's answer comes when all of them are done. */
-        val waiting get() = live && agents.any { !it.settled }
+        /**
+         * Its subagents still work: the agent's answer comes when all of them are done. A message the user sends
+         * meanwhile splits the run but doesn't touch them: they go on in the part they were started in.
+         */
+        val waiting get() = ongoing && agents.any { !it.settled }
         val answerText get() = answer.filterIsInstance<ChatItem.Assistant>().joinToString("\n\n") { it.text }
     }
 }
@@ -116,7 +121,10 @@ fun chatBlocks(items: List<ChatItem>, busy: Boolean): List<ChatBlock> {
     val out = mutableListOf<ChatBlock>()
     var start = -1
     val turn = mutableListOf<ChatItem>()
+    // The run in progress began after the last one's end: its parts (split by messages sent while it worked) go on.
+    val runFrom = items.indexOfLast { it is ChatItem.Stats } + 1
     fun close(stats: RunStats?, live: Boolean) {
+        val ongoing = live || (busy && stats == null && start >= runFrom)
         if (turn.isEmpty() && stats == null && !live) return
         // The answer is the text after the agent's own last step, reasoning, subagent or notice. (Old runs' subagent
         // steps, ↳, went on in the background after it answered: they don't push the answer into the process.)
@@ -128,7 +136,7 @@ fun chatBlocks(items: List<ChatItem>, busy: Boolean): List<ChatBlock> {
         val said = (last + 1 until turn.size).filter { turn[it] is ChatItem.Assistant }.toMutableList()
         // While its subagents work, what the agent says (dsh wakes it as each one reports back) is part of the work:
         // the answer is what it writes once all of them are done.
-        val waiting = live && turn.any { it is ChatItem.Subagent && !it.settled }
+        val waiting = ongoing && turn.any { it is ChatItem.Subagent && !it.settled }
         // Its subagents are joined (none works any more): the answer is its report, its main reply since it started
         // them (the in-between ones are short updates), and whatever it wrote after it. Whether it wrote the report
         // before the last notice reached it or after is up to the model, so the notices' order doesn't decide.
@@ -156,7 +164,7 @@ fun chatBlocks(items: List<ChatItem>, busy: Boolean): List<ChatBlock> {
         val inAnswer = { i: Int, it: ChatItem -> it is ChatItem.Error || it is ChatItem.File || i in said }
         val process = turn.filterIndexed { i, it -> !inAnswer(i, it) }
         val answer = turn.filterIndexed { i, it -> inAnswer(i, it) }
-        out += ChatBlock.Turn("t:${if (start < 0) items.size else start}", process, answer, stats, live)
+        out += ChatBlock.Turn("t:${if (start < 0) items.size else start}", process, answer, stats, live, ongoing)
         turn.clear(); start = -1
     }
     items.forEachIndexed { i, item ->
@@ -190,6 +198,8 @@ sealed interface ChatEntry {
     data class Header(override val key: String, override val gap: Dp, val turn: ChatBlock.Turn) : ChatEntry
     /** The live turn's latest steps and its reasoning as it streams. */
     data class LiveSteps(override val key: String, override val gap: Dp, val turn: ChatBlock.Turn) : ChatEntry
+    /** The subagents of a turn that is not the live one, each card with how it goes (they may still work). */
+    data class Agents(override val key: String, override val gap: Dp, val turn: ChatBlock.Turn) : ChatEntry
     /** One block (paragraph, list, code, table…) of an answer. */
     data class Answer(override val key: String, override val gap: Dp, val block: Markdown.Block) : ChatEntry
     data class Failure(override val key: String, override val gap: Dp, val text: String) : ChatEntry
@@ -217,6 +227,9 @@ fun chatEntries(blocks: List<ChatBlock>): List<ChatEntry> {
             is ChatBlock.Turn -> {
                 if (b.live || b.process.isNotEmpty()) out += ChatEntry.Header("${b.key}:h", next(), b)
                 if (b.live) out += ChatEntry.LiveSteps("${b.key}:p", next(), b)
+                // Subagents are always on the page, not only in the run's details: the live turn shows them with its
+                // steps; any other turn (a finished run, or a part of this one split off by a message) right here.
+                else if (b.agents.isNotEmpty()) out += ChatEntry.Agents("${b.key}:s", next(), b)
                 b.answer.forEachIndexed { i, item ->
                     when (item) {
                         is ChatItem.Assistant -> parsedMarkdown(item.text).forEachIndexed { j, block -> out += ChatEntry.Answer("${b.key}:a$i.$j", next(), block) }
@@ -244,6 +257,7 @@ fun ChatEntryView(e: ChatEntry, session: SessionState, onProcess: (String) -> Un
         is ChatEntry.Message -> if (e.item is ChatItem.Trigger) TriggerCard(e.item, m) else UserMessage(e.item, m)
         is ChatEntry.Header -> TurnHeader(e.turn, session, onProcess, m)
         is ChatEntry.LiveSteps -> LiveProcess(e.turn, session, m)
+        is ChatEntry.Agents -> SubagentCards(e.turn, m)
         is ChatEntry.Answer -> MarkdownBlock(e.block, m.fillMaxWidth().padding(horizontal = 2.dp))
         is ChatEntry.Failure -> ErrorText(e.text, m)
         is ChatEntry.File -> FileCard(e.item.file, e.item.caption, m)
@@ -255,7 +269,8 @@ fun ChatEntryView(e: ChatEntry, session: SessionState, onProcess: (String) -> Un
 @Composable
 private fun TurnHeader(turn: ChatBlock.Turn, session: SessionState, onProcess: (String) -> Unit, modifier: Modifier) {
     val onClick = { onProcess(turn.key) }
-    if (turn.live) ProcessHeader(turn, session.status, session.thinkingSince != null, session.run, rememberNow(true), onClick, modifier)
+    // A part of the run split off by a message, its subagents still working: it goes on as long as the run does.
+    if (turn.live || turn.waiting) ProcessHeader(turn, session.status, session.thinkingSince != null, session.run, rememberNow(true), onClick, modifier)
     else ProcessHeader(turn, SessionStatus.Idle, false, turn.stats, 0L, onClick, modifier)
 }
 
@@ -459,7 +474,7 @@ private fun ProcessHeader(
     turn: ChatBlock.Turn, status: SessionStatus, thinking: Boolean, run: RunStats?, now: Long, onClick: () -> Unit, modifier: Modifier = Modifier,
 ) {
     val c = MaterialTheme.colorScheme
-    val elapsed = run?.let { if (turn.live) now - it.startedAt else it.ms }
+    val elapsed = run?.let { if (turn.live || turn.waiting) now - it.startedAt else it.ms }
     val label = when {
         turn.live && status == SessionStatus.Queued -> stringResource(R.string.run_waiting)
         turn.live && status == SessionStatus.Paused -> stringResource(R.string.run_paused, duration(elapsed ?: 0))
@@ -475,7 +490,7 @@ private fun ProcessHeader(
             stringResource(R.string.run_thought_for, duration(turn.process.sumOf { (it as? ChatItem.Thinking)?.ms ?: 0L }))
         else -> pluralStringResource(R.plurals.run_steps, turn.steps, turn.steps)
     }
-    val animate = turn.live && status == SessionStatus.Running
+    val animate = (turn.live || turn.waiting) && status == SessionStatus.Running
     Row(
         modifier.clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick).padding(vertical = 4.dp, horizontal = 2.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -549,6 +564,15 @@ private fun LiveProcess(turn: ChatBlock.Turn, session: SessionState, modifier: M
 }
 
 private const val MAX_LIVE_LINES = 4
+
+/** The subagents of a turn other than the live one: still working while the run they are part of goes on. */
+@Composable
+private fun SubagentCards(turn: ChatBlock.Turn, modifier: Modifier = Modifier) {
+    val now = rememberNow(turn.waiting)
+    Column(modifier.fillMaxWidth().padding(start = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        turn.agents.forEach { SubagentCard(it, now, live = turn.ongoing, turn.process) }
+    }
+}
 
 /** The tail of the reasoning streaming now, in a quiet column (providers that hide it show only the time). */
 @Composable
@@ -647,7 +671,7 @@ fun copyText(ctx: Context, text: String) {
 @Composable
 fun ProcessSheet(turn: ChatBlock.Turn, session: SessionState, onDismiss: () -> Unit) {
     val c = MaterialTheme.colorScheme
-    val now = rememberNow(turn.live)
+    val now = rememberNow(turn.ongoing)
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState()) {
         Text(
             stringResource(R.string.run_process), style = MaterialTheme.typography.titleMedium,
@@ -665,7 +689,7 @@ fun ProcessSheet(turn: ChatBlock.Turn, session: SessionState, onDismiss: () -> U
                     is ProcessLine.Steps -> StepsEntry(line)
                     is ProcessLine.Said -> MarkdownText(line.text, Modifier.fillMaxWidth())
                     is ProcessLine.Woken -> TriggerCard(line.item, label = turn.agents.firstOrNull { it.id == line.item.subagent }?.label)
-                    is ProcessLine.Agent -> SubagentCard(line.item, now, live = turn.live, turn.process)
+                    is ProcessLine.Agent -> SubagentCard(line.item, now, live = turn.ongoing, turn.process)
                 }
             }
             session.thinkingSince?.takeIf { turn.live }?.let { since -> item { ThoughtEntry(session.thinking, now - since, live = true) } }

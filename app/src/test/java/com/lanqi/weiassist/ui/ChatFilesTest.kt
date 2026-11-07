@@ -53,6 +53,34 @@ class ChatFilesTest {
         assertEquals(emptyList<ChatItem>(), (chatBlocks(done.dropLast(1), busy = true).last() as ChatBlock.Turn).answer)
     }
 
+    @Test fun `a message sent while subagents work splits the run but leaves them working, on the page`() {
+        val rust = ChatItem.Subagent("c1", "Rust review")
+        val zig = ChatItem.Subagent("c2", "Zig review", outcome = "done")
+        val ask = ChatItem.User("Something else: what's 2+2?")
+        val reply = ChatItem.Assistant("4.")
+        val items = listOf(ChatItem.User("compare"), spawn, rust, zig, running, ask, reply)
+        val blocks = chatBlocks(items, busy = true)
+        assertEquals(listOf("Message", "Turn", "Message", "Turn"), blocks.map { it.javaClass.simpleName })
+        val first = blocks[1] as ChatBlock.Turn
+        // Not the live turn, but its run goes on: Rust still works.
+        assertFalse(first.live)
+        assertTrue(first.ongoing && first.waiting)
+        assertEquals(listOf(rust, zig), first.agents)
+        // The new topic's reply is the live turn's answer, not held back for the other turn's subagents.
+        val tail = blocks.last() as ChatBlock.Turn
+        assertTrue(tail.live && !tail.waiting)
+        // Their cards are a row of the page, under the split-off part's header.
+        assertTrue(entriesOf(blocks).any { it is ChatEntry.Agents && it.turn.key == first.key })
+        // Once the run is over, nothing is ongoing; the cards stay on the page.
+        val done = items.map { if (it == rust) rust.copy(outcome = "done") else it } + ChatItem.Stats(RunStats(0))
+        val after = chatBlocks(done, busy = false)
+        assertTrue(after.filterIsInstance<ChatBlock.Turn>().none { it.ongoing || it.waiting })
+        assertTrue(entriesOf(after).any { it is ChatEntry.Agents })
+    }
+
+    /** The page's rows, answers left out (their Markdown parsing needs Android). */
+    private fun entriesOf(blocks: List<ChatBlock>) = chatEntries(blocks.map { if (it is ChatBlock.Turn) it.copy(answer = emptyList()) else it })
+
     @Test fun `the answer starts when every subagent has handed in its result, by message or by finishing`() {
         val rust = ChatItem.Subagent("c1", "Rust", outcome = "done")
         val zig = ChatItem.Subagent("c2", "Zig", outcome = "done")
