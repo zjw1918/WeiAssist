@@ -89,6 +89,9 @@ fun SettingsTab(vm: AppViewModel, s: AgentState) {
 
             EngineSection(vm, s) { dshSetup = true }
 
+            SectionHeader(stringResource(R.string.gateway_title))
+            Group { Column(Modifier.padding(GroupContentPadding)) { GatewaySection() } }
+
             SectionHeader(stringResource(R.string.shell_title))
             Group { Column(Modifier.padding(GroupContentPadding)) { ShellSection() } }
 
