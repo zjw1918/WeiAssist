@@ -25,6 +25,10 @@ android {
  * `go build`s magpie for each ABI with the NDK's clang. cgo is on so Go resolves names with Android's own resolver
  * (bionic getaddrinfo: Private DNS, VPNs). Without it Go looks for /etc/resolv.conf, which Android doesn't have,
  * and every lookup fails. Needs Go on PATH (go.mod in upstream/ says which). Up to date while upstream's tree is unchanged.
+ *
+ * Size (measured 2026-11-07, arm64): packed relocations (Android's APS2, API 23+) take 3.5 MB off the installed
+ * program, and no inlining (-l) another 6 MB, 3 MB of it in the APK, at no CPU cost we could measure (40 translated
+ * streams through it on the Realme: 122–146 ms of CPU each, either way). Most of what is left is the gateway itself.
  */
 abstract class BuildMagpie @Inject constructor(private val exec: ExecOperations) : DefaultTask() {
     @get:InputFiles
@@ -78,8 +82,8 @@ abstract class BuildMagpie @Inject constructor(private val exec: ExecOperations)
                 if (goarch == "arm") environment("GOARM", "7")
                 environment("CC", cc.absolutePath)
                 commandLine(
-                    "go", "build", "-tags", "nogui", "-trimpath", "-buildvcs=false",
-                    "-ldflags", "-s -w -X main.version=${version.get()}",
+                    "go", "build", "-tags", "nogui", "-trimpath", "-buildvcs=false", "-gcflags=all=-l",
+                    "-ldflags", "-s -w -X main.version=${version.get()} -extldflags=-Wl,--pack-dyn-relocs=android",
                     "-o", target.absolutePath, ".",
                 )
             }
@@ -97,8 +101,10 @@ val buildMagpie = tasks.register<BuildMagpie>("buildMagpie") {
         exclude(".git", "site/**", "docs/**", "**/*_test.go", "**/testdata/**")
     })
     ndkDir.set(androidComponents.sdkComponents.ndkDirectory)
-    // -PmagpieAbis=arm64-v8a,x86_64 adds the emulator's. One ABI is ~70 MB, so only phones' by default.
-    abis.set((providers.gradleProperty("magpieAbis").orNull ?: "arm64-v8a").split(',').map { it.trim() }.filter { it.isNotEmpty() })
+    // -PmagpieAbis=arm64-v8a,x86_64 adds the emulator's. One ABI is ~58 MB, so only phones' by default.
+    // -PmagpieAbis=none: a build without the gateway (the release's -lite APK); Settings then says it isn't in it.
+    abis.set((providers.gradleProperty("magpieAbis").orNull ?: "arm64-v8a").split(',').map { it.trim() }
+        .filter { it.isNotEmpty() && it != "none" })
     version.set(providers.exec { workingDir = upstream.asFile; commandLine("git", "rev-parse", "--short", "HEAD"); isIgnoreExitValue = true }
         .standardOutput.asText.map { it.trim().ifEmpty { "dev" } })
     outputDir.set(layout.buildDirectory.dir("generated/magpie/jniLibs"))
