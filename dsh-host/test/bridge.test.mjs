@@ -264,6 +264,32 @@ test("Stop also stops the session's subagents", { skip }, async () => {
 	assert.ok(!app.messages.some((m) => m.type === "assistant_end" && m.session === id("stop") && m.text === "listed"));
 });
 
+test("a message while a subagent works reaches the session at once, not after the subagent", { skip }, async () => {
+	let release;
+	const held = new Promise((r) => { release = r; });
+	// The subagent's call waits at the app's gate: the session's own agent is idle meanwhile, its run goes on.
+	app.handlers = { before_tool: (m) => (m.subagent ? held.then(() => null) : null) };
+	await configure(id("talk"));
+	app.send({ type: "prompt", session: id("talk"), text: "plan [[script:delegate]]" });
+	await app.waitFor("before_tool", (m) => m.session === id("talk") && m.subagent !== undefined, 30_000);
+	app.send({ type: "steer", session: id("talk"), text: "how is it going?" });
+	// dsh wakes the session's agent for it (as dsh's own chat does): delivered while the subagent still waits.
+	await app.waitFor("message_end", (m) => m.session === id("talk") && m.role === "user" && m.text === "how is it going?", 30_000);
+	assert.ok(!app.messages.some((m) => m.type === "steer_late" && m.session === id("talk")), "handed back as late while the run went on");
+	assert.ok(!app.messages.some((m) => m.type === "idle" && m.session === id("talk")), "idle while the subagent worked");
+	release();
+	await app.waitFor("idle", (m) => m.session === id("talk"), 60_000);
+});
+
+test("a message after the run is over is handed back to the app (steer_late)", { skip }, async () => {
+	app.handlers = {};
+	await configure(id("late"));
+	app.send({ type: "prompt", session: id("late"), text: "hi" });
+	await app.waitFor("idle", (m) => m.session === id("late"));
+	app.send({ type: "steer", session: id("late"), text: "one more thing" });
+	await app.waitFor("steer_late", (m) => m.session === id("late") && m.text === "one more thing", 10_000);
+});
+
 test("a native call the app blocks is denied", { skip }, async () => {
 	app.handlers = { before_tool: (m) => (m.tool === "bash" ? { block: true, terminate: false, reason: "Paused by the user." } : null) };
 	await configure(id("n2"));

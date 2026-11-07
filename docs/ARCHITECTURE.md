@@ -169,7 +169,10 @@ entry in the registry.
   subagents too. dsh's subagents run in the background, and dsh wakes the session's agent when they report back,
   so a session works while its agent or any subagent does: the bridge sends one `agent_start` when the first starts
   and one `idle` when the last stops. An `agent_start` on an idle session is a run the core started by itself, and
-  the app runs it like any other, unless the user had stopped that session.
+  the app runs it like any other, unless the user had stopped that session. A message the user sends while the
+  session works is dsh's `steer`: it wakes the session's agent at once even when only its subagents work, as dsh's
+  own chat does, so the user can talk to it without waiting for them. Only after the bridge said `idle` is it
+  handed back as `steer_late` (a new message).
 - **No sandbox on the phone:** dsh confines its bash and file tools with bubblewrap or Landlock, and neither works
   in proot on Android. So the phone launcher runs dsh in `danger-full-access` (a choice the user made): they run
   unconfined in Ubuntu, with Termux's home (and so `~/sessions`) as `/root`. That is the access the app's own Termux

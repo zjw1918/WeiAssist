@@ -236,8 +236,11 @@ export class Bridge {
 				}
 				case "steer": {
 					const s = this.need(session!);
-					// Steering an idle agent would start a turn the app doesn't know of: hand it back, as Pi does.
-					if (s.agent.status !== "running") return this.send({ type: "steer_late", session, text: m.text });
+					// The session's run is over (nothing of it runs, nothing settles): a turn now would be one the app
+					// doesn't know of, so hand it back as a new message, as Pi does.
+					if (!this.working(s)) return this.send({ type: "steer_late", session, text: m.text });
+					// The run goes on. Its agent may be idle while its subagents or jobs work in the background: dsh's
+					// steer wakes it for a turn now, as dsh's own chat does, instead of waiting for them to finish.
 					return s.agent.steer(await this.userMessage(m.text, m.content));
 				}
 				case "abort": return this.abort(session!);
@@ -249,6 +252,11 @@ export class Bridge {
 			this.send({ type: "error", session, message: e instanceof Error ? e.message : String(e) });
 		});
 		this.lanes.set(key, lane);
+	}
+
+	/** The app's run of this session goes on: its agent or a subagent runs, or the bridge hasn't said idle yet. */
+	private working(s: Live) {
+		return s.agent.status === "running" || s.running.size > 0 || s.settling === true;
 	}
 
 	private need(id: string): Live {
