@@ -313,8 +313,12 @@ test("/compact on a session with a conversation", { skip }, async () => {
 	await configure(id("cmp"));
 	app.send({ type: "prompt", session: id("cmp"), text: "hello" });
 	await app.waitFor("idle", (m) => m.session === id("cmp"));
+	const before = app.messages.filter((m) => m.type === "assistant_end" && m.session === id("cmp")).at(-1);
 	app.send({ type: "command", session: id("cmp"), text: "/compact" });
 	const r = await app.waitFor("command_result", (m) => m.session === id("cmp") && m.name === "compact", 60_000);
+	// The ring learns how full the context is now: smaller than the last request's.
+	const compacted = await app.waitFor("compacted", (m) => m.session === id("cmp"));
+	assert.ok(compacted.contextTokens > 0 && compacted.contextTokens < before.usage.totalTokens, JSON.stringify([compacted, before.usage]));
 	assert.equal(r.kind, "success", r.text);
 	assert.match(r.text, /Compacted/);
 });
@@ -390,6 +394,14 @@ test("a provider added in the app while dsh runs is a route at once (no restart)
 	assert.equal(JSON.parse(req.body).model, "qwen-9");
 });
 
+test("configured says the model's context window and how full the context is", { skip }, async () => {
+	const cfg = await configure(id("ctx"));
+	// The model's window, as the route the app sent declares it (tests before may have sent other routes).
+	assert.ok(cfg.contextWindow >= 128000, JSON.stringify(cfg));
+	// A new session: nothing in its context yet, so no size.
+	assert.equal(cfg.contextTokens, undefined);
+});
+
 test("the app's prompt goes to the model, without the section for a tool dsh has its own of", { skip }, async () => {
 	const sections = [
 		{ id: "chat", text: "You are Ada, a helpful assistant." },
@@ -446,6 +458,8 @@ test("a session comes back after its agent is gone (dispose, then configure agai
 	app.send({ type: "dispose", session: id("c1") });
 	const conf = await configure(id("c1"), { messages: [{ dsh: id("c1") }] });
 	assert.equal(conf.messages, 1, `restored from dsh own log: ${conf.resumeError}`);
+	// Its conversation is in its context again: the ring says how full it is before the next message.
+	assert.ok(conf.contextTokens > 0, JSON.stringify(conf));
 	const before = mock.requests.length;
 	app.send({ type: "prompt", session: id("c1"), text: "again" });
 	await app.waitFor("idle", (m) => m.session === id("c1") && app.messages.filter((x) => x.type === "idle" && x.session === id("c1")).length >= 2);

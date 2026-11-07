@@ -187,6 +187,10 @@ entry in the registry.
   (saved per core in `core-commands.json`), and the message box suggests them as `/` is typed. Work a command
   starts (`/plan <message>`) is a run the core starts by itself. From Telegram, a command not the gateway's own goes
   to the session the same way, and its outcome is sent back.
+- **How full the context is:** `configured` carries the session's model window (its route's
+  `resolveModelInfo().context`) and, for a session with a conversation, dsh's own estimate of the next request
+  (`tokenMeter.measure`, no model call); after dsh compacts (`/compact`, or by itself near ~80% of the window),
+  `compaction/end` becomes `compacted` with the new estimate. Each answer's usage updates it as for Pi.
 - **No sandbox on the phone:** dsh confines its bash and file tools with bubblewrap or Landlock, and neither works
   in proot on Android. So the phone launcher runs dsh in `danger-full-access` (a choice the user made): they run
   unconfined in Ubuntu, with Termux's home (and so `~/sessions`) as `/root`. That is the access the app's own Termux
