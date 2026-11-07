@@ -1,0 +1,4 @@
+[submodule "magpie/upstream"]
+	path = magpie/upstream
+	url = https://github.com/yetone/magpie.git
+	shallow = true

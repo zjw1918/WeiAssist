@@ -23,4 +23,4 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "WeiAssist"
-include(":app", ":agent", ":channels", ":phone", ":core", ":core-pi", ":core-dsh", ":shell")
+include(":app", ":agent", ":channels", ":phone", ":core", ":core-pi", ":core-dsh", ":shell", ":magpie")
