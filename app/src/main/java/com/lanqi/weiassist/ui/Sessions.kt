@@ -586,10 +586,9 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
                 val onStats = { key: String -> statsOf = key }
                 // Links in answers to files in the session's Termux folder: tap to get the file and open it.
                 val onFileLink = fileLinks
-                val reuseCommand = { line: String -> vm.reply = line }
                 // Keyed by session too: state kept per row stays with its session.
                 items(body, key = { "${session.id}:${it.key}" }, contentType = { it.contentType }) { e ->
-                    CompositionLocalProvider(LocalFileLinks provides onFileLink, LocalReuseCommand provides reuseCommand) { ChatEntryView(e, session, onProcess, onStats) }
+                    CompositionLocalProvider(LocalFileLinks provides onFileLink) { ChatEntryView(e, session, onProcess, onStats) }
                 }
                 if (liveFooter != null) {
                     items(streamBlocks.size, key = { "${session.id}:${liveFooter.key}:s$it" }, contentType = { streamBlocks[it].javaClass }) { i ->
