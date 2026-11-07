@@ -61,7 +61,19 @@ Status legend: ✅ done · 🔨 next · ⬜ planned. Current status and todo: [P
     - ✅ attachments and thinking levels;
     - ✅ a setting to choose the core (Settings: the engine new sessions use);
     - ✅ setup from the app: a screen that checks Termux, runs the Ubuntu/Node/dsh setup there and follows its steps;
+    - ✅ dsh can ask the user (`ask_user_question`, plan reviews, approvals): a card above the message box, Telegram buttons, a notification;
+    - ✅ dsh's slash commands (`/plan`, `/goal`, `/compact`, `/feedback`, `/permission`), suggested as `/` is typed;
+    - ✅ the context ring with the session model's window and dsh's own size estimate, updated after compaction;
     - native Android builds of dsh's modules (upstream), so it can run in Termux without Ubuntu.
+  - Optional, not planned yet (do only when asked):
+    - dsh's `web_search`: it uses the DeepSeek Search API with a DeepSeek key read from dsh's environment, and the app
+      keeps keys out of dsh, so dsh hides the tool (`web_fetch` works). The plan: give dsh's `web-deepseek-api` a
+      `baseURL` on the app's key proxy and the proxy's token as its key (`apiKeyEnv`), so the proxy adds the
+      DeepSeek key from Pi's providers, as it does for model requests. Only with a DeepSeek key or sign-in; else
+      the tool stays hidden.
+    - What dsh's headless template leaves out and its SDK/web profiles mount: scheduled tasks (`schedule`,
+      `tool-schedule`), the current time in context (`time-context`), `present`, and file references. Each one
+      decided on its own: whether it works on the phone and how the app shows it.
 
 ## 2b. Reach it from messaging apps
 
