@@ -50,6 +50,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         .flatMapLatest { it?.sessions?.summaries ?: flowOf(emptyList()) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    /** Each AI core's slash commands, by core id (suggested as the user types `/`). */
+    val coreCommands = controller
+        .flatMapLatest { it?.sessions?.commands ?: flowOf(emptyMap()) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
     /** The session on screen, or null for the session list. */
     val openId = MutableStateFlow<String?>(null)
 

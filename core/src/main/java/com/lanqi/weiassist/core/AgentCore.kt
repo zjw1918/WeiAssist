@@ -15,11 +15,12 @@ import org.json.JSONObject
  * again (with its saved transcript) before its next prompt.
  *
  * **Events** ([events]) are JSON objects with a `type`, in one vocabulary shared by all cores:
- * - About a session (they carry `session`): `configured` {contextWindow?, contextTokens?}, `compacted`
+ * - About a session (they carry `session`): `configured` {contextWindow?, contextTokens?, commands?: [{name, description, hint?}]}, `compacted`
  *   {contextTokens?} (the context's size after the core shrank it), `agent_start`, `text_delta` {delta},
  *   `thinking_start`, `thinking_delta` {delta}, `thinking_end` {text}, `assistant_end` {text, stopReason,
  *   errorMessage, usage, provider, model}, `tool_start` {tool, args}, `tool_end` {tool, isError, output, screen},
  *   `message_end` {role, text}, `steer_late` {text}, `turn_end`, `idle`, `error` {message},
+ *   `command_result` {name, kind: success | error | unknown, text}: how a [command] ended,
  *   `transcript` {messages}: the core's transcript to save. It is opaque to the app and handed back through
  *   [SessionConfig.history].
  * - App-wide (no `session`): `runtime_restarted`, plus account events from a core that is also [CoreAccounts]
@@ -48,6 +49,14 @@ interface AgentCore {
     suspend fun prompt(session: String, input: UserInput)
     /** A message for a session that is working: read after the current step. */
     suspend fun steer(session: String, input: UserInput)
+    /**
+     * The user's slash command for session [session] (`/name input`, as typed), run by the core itself and never
+     * sent to the model as a message: its outcome is a `command_result` event; work it starts (a message it sends
+     * the model) comes as the session's usual events. Only for a core with [CoreCapabilities.commands].
+     */
+    suspend fun command(session: String, text: String) {
+        throw UnsupportedOperationException("${info.name} has no slash commands")
+    }
     suspend fun abort(session: String)
     /** Drop a session's agent (its saved transcript is the app's business). */
     suspend fun dispose(session: String)
@@ -84,7 +93,12 @@ data class CoreCapabilities(
     val thinkingLevels: Boolean = true,
     /** Accepts images in [UserInput.content] and from tools. */
     val images: Boolean = true,
+    /** Runs the user's slash commands ([AgentCore.command]); it lists them in `configured`. */
+    val commands: Boolean = false,
 )
+
+/** A slash command a core offers: `/[name] [hint]`, with what it does. */
+data class CoreCommand(val name: String, val description: String, val hint: String = "")
 
 /** The model a session uses. [baseUrl] overrides the provider's endpoint (dev builds' mock server). */
 data class ModelSelection(val provider: String, val model: String, val thinking: String, val baseUrl: String? = null)

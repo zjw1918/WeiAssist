@@ -609,6 +609,9 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
                 // The agent waits for the user's answer: its question, above the box (what is typed answers it).
                 val asking = session.asks.firstOrNull()
                 if (asking != null) QuestionCard(vm.draftOf(asking), { step -> vm.answer(s.id, asking, step) }, Modifier.padding(bottom = 8.dp))
+                // Typing a slash command's name: the session's core's commands that match.
+                val commands by vm.coreCommands.collectAsStateWithLifecycle()
+                if (asking == null) CommandSuggestions(vm.reply, commands[s.core].orEmpty(), { vm.reply = it }, Modifier.padding(bottom = 8.dp))
                 // While it works, a message steers it: the model reads it after its current step.
                 Composer(
                     vm.reply, { vm.reply = it },

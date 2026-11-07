@@ -264,7 +264,9 @@ class Gateway(context: Context, private val sessions: SessionManager, private va
                 val (id, note) = session(m.chat)
                 if (note != null) reply(b, m.chat, note)
                 val (files, where) = receive(b, m, id)
-                val text = listOf(m.text, where).filter { it.isNotBlank() }.joinToString("\n\n")
+                // Another command (the session's core's: /plan, /goal…), without the "@bot" Telegram may add to it.
+                val typed = if (c != null) "/${c.name}" + if (c.args.isNotEmpty()) " ${c.args}" else "" else m.text
+                val text = listOf(typed, where).filter { it.isNotBlank() }.joinToString("\n\n")
                 if (text.isBlank() && files.isEmpty()) return // nothing usable came (the chat was told why)
                 if (!sessions.send(id, text, files)) { reply(b, m.chat, app.getString(R.string.tg_not_sent)); return }
                 if (replies[id]?.isActive != true) replies[id] = scope.launch { mirror(b, id, m.chat) }
@@ -578,7 +580,9 @@ class Gateway(context: Context, private val sessions: SessionManager, private va
                 val s = flow.value
                 out.sync(s)
                 syncQuestion(b, id, chat, s)
-                if (!s.busy && s.items.none { (it as? ChatItem.User)?.delivery == Delivery.Queued }) { out.finish(s); break }
+                // Until the run is over, a message queued for it is taken, and a command has its outcome.
+                val waiting = s.items.any { (it as? ChatItem.User)?.delivery == Delivery.Queued || (it is ChatItem.Command && it.ok == null) }
+                if (!s.busy && !waiting) { out.finish(s); break }
                 delay(EDIT_MS)
                 flow.first { it !== s }
             }
@@ -611,6 +615,9 @@ class Gateway(context: Context, private val sessions: SessionManager, private va
                 if (item in sent) continue
                 val chunks = when (item) {
                     is ChatItem.Assistant -> TelegramHtml.render(item.text)
+                    // A command's outcome, once it has one.
+                    is ChatItem.Command -> if (item.ok == null) continue
+                        else listOf(((if (item.ok) "✅ " else "⚠️ ") + item.line.substringBefore(' ') + (if (item.result.isNotBlank()) "\n" + item.result else "")).let { Rich(TelegramHtml.esc(it), it) })
                     is ChatItem.Error -> listOf(("⚠️ " + item.text).let { Rich(TelegramHtml.esc(it), it) })
                     else -> continue
                 }

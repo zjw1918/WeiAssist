@@ -58,7 +58,7 @@ class DshEngine(
     /** How long dsh may take to boot and connect (installing nothing, but loading ~600 packages on a phone). */
     private val connectTimeoutMs: Long = 180_000,
 ) : AgentCore {
-    override val info = CoreInfo(ID, "DeepSeek Harness", CoreCapabilities(), shortName = "DSH")
+    override val info = CoreInfo(ID, "DeepSeek Harness", CoreCapabilities(commands = true), shortName = "DSH")
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val _events = MutableSharedFlow<JSONObject>(extraBufferCapacity = 256)
@@ -238,6 +238,7 @@ class DshEngine(
 
     override suspend fun prompt(session: String, input: UserInput) = send(input.json("prompt", session))
     override suspend fun steer(session: String, input: UserInput) = send(input.json("steer", session))
+    override suspend fun command(session: String, text: String) = send(JSONObject().put("type", "command").put("session", session).put("text", text))
     override suspend fun abort(session: String) {
         // Nothing to stop without a connection (and no reason to launch dsh for it).
         connection?.let { send(JSONObject().put("type", "abort").put("session", session)) }

@@ -105,6 +105,8 @@ export const SCRIPTS = {
 		{ id: "city", question: "Which city?", header: "City", options: [{ label: "Hangzhou (Recommended)", description: "Where you are" }, { label: "Beijing" }] },
 		{ id: "unit", question: "Which unit?", options: [{ label: "°C" }, { label: "°F" }], multi_select: true },
 	] } }, { text: "asked" }],
+	// dsh's plan mode: the plan, presented for the user's review (exit_plan_mode), then the work.
+	dsh_plan: [{ tool: "exit_plan_mode", args: { plan: "# Weather\n\n1. Look it up\n2. Tell the user" } }, { text: "planned" }],
 	child_todo: [{ tool: "todo_write", args: { todos: [{ content: "Check the inbox", status: "pending" }] } }, { text: "listed" }],
 	// Three subagents that work for a while (to talk with the session meanwhile), each reporting back when done.
 	research: ["Rust", "Go", "Zig"].map((l, i) => ({ tool: "subagent", args: { description: `Research ${l}`, prompt: `Look into ${l} [[script:child_slow${i}]]` } }))

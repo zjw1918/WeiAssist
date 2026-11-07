@@ -2,7 +2,7 @@
 // an AI core of the app (Kotlin DshEngine, like pi-host is for Pi). It connects to the app over a loopback socket
 // and speaks the app's core contract (core/AgentCore.kt) as newline-delimited JSON:
 //
-// app → dsh   configure | prompt | steer | abort | dispose, each with `session`; reply {id, ok, value}
+// app → dsh   configure | prompt | steer | command | abort | dispose, each with `session`; reply {id, ok, value}
 // dsh → app   hello {secret}; the events of AgentCore.events (text_delta, tool_start, assistant_end, idle, …);
 //             host calls with an `id`: before_tool {call, tool, args}, tool {call, name, args}, tool_cancel {call}
 //
@@ -245,6 +245,7 @@ export class Bridge {
 					// steer wakes it for a turn now, as dsh's own chat does, instead of waiting for them to finish.
 					return s.agent.steer(await this.userMessage(m.text, m.content));
 				}
+				case "command": return this.command(session!, String(m.text ?? ""));
 				case "abort": return this.abort(session!);
 				case "dispose": return this.dispose(session!);
 			}
@@ -338,7 +339,7 @@ export class Bridge {
 		const effort = await this.effortFor(route, c.modelId, c.thinkingLevel);
 		s.agent.model.select(effort ? { ...model, reasoningEffort: effort } : model);
 		this.send({
-			type: "configured", session: c.session, provider: route, model: c.modelId, thinkingLevel: effort ?? "",
+			type: "configured", session: c.session, commands: this.commandsOf(s), provider: route, model: c.modelId, thinkingLevel: effort ?? "",
 			baseUrl: c.baseUrl ?? "", skipped: s.skipped, resumeError: restored ? undefined : this.lastResumeError, auth: this.routeNames.has(route) ? "app" : null, messages: restored ? 1 : 0,
 		});
 	}
@@ -440,6 +441,29 @@ export class Bridge {
 		if (k.thinking === undefined) return;
 		this.send({ type: "thinking_end", session, subagent: child, text: k.thinking });
 		k.thinking = undefined;
+	}
+
+	/** The slash commands the user can run on session [s] (dsh's command registry, after agent-scoped shadowing). */
+	private commandsOf(s: Live) {
+		const commands = this.ctx.get("commands");
+		if (!commands) return [];
+		return (commands.list(s.agent) as any[]).map((d) => ({
+			name: String(d.name), description: String(d.description ?? ""), ...(d.input?.hint ? { hint: String(d.input.hint) } : {}),
+		}));
+	}
+
+	/**
+	 * The user's slash command (`/name input`) for session [id]: run by dsh's command registry against the session's
+	 * agent, never sent to the model as a message. Its outcome is a command_result ("unknown" when dsh has no such
+	 * command); what it starts (plan mode's message, a goal's rounds) reaches the app as the session's usual events.
+	 */
+	private async command(id: string, line: string) {
+		const s = this.need(id);
+		const name = /^\/([a-z0-9_-]+)/u.exec(line)?.[1] ?? "";
+		const commands = this.ctx.get("commands");
+		const r = commands ? await commands.execute(s.agent, line, [], new AbortController().signal) : undefined;
+		if (r === undefined) return this.send({ type: "command_result", session: id, name, kind: "unknown", text: "" });
+		this.send({ type: "command_result", session: id, name, kind: r.result.kind, text: String(r.result.text ?? "") });
 	}
 
 	/** Stop: the session's agent and its subagents (they work in the background, and would go on). */

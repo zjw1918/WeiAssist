@@ -121,6 +121,13 @@ sealed interface ChatItem {
         val steps get() = items.count { it is Step }
         val settled get() = outcome != null
     }
+    /**
+     * A slash command the user ran ([line], as typed: `/plan off`), run by the session's core, not sent to the model.
+     * [ok] is null until the core says how it went, with what it said in [result].
+     */
+    data class Command(val line: String, val ok: Boolean? = null, val result: String = "") : ChatItem {
+        val name get() = line.removePrefix("/").takeWhile { !it.isWhitespace() }
+    }
     /** Ends a run (one task, from the user's message to idle): what it took. */
     data class Stats(val run: RunStats) : ChatItem
 }
