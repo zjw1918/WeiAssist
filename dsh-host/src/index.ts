@@ -339,7 +339,10 @@ export class Bridge {
 		const effort = await this.effortFor(route, c.modelId, c.thinkingLevel);
 		s.agent.model.select(effort ? { ...model, reasoningEffort: effort } : model);
 		this.send({
-			type: "configured", session: c.session, commands: this.commandsOf(s), provider: route, model: c.modelId, thinkingLevel: effort ?? "",
+			type: "configured", session: c.session, commands: this.commandsOf(s),
+			// How full the context is (a resumed session's whole conversation), and of how much: the ring in its header.
+			...(await this.contextWindow(route, c.modelId).then((w) => (w ? { contextWindow: w } : {}))),
+			...this.contextOf(s), provider: route, model: c.modelId, thinkingLevel: effort ?? "",
 			baseUrl: c.baseUrl ?? "", skipped: s.skipped, resumeError: restored ? undefined : this.lastResumeError, auth: this.routeNames.has(route) ? "app" : null, messages: restored ? 1 : 0,
 		});
 	}
@@ -441,6 +444,31 @@ export class Bridge {
 		if (k.thinking === undefined) return;
 		this.send({ type: "thinking_end", session, subagent: child, text: k.thinking });
 		k.thinking = undefined;
+	}
+
+	/** The model's context window in tokens, as its route declares it; undefined when it doesn't. */
+	private async contextWindow(route: string, model: string): Promise<number | undefined> {
+		try {
+			const w = (await this.ctx.llm.resolveModelInfo(route, model))?.context?.contextWindow;
+			return typeof w === "number" && w > 0 ? w : undefined;
+		} catch {
+			return undefined;
+		}
+	}
+
+	/**
+	 * How many tokens session [s]'s next request would carry, by dsh's token meter (it replays the session's log, no
+	 * model call): `{ contextTokens }`, or nothing when there is no meter.
+	 */
+	private contextOf(s: Live): { contextTokens?: number } {
+		try {
+			const t = this.ctx.get("tokenMeter")?.measure(s.agent.session)?.totalTokens;
+			// 0: nothing logged yet (a new session), which the app reads as not known.
+			return typeof t === "number" && t > 0 ? { contextTokens: Math.round(t) } : {};
+		} catch (e) {
+			say(`token meter: ${e instanceof Error ? e.message : String(e)}`);
+			return {};
+		}
 	}
 
 	/** The slash commands the user can run on session [s] (dsh's command registry, after agent-scoped shadowing). */
@@ -652,6 +680,10 @@ export class Bridge {
 				return;
 			}
 			switch (event.type) {
+				// dsh shrank the conversation (/compact, or by itself when it got full): how full it is now.
+				case "compaction/end":
+					queueMicrotask(() => this.send({ type: "compacted", session, ...this.contextOf(s) }));
+					break;
 				// The session started a subagent: dsh records it with the task's short description (its web chat's label).
 				case "subagent/catalog":
 					this.send({ type: "subagent_start", session, subagent: String(d.childId), label: String(d.label ?? "") });

@@ -41,7 +41,7 @@ private const val WARN_AT = 0.7f
  * Still, no animation: it changes once per model call.
  */
 @Composable
-fun ContextRing(tokens: Long, window: Int, last: RunStats?, modifier: Modifier = Modifier) {
+fun ContextRing(tokens: Long, window: Int, last: RunStats?, modifier: Modifier = Modifier, hint: Int = R.string.context_hint) {
     if (tokens <= 0 || window <= 0) return
     val c = MaterialTheme.colorScheme
     val share = (tokens.toFloat() / window).coerceIn(0f, 1f)
@@ -81,7 +81,7 @@ fun ContextRing(tokens: Long, window: Int, last: RunStats?, modifier: Modifier =
                     )
                 }
                 Spacer(Modifier.size(6.dp))
-                Text(stringResource(R.string.context_hint), style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
+                Text(stringResource(hint), style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
             }
         }
     }

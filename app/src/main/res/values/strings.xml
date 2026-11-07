@@ -480,4 +480,5 @@
     <string name="question_hint">Your answer</string>
     <string name="tool_ask_user">Ask you</string>
     <string name="tool_exit_plan_mode">Present the plan</string>
+    <string name="context_hint_core">How full the conversation is now. When it gets close to full, older messages are summarized to make room (/compact does it now).</string>
 </resources>

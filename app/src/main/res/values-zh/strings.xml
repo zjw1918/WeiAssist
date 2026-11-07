@@ -473,4 +473,5 @@
     <string name="question_hint">你的回答</string>
     <string name="tool_ask_user">向你提问</string>
     <string name="tool_exit_plan_mode">提交计划</string>
+    <string name="context_hint_core">当前对话占用的上下文。快满时，较早的消息会被总结以腾出空间（/compact 可立即执行）。</string>
 </resources>
