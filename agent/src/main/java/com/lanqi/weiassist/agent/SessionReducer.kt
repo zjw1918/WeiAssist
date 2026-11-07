@@ -274,6 +274,8 @@ object SessionReducer {
         "grep", "glob" -> listOfNotNull(a?.optString("pattern")?.ifEmpty { null }, a?.optString("path")?.ifEmpty { null }).joinToString("  in  ")
         "interrupt_agent" -> a?.optString("agent_id").orEmpty()
         "skill" -> a?.optString("name").orEmpty()
+        // DeepSeek Harness asks the user: the (first) question.
+        "ask_user_question" -> a?.optJSONArray("questions")?.optJSONObject(0)?.optString("question").orEmpty().take(80)
         "wait_for" -> a?.optJSONArray("ids")?.let { ids -> (0 until ids.length()).joinToString(", ") { ids.getString(it) } }.orEmpty()
         else -> ""
     }

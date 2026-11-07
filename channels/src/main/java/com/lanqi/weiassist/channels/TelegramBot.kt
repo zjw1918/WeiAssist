@@ -119,8 +119,10 @@ class TelegramBot(
     }
 
     /** Buttons side by side, in one row. */
-    private fun keyboard(buttons: List<Button>) = JSONObject().put("inline_keyboard", JSONArray().put(
-        JSONArray(buttons.map { JSONObject().put("text", it.label).put("callback_data", it.data) }),
+    private fun keyboard(buttons: List<Button>) = JSONObject().put("inline_keyboard", JSONArray(
+        buttons.groupBy { it.row }.toSortedMap().values.map { row ->
+            JSONArray(row.map { JSONObject().put("text", it.label).put("callback_data", it.data) })
+        },
     ))
 
     override suspend fun download(file: RemoteFile, dest: java.io.File) {

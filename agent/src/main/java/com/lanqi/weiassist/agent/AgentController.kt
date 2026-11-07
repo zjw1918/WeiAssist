@@ -191,6 +191,18 @@ class AgentController(context: Context) {
         }
         // The user stopped the run while a call worked: end what it started (a bash command in Termux).
         tools.register("tool_cancel") { m -> router.cancel(m.getString("session"), m.optString("call")); null }
+        // The agent asks the user something (DeepSeek Harness: ask_user_question, a plan to review, an approval): in
+        // the session's chat and, for a conversation from Telegram, in that chat; the first answer counts.
+        tools.register("ask_user") { m ->
+            val id = m.getString("session")
+            val ask = Ask.parse(m) ?: return@register Ask.reply(null, "The question was empty.")
+            val answers = kotlinx.coroutines.withContext(Dispatchers.Main) { sessions.ask(id, ask) }
+            Ask.reply(answers, if (sessions.stoppedByUser(id)) "The user stopped the task instead of answering." else "The question was withdrawn before the user answered.")
+        }
+        tools.register("ask_user_cancel") { m ->
+            kotlinx.coroutines.withContext(Dispatchers.Main) { sessions.withdraw(m.getString("session"), m.optString("ask")) }
+            null
+        }
         cores.bind(tools)
         scope.launch { cores.events.collect(::onCore) }
         // The shell helper came: queued phone sessions get displays. It went: so did its displays.

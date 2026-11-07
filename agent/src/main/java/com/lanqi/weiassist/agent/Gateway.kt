@@ -257,6 +257,9 @@ class Gateway(context: Context, private val sessions: SessionManager, private va
             "status" -> reply(b, m.chat, status(m.chat))
             "screen" -> scope.launch { sendScreen(b, m.chat) }
             else -> {
+                // The agent waits for an answer here: the words are the answer to its question.
+                val open = bindings[m.chat.key]?.let { questions[it] }?.takeIf { it.chat == m.chat }
+                if (open != null && m.files.isEmpty() && m.text.isNotBlank()) { step(b, open) { it.custom(m.text) }; return }
                 if (m.unsupported && m.files.isEmpty()) { reply(b, m.chat, app.getString(R.string.tg_text_only)); return }
                 val (id, note) = session(m.chat)
                 if (note != null) reply(b, m.chat, note)
@@ -445,6 +448,7 @@ class Gateway(context: Context, private val sessions: SessionManager, private va
 
     /** A ✅/❌ tap: answers its question if it is still open, the tap is a paired account's, in the question's chat. */
     private fun onPress(b: TelegramBot, m: Inbound, p: Press) {
+        if (p.data.startsWith("q:")) { onQuestionPress(b, m, p); return }
         val owner = _state.value.owners.any { it.id == m.from.id }
         val parts = p.data.split(':')
         val ask = if (owner && parts.size == 3 && parts[0] == "c") asks[parts[1]]?.takeIf { it.chat == m.chat } else null
@@ -456,6 +460,102 @@ class Gateway(context: Context, private val sessions: SessionManager, private va
             else -> app.getString(if (yes) R.string.tg_confirm_allowed else R.string.tg_confirm_denied)
         }
         scope.launch { runCatching { b.acknowledge(p, note) } }
+    }
+
+    // ---- the agent's questions in the chat -------------------------------------------------------------
+
+    /** A question of session [session] asked in [chat] ([message], edited as it is answered), by its nonce. */
+    private class ChatQuestion(val session: String, val chat: ChatRef, val nonce: String, var draft: AnswerDraft, var message: String? = null)
+    /** Questions open in chats, by session. */
+    private val questions = HashMap<String, ChatQuestion>()
+
+    /**
+     * Session [id]'s question, as its state [s] has it, in [chat]: a new one is sent, one that went (answered in the
+     * app, or the agent stopped waiting) loses its buttons.
+     */
+    private suspend fun syncQuestion(b: TelegramBot, id: String, chat: ChatRef, s: SessionState) {
+        val ask = s.asks.firstOrNull()
+        val shown = questions[id]
+        if (shown != null && shown.draft.ask.id != ask?.id) {
+            questions.remove(id)
+            shown.message?.let { msg -> runCatching { b.edit(chat, msg, questionText(shown.draft, app.getString(R.string.tg_question_closed))) } }
+        }
+        if (ask == null || questions[id] != null) return
+        val q = ChatQuestion(id, chat, ChatCommands.newPairingCode(), AnswerDraft(ask))
+        questions[id] = q
+        try {
+            q.message = b.send(chat, questionText(q.draft), questionButtons(q))
+        } catch (e: ChannelException) {
+            Log.w(TAG, "question not sent: ${e.message}")
+        }
+    }
+
+    /** A step in answering [q] from the chat; once every question has its answer, they go to the agent. */
+    private fun step(b: TelegramBot, q: ChatQuestion, f: (AnswerDraft) -> AnswerDraft) {
+        val next = f(q.draft)
+        q.draft = next
+        val msg = q.message
+        if (next.done) {
+            questions.remove(q.session)
+            val taken = sessions.answer(q.session, next.ask.id, next.answers)
+            val note = if (taken) answersText(next) else app.getString(R.string.tg_question_closed)
+            if (msg != null) scope.launch { runCatching { b.edit(q.chat, msg, questionText(next, note)) } }
+            return
+        }
+        if (msg != null) scope.launch { runCatching { b.edit(q.chat, msg, questionText(next), questionButtons(q)) } }
+    }
+
+    /** A tap on a question's button: an option, Next or Skip, from a paired account in the question's chat. */
+    private fun onQuestionPress(b: TelegramBot, m: Inbound, p: Press) {
+        val owner = _state.value.owners.any { it.id == m.from.id }
+        val parts = p.data.split(':')
+        val q = if (owner && parts.size == 3) questions.values.firstOrNull { it.nonce == parts[1] && it.chat == m.chat } else null
+        if (q != null) {
+            val option = parts[2].toIntOrNull()?.let { q.draft.current?.options?.getOrNull(it) }
+            when {
+                option != null -> step(b, q) { it.choose(option.label) }
+                parts[2] == "next" -> step(b, q) { it.confirm() }
+                parts[2] == "skip" -> step(b, q) { it.skip() }
+            }
+        }
+        val note = if (owner && q == null) app.getString(R.string.tg_confirm_expired) else null
+        scope.launch { runCatching { b.acknowledge(p, note) } }
+    }
+
+    /** The question being answered (or, once [closing] is given, what came of it). */
+    private fun questionText(d: AnswerDraft, closing: String? = null): Rich {
+        val q = d.current ?: d.ask.questions.last()
+        val total = d.ask.questions.size
+        val head = "❓ " + q.header.ifBlank { app.getString(R.string.tg_question) } + if (total > 1) " · ${minOf(d.index + 1, total)}/$total" else ""
+        val body = buildList {
+            add(q.text)
+            if (q.detail.isNotBlank()) add(q.detail.take(MAX_DETAIL) + if (q.detail.length > MAX_DETAIL) "…" else "")
+            if (closing == null) {
+                q.options.filter { it.description.isNotBlank() }.takeIf { it.isNotEmpty() }?.let { o -> add(o.joinToString("\n") { "• ${it.label}: ${it.description}" }) }
+                add(app.getString(if (q.options.isEmpty()) R.string.tg_question_type else R.string.tg_question_or_type))
+            } else add(closing)
+        }
+        val plain = head + "\n\n" + body.joinToString("\n\n")
+        return Rich("<b>${TelegramHtml.esc(head)}</b>\n\n" + TelegramHtml.esc(body.joinToString("\n\n")), plain)
+    }
+
+    /** One row per option (✓ on those picked), then Next for a multiple choice, and Skip. */
+    private fun questionButtons(q: ChatQuestion): List<Button> {
+        val cur = q.draft.current ?: return emptyList()
+        val options = cur.options.mapIndexed { i, o ->
+            Button((if (cur.multi && o.label in q.draft.picked) "✓ " else "") + o.label, "q:${q.nonce}:$i", row = i)
+        }
+        val last = cur.options.size
+        return options + listOfNotNull(
+            if (cur.multi) Button(app.getString(R.string.tg_question_next), "q:${q.nonce}:next", row = last) else null,
+            Button(app.getString(R.string.tg_question_skip), "q:${q.nonce}:skip", row = last),
+        )
+    }
+
+    /** What the user answered, one line per question. */
+    private fun answersText(d: AnswerDraft) = d.answers.zip(d.ask.questions).joinToString("\n") { (a, q) ->
+        val said = (a.selected + listOfNotNull(a.custom?.takeIf { it.isNotBlank() })).joinToString(", ")
+        "✅ " + (if (d.ask.questions.size > 1) "${q.header.ifBlank { q.text.take(30) }}: " else "") + said.ifEmpty { app.getString(R.string.tg_question_skipped) }
     }
 
     private fun chatOf(session: String): ChatRef? =
@@ -477,6 +577,7 @@ class Gateway(context: Context, private val sessions: SessionManager, private va
             while (true) {
                 val s = flow.value
                 out.sync(s)
+                syncQuestion(b, id, chat, s)
                 if (!s.busy && s.items.none { (it as? ChatItem.User)?.delivery == Delivery.Queued }) { out.finish(s); break }
                 delay(EDIT_MS)
                 flow.first { it !== s }
@@ -487,6 +588,8 @@ class Gateway(context: Context, private val sessions: SessionManager, private va
             Log.w(TAG, "sending session $id to Telegram failed", e)
         } finally {
             typing.cancel()
+            // The run is over: a question still shown can't be answered any more.
+            questions.remove(id)?.let { q -> q.message?.let { msg -> scope.launch { runCatching { b.edit(chat, msg, questionText(q.draft, app.getString(R.string.tg_question_closed))) } } } }
             replies.remove(id)
             sessions.detach(id)
         }
@@ -586,6 +689,8 @@ class Gateway(context: Context, private val sessions: SessionManager, private va
         private const val EDIT_MS = 1_200L
         /** "typing…" lasts 5 s in Telegram. */
         private const val TYPING_MS = 4_500L
+        /** The most of a question's detail (a plan) a chat message shows: Telegram allows 4096 characters. */
+        private const val MAX_DETAIL = 3000
         /** Bots may send files up to 50 MB. */
         private const val MAX_SEND = 50L * 1024 * 1024
     }

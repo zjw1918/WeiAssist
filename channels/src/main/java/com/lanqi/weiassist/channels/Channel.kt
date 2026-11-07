@@ -50,7 +50,8 @@ data class ChatRef(val channel: String, val chat: String) {
 }
 
 /** A button under a message: [data] comes back in the [Press] when it is tapped (at most 64 bytes). */
-data class Button(val label: String, val data: String)
+/** A button under a message; buttons with the same [row] sit side by side, rows in order. */
+data class Button(val label: String, val data: String, val row: Int = 0)
 
 /** A tap on a [Button]: [id] to acknowledge it, [message] the message it was under. */
 data class Press(val id: String, val data: String, val message: String)

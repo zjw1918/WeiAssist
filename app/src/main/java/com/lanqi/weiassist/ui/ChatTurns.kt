@@ -407,6 +407,8 @@ private fun toolLabel(tool: String): String = when (tool) {
     "grep" -> stringResource(R.string.tool_grep)
     "glob" -> stringResource(R.string.tool_glob)
     "todo_write" -> stringResource(R.string.tool_todo)
+    "ask_user_question" -> stringResource(R.string.tool_ask_user)
+    "exit_plan_mode" -> stringResource(R.string.tool_exit_plan_mode)
     "interrupt_agent" -> stringResource(R.string.tool_interrupt_agent)
     "list_agents" -> stringResource(R.string.tool_list_agents)
     else -> tool
@@ -424,6 +426,7 @@ private fun toolIcon(tool: String) = when (tool) {
     "web_fetch", "web_search" -> R.drawable.ic_open_in_new
     "write", "edit", "str_replace_editor", "apply_patch", "todo_write" -> R.drawable.ic_edit
     "interrupt_agent" -> R.drawable.ic_stop
+    "ask_user_question", "exit_plan_mode" -> R.drawable.ic_help
     else -> R.drawable.ic_code
 }
 

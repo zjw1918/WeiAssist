@@ -139,6 +139,8 @@ export class Bridge {
 	private routesReady: Promise<void> = Promise.resolve();
 	/** Why the last resume failed (a new session was created instead), for the configured event. */
 	private lastResumeError?: string;
+	/** Numbers the questions dsh asks the user (ask_user), so the app can withdraw one. */
+	private asks = 0;
 
 	constructor(private readonly ctx: any, private readonly port: number, private readonly secret: string, private readonly mockRoute: string) {}
 
@@ -551,6 +553,9 @@ export class Bridge {
 			}
 			return next();
 		});
+		// dsh asks the user something (ask_user_question, plan mode's review of a plan, an approval): the app answers it,
+		// in the session's chat (and its Telegram chat). Without an answerer here, dsh's asks fail ("no answerer").
+		ctx.on("user-questions/request", (request: any, next: () => Promise<any>) => this.askUser(request, next));
 		const idOf = (agent: any): string | undefined => {
 			for (const [id, s] of this.sessions) if (s.agent === agent) return id;
 			return undefined;
@@ -675,6 +680,29 @@ export class Bridge {
 		});
 	}
 
+	/**
+	 * A question dsh asks the user, through the app's ask_user host call: its answer as dsh's answer batch. dsh asks only
+	 * for a session's own agent (a subagent is refused before this). Withdrawn (the turn was stopped): ask_user_cancel.
+	 */
+	async askUser(request: any, next: () => Promise<any>) {
+		const own = String(request?.agent?.session?.id ?? request?.agent?.id ?? "");
+		const session = this.rootOf(own);
+		if (session === undefined) return next();
+		const signal: AbortSignal | undefined = request.signal;
+		if (signal?.aborted) throw new Error("ask_user_question was aborted before the user answered");
+		const ask = `q${++this.asks}`;
+		const cancel = () => void this.call("ask_user_cancel", { session, ask }).catch(() => {});
+		signal?.addEventListener?.("abort", cancel, { once: true });
+		try {
+			const questions = (request.questions ?? []).map(questionOf);
+			const r = await this.call("ask_user", { session, ask, ...(request.wait?.callId ? { call: String(request.wait.callId) } : {}), questions });
+			if (!Array.isArray(r?.answers)) throw new Error(String(r?.reason ?? "The user did not answer."));
+			return { answers: r.answers.map(answerOf) };
+		} finally {
+			signal?.removeEventListener?.("abort", cancel);
+		}
+	}
+
 	/** A subagent's reasoning and text as it streams: in its own section of the app's turn (marked with its id). */
 	private kidStream(agent: any, frame: any) {
 		const own = String(agent?.session?.id ?? agent?.id ?? "");
@@ -706,6 +734,33 @@ export class Bridge {
 		this.send({ type: "thinking_end", session, text: s.thinking });
 		s.thinking = undefined;
 	}
+}
+
+/** One of dsh's questions as the app reads it (dsh-user-questions' AskUserQuestionItem; its localized copy stays out). */
+export function questionOf(q: any) {
+	const intent = q?.intent?.kind === "plan-review" || q?.intent?.kind === "approval"
+		? {
+			kind: q.intent.kind, approve: String(q.intent.approve ?? ""),
+			...(q.intent.reject ? { reject: String(q.intent.reject) } : {}), ...(q.intent.always ? { always: String(q.intent.always) } : {}),
+		}
+		: undefined;
+	return {
+		id: String(q?.id ?? ""),
+		question: String(q?.question ?? ""),
+		...(q?.detail ? { detail: String(q.detail) } : {}),
+		...(q?.header ? { header: String(q.header) } : {}),
+		options: (Array.isArray(q?.options) ? q.options : []).map((o: any) => ({
+			label: String(o?.label ?? ""), ...(o?.description ? { description: String(o.description) } : {}),
+		})),
+		multiSelect: q?.multiSelect === true,
+		...(intent ? { intent } : {}),
+	};
+}
+
+/** The app's answer to one question, in dsh's shape: the chosen labels, and typed text only when there is some. */
+export function answerOf(a: any) {
+	const custom = typeof a?.custom === "string" && a.custom.trim() ? a.custom : undefined;
+	return { id: String(a?.id ?? ""), selected: (Array.isArray(a?.selected) ? a.selected : []).map(String), ...(custom ? { custom } : {}) };
 }
 
 /** For tests: the bridge's wire framing. */

@@ -56,6 +56,7 @@ class AgentService : Service() {
                 .distinctUntilChanged()
                 .collect(::onWork)
         }
+        scope.launch { controller.sessions.asked.collect(::onAsked) }
         scope.launch {
             controller.sessions.finished.collect { f ->
                 launch {
@@ -69,6 +70,30 @@ class AgentService : Service() {
                 }
             }
         }
+    }
+
+    /**
+     * A session's agent waits for the user's answer: unless its chat is open in front of them, a notification says
+     * so (it goes when the question is answered or withdrawn).
+     */
+    private fun onAsked(a: SessionManager.Asked) {
+        val nm = androidx.core.app.NotificationManagerCompat.from(this)
+        if (!a.open) { nm.cancel(a.id, NOTIFICATION_ASK); return }
+        if (appVisible() && clients > 0 && controller.sessions.viewingId == a.id) return
+        val s = controller.sessions.summary(a.id) ?: return
+        val open = PendingIntent.getActivity(this, a.id.hashCode(), openApp(a.id), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val text = a.ask.questions.joinToString("\n") { it.text }
+        val n = NotificationCompat.Builder(this, CHANNEL_ASK)
+            .setSmallIcon(android.R.drawable.ic_menu_help)
+            .setContentTitle(getString(R.string.notif_ask_title, s.title.ifBlank { getString(R.string.agent_name) }))
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .build()
+        val allowed = Build.VERSION.SDK_INT < 33 ||
+            ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (allowed && nm.areNotificationsEnabled()) nm.notify(a.id, NOTIFICATION_ASK, n)
     }
 
     private fun work(s: AgentState, list: List<SessionSummary>, g: Gateway.State): Work {
@@ -199,6 +224,9 @@ class AgentService : Service() {
             },
         )
         getSystemService(NotificationManager::class.java).createNotificationChannel(
+            NotificationChannel(CHANNEL_ASK, getString(R.string.channel_questions), NotificationManager.IMPORTANCE_HIGH),
+        )
+        getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL_DONE, getString(R.string.channel_results), NotificationManager.IMPORTANCE_DEFAULT).apply {
                 description = getString(R.string.channel_results_desc)
             },
@@ -221,6 +249,8 @@ class AgentService : Service() {
         private const val NOTIFICATION_ID = 1
         private const val CHANNEL_DONE = "agent-results"
         private const val NOTIFICATION_DONE = 2
+        private const val CHANNEL_ASK = "agent-questions"
+        private const val NOTIFICATION_ASK = 3
         private const val ACTION_STOP = "com.lanqi.weiassist.STOP"
         /** How long the app has to come to the front before the result is shown as a notification instead. */
         private const val RETURN_CHECK_MS = 1500L

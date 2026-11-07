@@ -462,4 +462,15 @@
     <plurals name="code_lines">
         <item quantity="other">%1$d 行</item>
     </plurals>
+    <string name="question_title">有个问题问你</string>
+    <string name="question_plan">请审阅计划</string>
+    <string name="question_approval">可以继续吗？</string>
+    <string name="question_skip">跳过</string>
+    <string name="question_or_type">也可以在下方输入你的回答</string>
+    <string name="question_type_answer">请在下方输入你的回答</string>
+    <string name="question_next">下一个</string>
+    <string name="question_send">发送</string>
+    <string name="question_hint">你的回答</string>
+    <string name="tool_ask_user">向你提问</string>
+    <string name="tool_exit_plan_mode">提交计划</string>
 </resources>
