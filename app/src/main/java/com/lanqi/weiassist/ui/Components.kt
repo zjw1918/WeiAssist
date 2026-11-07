@@ -28,6 +28,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -151,8 +157,12 @@ fun Composer(
     AttachmentStrip(attachments, onRemoveAttachment, Modifier.padding(start = 4.dp, bottom = 8.dp))
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(if (onAttach != null) 2.dp else 8.dp)) {
         if (onAttach != null) Box(Modifier.padding(bottom = 4.dp)) { AttachButton(onAttach) }
+        // Text put in from outside (a command picked, a command tapped to run again) leaves the cursor at its end;
+        // what the user types keeps the cursor where they put it.
+        var field by remember { mutableStateOf(TextFieldValue(value, TextRange(value.length))) }
+        if (field.text != value) field = TextFieldValue(value, TextRange(value.length))
         TextField(
-            value, onValueChange,
+            field, { field = it; if (it.text != value) onValueChange(it.text) },
             modifier = Modifier.weight(1f),
             placeholder = { Text(placeholder, maxLines = 1, overflow = TextOverflow.Ellipsis) },
             maxLines = maxLines,

@@ -1,6 +1,16 @@
 package com.lanqi.weiassist.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -25,14 +35,27 @@ import com.lanqi.weiassist.R
 import com.lanqi.weiassist.agent.ChatItem
 import com.lanqi.weiassist.core.CoreCommand
 
-/** A slash command the user ran: the line as typed, on the user's side; under it, what the core said of it. */
+/** Put a command line back in the session's message box (to run it again, or change it first); null: no box here. */
+val LocalReuseCommand = staticCompositionLocalOf<((String) -> Unit)?> { null }
+
+/**
+ * A slash command the user ran: the line as typed, on the user's side (tap: back in the message box; long-press: copy);
+ * under it, what the core said of it, which can be selected and copied like an answer.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun CommandMessage(item: ChatItem.Command, modifier: Modifier = Modifier) {
-    Column(modifier.fillMaxWidth(), horizontalAlignment = Alignment.End) {
-        Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.secondaryContainer) {
-            Text(item.line, style = CodeStyle, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
-        }
-        Row(Modifier.fillMaxWidth().padding(top = 8.dp, start = 2.dp), verticalAlignment = Alignment.Top) {
+    val ctx = LocalContext.current
+    val reuse = LocalReuseCommand.current
+    Column(modifier.fillMaxWidth().padding(start = 48.dp), horizontalAlignment = Alignment.End) {
+        Text(
+            item.line, style = CodeStyle.copy(fontSize = 14.sp, lineHeight = 20.sp), color = MaterialTheme.colorScheme.onSecondaryContainer,
+            modifier = Modifier.widthIn(max = 320.dp).clip(RoundedCornerShape(20.dp, 20.dp, 6.dp, 20.dp))
+                .background(MaterialTheme.colorScheme.secondaryContainer)
+                .combinedClickable(onClick = { reuse?.invoke(item.line) }, onLongClick = { copyText(ctx, item.line) })
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+        )
+        Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.Top) {
             when (item.ok) {
                 null -> CircularProgressIndicator(Modifier.padding(top = 2.dp).size(14.dp), strokeWidth = 2.dp)
                 true -> AppIcon(R.drawable.ic_check_circle, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
@@ -40,10 +63,12 @@ fun CommandMessage(item: ChatItem.Command, modifier: Modifier = Modifier) {
             }
             if (item.result.isNotBlank()) {
                 Spacer(Modifier.width(8.dp))
-                Text(
-                    item.result, style = MaterialTheme.typography.bodyMedium,
-                    color = if (item.ok == false) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                SelectionContainer(Modifier.weight(1f)) {
+                    Text(
+                        item.result, style = MaterialTheme.typography.bodyMedium,
+                        color = if (item.ok == false) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
