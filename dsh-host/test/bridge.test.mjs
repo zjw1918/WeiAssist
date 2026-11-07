@@ -278,6 +278,47 @@ test("a question the app can't answer fails the tool call, not the run", { skip 
 	assert.match(end.output, /Nobody answered/);
 });
 
+test("the session's slash commands: listed when configured, run by dsh, an unknown one said so", { skip }, async () => {
+	const cfg = await configure(id("cmd"));
+	const names = cfg.commands.map((c) => c.name);
+	for (const n of ["plan", "goal", "compact"]) assert.ok(names.includes(n), `no /${n} in ${names}`);
+	app.send({ type: "command", session: id("cmd"), text: "/nosuch thing" });
+	const unknown = await app.waitFor("command_result", (m) => m.session === id("cmd") && m.name === "nosuch");
+	assert.equal(unknown.kind, "unknown");
+	app.send({ type: "command", session: id("cmd"), text: "/goal" });
+	const goal = await app.waitFor("command_result", (m) => m.session === id("cmd") && m.name === "goal");
+	assert.ok(["success", "error"].includes(goal.kind));
+	assert.ok(!mock.requests.some((r) => JSON.stringify(r).includes("/nosuch")), "a command never reaches the model");
+});
+
+test("/plan with a message: plan mode, the plan comes to the app for review, approved", { skip }, async () => {
+	let asked;
+	app.handlers = { ask_user: (m) => { asked = m; return { answers: [{ id: m.questions[0].id, selected: [m.questions[0].intent.approve] }] }; } };
+	await configure(id("plan"));
+	app.send({ type: "command", session: id("plan"), text: "/plan weather [[script:dsh_plan]]" });
+	const r = await app.waitFor("command_result", (m) => m.session === id("plan") && m.name === "plan");
+	assert.equal(r.kind, "success", r.text);
+	await app.waitFor("agent_start", (m) => m.session === id("plan"));
+	const end = await app.waitFor("tool_end", (m) => m.session === id("plan") && m.tool === "exit_plan_mode");
+	await app.waitFor("idle", (m) => m.session === id("plan"));
+	assert.equal(asked.questions[0].intent.kind, "plan-review");
+	assert.match(asked.questions[0].detail, /Look it up/);
+	assert.equal(end.isError, false, end.output);
+	// The user's message went to the model with the command, as plan mode's own.
+	const user = app.messages.find((m) => m.type === "message_end" && m.session === id("plan") && m.role === "user");
+	assert.equal(user.text, "weather [[script:dsh_plan]]");
+});
+
+test("/compact on a session with a conversation", { skip }, async () => {
+	await configure(id("cmp"));
+	app.send({ type: "prompt", session: id("cmp"), text: "hello" });
+	await app.waitFor("idle", (m) => m.session === id("cmp"));
+	app.send({ type: "command", session: id("cmp"), text: "/compact" });
+	const r = await app.waitFor("command_result", (m) => m.session === id("cmp") && m.name === "compact", 60_000);
+	assert.equal(r.kind, "success", r.text);
+	assert.match(r.text, /Compacted/);
+});
+
 test("Stop also stops the session's subagents", { skip }, async () => {
 	let release;
 	const held = new Promise((r) => { release = r; });

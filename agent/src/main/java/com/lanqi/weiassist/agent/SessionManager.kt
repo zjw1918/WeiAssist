@@ -50,6 +50,8 @@ class SessionManager(
         fun missingCore(core: String): String
         /** The assistant's name, as the prompts say it. */
         fun agentName(): String
+        /** Session's core [core] has no slash command [name]; [known] are the ones it has (may be empty). */
+        fun unknownCommand(core: String, name: String, known: List<String>): String
     }
 
     private val io = Dispatchers.IO.limitedParallelism(1)
@@ -79,8 +81,13 @@ class SessionManager(
     private val prompted = HashSet<String>()
     private val pendingWrites = HashMap<String, Job>()
 
+    private val _commands = MutableStateFlow<Map<String, List<com.lanqi.weiassist.core.CoreCommand>>>(emptyMap())
+    /** Each core's slash commands, by core id, as it last listed them (saved: known before it boots again). */
+    val commands: StateFlow<Map<String, List<com.lanqi.weiassist.core.CoreCommand>>> = _commands.asStateFlow()
+
     /** Load the saved sessions. Sessions that were working when the process ended are marked Interrupted. */
     suspend fun load() {
+        _commands.value = withContext(io) { store.loadCommands() }
         val saved = withContext(io) { store.loadSummaries() }
         val now = System.currentTimeMillis()
         val fixed = saved.map { if (it.status.active) it.copy(status = SessionStatus.Interrupted, updatedAt = now) else it }
@@ -177,6 +184,8 @@ class SessionManager(
     suspend fun send(id: String, text: String, attachments: List<Attachment> = emptyList()): Boolean {
         if (text.isBlank() && attachments.isEmpty()) return false
         val flow = loadLive(id) ?: return false
+        // A slash command, for a core that runs them: the core runs it, the model never reads it as a message.
+        if (attachments.isEmpty() && isCommand(id, text)) { runCommand(id, text.trim()); return true }
         // Staged files move into the session's folder: they live as long as it does.
         val files = withContext(io) { Attachments.keep(attachments, store.attachmentsDir(id)) }
         if (flow.value.busy) {
@@ -200,6 +209,36 @@ class SessionManager(
         paused.getOrPut(id) { MutableStateFlow(false) }.value = false
         if (canRun) start(id) else queue.addLast(id)
         return true
+    }
+
+    /** [text] is a slash command (`/name …`) and session [id]'s core runs slash commands. */
+    fun isCommand(id: String, text: String): Boolean =
+        COMMAND.containsMatchIn(text.trim()) && coreOf(id)?.info?.capabilities?.commands == true
+
+    /**
+     * Run the user's slash command [line] on session [id]'s core: shown in its chat as a command with its outcome.
+     * Its agent is set up first if it isn't yet (dsh may have to boot). Work the command starts (plan mode's
+     * message, a goal's rounds) is a run the core starts by itself (see onCoreEvent).
+     */
+    private fun runCommand(id: String, line: String) {
+        val core = coreOf(id) ?: return
+        val now = System.currentTimeMillis()
+        update(id) { s ->
+            val titled = if (s.summary.title.isBlank()) s.copy(summary = s.summary.copy(title = line.take(40))) else s
+            titled.copy(items = titled.items + ChatItem.Command(line), summary = titled.summary.copy(updatedAt = now, preview = line))
+        }
+        scope.launch {
+            try {
+                live[id]?.value?.let { configure(id, it, core) }
+                core.command(id, line)
+            } catch (e: Throwable) {
+                if (e is kotlinx.coroutines.CancellationException && e !is kotlinx.coroutines.TimeoutCancellationException) throw e
+                Log.w(TAG, "${core.info.id} could not run $line for $id", e)
+                val msg = if (e is kotlinx.coroutines.TimeoutCancellationException) "${core.info.name} did not start in time." else e.message ?: e.javaClass.simpleName
+                val name = ChatItem.Command(line).name
+                update(id) { SessionReducer.reduce(it, JSONObject().put("type", "command_result").put("name", name).put("kind", "error").put("text", strings.friendly(msg)), System.currentTimeMillis()) }
+            }
+        }
     }
 
     /** The core's run ended just before the steered [text] reached it: send it as the next task. */
@@ -298,6 +337,20 @@ class SessionManager(
     /** Give session [id]'s core its task: set its agent up if needed, then prompt it. */
     private suspend fun runTask(id: String, s: SessionState, core: AgentCore) {
         run {
+            configure(id, s, core)
+            // Read now: messages typed while the core was being set up joined the task (see send).
+            val now = live[id]?.value?.takeIf { it.busy } ?: return
+            val task = now.pendingTask ?: if (now.pendingAttachments.isNotEmpty()) "" else return
+            onTaskStarted(id)
+            stopped -= id
+            core.prompt(id, UserInput(task, Attachments.content(now.pendingAttachments)))
+            prompted += id
+        }
+    }
+
+    /** Set session [id]'s agent up in its core, unless it already is, with the settings in use now. */
+    private suspend fun configure(id: String, s: SessionState, core: AgentCore) {
+        run {
             val (provider, model, thinking, mock) = settings()
             val kind = when { s.summary.supervisor -> SessionKind.Supervisor; s.summary.phone -> SessionKind.Phone; else -> SessionKind.Chat }
             val config = SessionConfig(
@@ -311,13 +364,6 @@ class SessionManager(
                 core.configure(id, config.copy(history = history))
                 configured[id] = config
             }
-            // Read now: messages typed while the core was being set up joined the task (see send).
-            val now = live[id]?.value?.takeIf { it.busy } ?: return
-            val task = now.pendingTask ?: if (now.pendingAttachments.isNotEmpty()) "" else return
-            onTaskStarted(id)
-            stopped -= id
-            core.prompt(id, UserInput(task, Attachments.content(now.pendingAttachments)))
-            prompted += id
         }
     }
 
@@ -413,6 +459,10 @@ class SessionManager(
             return
         }
         if (m.optString("type") == "steer_late") { lateSteer(id, m.optString("text")); return }
+        if (m.optString("type") == "configured") m.optJSONArray("commands")?.let { onCommands(core, it) }
+        if (m.optString("type") == "command_result" && m.optString("kind") == "unknown") {
+            m.put("text", strings.unknownCommand(core, m.optString("name"), _commands.value[core].orEmpty().map { it.name }))
+        }
         val wasBusy = live[id]!!.value.busy
         if (m.optString("type") == "agent_start" && !wasBusy && id in stopped) {
             // The user stopped this session: work its core starts by itself afterwards is stopped too.
@@ -427,6 +477,17 @@ class SessionManager(
             prompted += id
             if (live[id]!!.value.summary.phone) screens.acquire(id)
         }
+    }
+
+    /** Core [core] listed its slash commands (its `configured` event): kept, and saved when they changed. */
+    private fun onCommands(core: String, a: JSONArray) {
+        val list = (0 until a.length()).mapNotNull { a.optJSONObject(it) }.map {
+            com.lanqi.weiassist.core.CoreCommand(it.optString("name"), it.optString("description"), it.optString("hint"))
+        }.filter { it.name.isNotEmpty() }
+        if (_commands.value[core] == list) return
+        _commands.update { it + (core to list) }
+        val all = _commands.value
+        scope.launch(io) { runCatching { store.saveCommands(all) }.onFailure { Log.w(TAG, "commands not saved", it) } }
     }
 
     /** A session's core events that came while it was being loaded into memory (see onCoreEvent). */
@@ -551,5 +612,9 @@ class SessionManager(
     /** What a session's agent is set up with: the provider, model and thinking level in use, and dev builds' mock server. */
     data class RunSettings(val provider: String, val model: String, val thinking: String, val mock: String?)
 
-    companion object { private const val TAG = "Sessions" }
+    companion object {
+        private const val TAG = "Sessions"
+        /** A slash command: `/name` alone or followed by a space, as dsh's commands parse them. */
+        private val COMMAND = Regex("""^/[a-z0-9_-]+(\s|$)""")
+    }
 }

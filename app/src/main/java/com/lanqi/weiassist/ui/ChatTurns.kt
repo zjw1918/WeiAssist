@@ -170,7 +170,7 @@ fun chatBlocks(items: List<ChatItem>, busy: Boolean): List<ChatBlock> {
     items.forEachIndexed { i, item ->
         when (item) {
             // A message typed while it works (steering) splits the run's process around it, as it happened.
-            is ChatItem.User -> {
+            is ChatItem.User, is ChatItem.Command -> {
                 close(null, false)
                 out += ChatBlock.Message("m:$i", item)
             }
@@ -254,7 +254,11 @@ fun chatEntries(blocks: List<ChatBlock>): List<ChatEntry> {
 fun ChatEntryView(e: ChatEntry, session: SessionState, onProcess: (String) -> Unit, onStats: (String) -> Unit) {
     val m = Modifier.padding(top = e.gap)
     when (e) {
-        is ChatEntry.Message -> if (e.item is ChatItem.Trigger) TriggerCard(e.item, m) else UserMessage(e.item, m)
+        is ChatEntry.Message -> when (e.item) {
+            is ChatItem.Trigger -> TriggerCard(e.item, m)
+            is ChatItem.Command -> CommandMessage(e.item, m)
+            else -> UserMessage(e.item, m)
+        }
         is ChatEntry.Header -> TurnHeader(e.turn, session, onProcess, m)
         is ChatEntry.LiveSteps -> LiveProcess(e.turn, session, m)
         is ChatEntry.Agents -> SubagentCards(e.turn, m)

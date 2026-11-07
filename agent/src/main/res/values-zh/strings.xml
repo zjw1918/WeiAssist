@@ -82,4 +82,6 @@
     <string name="tg_question_skip">跳过</string>
     <string name="tg_question_skipped">（已跳过）</string>
     <string name="tg_question_closed">已在手机上回答，或不再需要回答。</string>
+    <string name="command_unknown">%2$s 没有 /%1$s 命令。</string>
+    <string name="command_known">它的命令：%1$s。</string>
 </resources>

@@ -180,6 +180,13 @@ entry in the registry.
   notification when the chat isn't open; the first answer counts. It answers `{ answers: [{id, selected, custom?}] }`,
   or `{ reason }` when stopped or withdrawn, which fails the tool call. dsh withdraws a question whose turn ended
   with `ask_user_cancel` {session, ask}.
+- **Slash commands:** a message `/name …` to a session whose core has `CoreCapabilities.commands` is the core's
+  command, not a message: `AgentCore.command` → the bridge's `command` → dsh's command registry (`/plan`, `/goal`,
+  `/compact`, `/feedback`, `/permission`). The chat shows it as a `ChatItem.Command` with the `command_result`
+  {name, kind, text} under it; an unknown name gets the core's list. The core lists its commands in `configured`
+  (saved per core in `core-commands.json`), and the message box suggests them as `/` is typed. Work a command
+  starts (`/plan <message>`) is a run the core starts by itself. From Telegram, a command not the gateway's own goes
+  to the session the same way, and its outcome is sent back.
 - **No sandbox on the phone:** dsh confines its bash and file tools with bubblewrap or Landlock, and neither works
   in proot on Android. So the phone launcher runs dsh in `danger-full-access` (a choice the user made): they run
   unconfined in Ubuntu, with Termux's home (and so `~/sessions`) as `/root`. That is the access the app's own Termux

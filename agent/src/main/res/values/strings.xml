@@ -84,4 +84,6 @@
     <string name="tg_question_skip">Skip</string>
     <string name="tg_question_skipped">(skipped)</string>
     <string name="tg_question_closed">Answered on the phone, or no longer asked.</string>
+    <string name="command_unknown">%2$s has no /%1$s command.</string>
+    <string name="command_known">Its commands: %1$s.</string>
 </resources>

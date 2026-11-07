@@ -39,6 +39,23 @@ class SessionStore(root: File) {
     fun loadTranscript(id: String, core: String): JSONArray? = read(file(id, core))?.let { runCatching { JSONArray(it) }.getOrNull() }
     fun saveTranscript(id: String, core: String, messages: JSONArray) = write(file(id, core), messages.toString())
 
+    /** Each core's slash commands (see SessionManager.commands). */
+    fun loadCommands(): Map<String, List<com.lanqi.weiassist.core.CoreCommand>> = read(commandsFile)?.let { text ->
+        runCatching {
+            val o = JSONObject(text)
+            o.keys().asSequence().associateWith { core ->
+                val a = o.getJSONArray(core)
+                (0 until a.length()).map { a.getJSONObject(it).let { c -> com.lanqi.weiassist.core.CoreCommand(c.getString("name"), c.optString("description"), c.optString("hint")) } }
+            }
+        }.getOrNull()
+    }.orEmpty()
+
+    fun saveCommands(all: Map<String, List<com.lanqi.weiassist.core.CoreCommand>>) = write(commandsFile, JSONObject().apply {
+        all.forEach { (core, list) -> put(core, JSONArray(list.map { JSONObject().put("name", it.name).put("description", it.description).put("hint", it.hint) })) }
+    }.toString())
+
+    private val commandsFile = AtomicFile(File(root, "core-commands.json"))
+
     fun delete(id: String) {
         // Every file of the session, whichever core wrote its transcript.
         dir.listFiles { f -> f.name.startsWith("$id.") }.orEmpty().forEach { it.delete() }
@@ -93,6 +110,7 @@ class SessionStore(root: File) {
                     JSONObject().put("old", c.old).put("new", c.new).also { o -> if (c.cut) o.put("cut", true) }
                 })) }
                 .also { if (i.output.isNotEmpty()) it.put("output", i.output) }
+            is ChatItem.Command -> JSONObject().put("k", "command").put("line", i.line).put("ok", i.ok ?: JSONObject.NULL).put("result", i.result)
             is ChatItem.Thinking -> JSONObject().put("k", "thinking").put("text", i.text).put("ms", i.ms)
             is ChatItem.Trigger -> JSONObject().put("k", "trigger").put("source", i.source).put("text", i.text)
                 .also { if (i.subagent.isNotEmpty()) it.put("subagent", i.subagent) }
@@ -123,6 +141,8 @@ class SessionStore(root: File) {
                     a.getJSONObject(k).let { c -> FileChange(c.optString("old"), c.optString("new"), c.optBoolean("cut")) }
                 } }.orEmpty(), o.optString("output"))
             "thinking" -> ChatItem.Thinking(o.optString("text"), o.optLong("ms"))
+            // Saved before its core answered: the process ended before it did.
+            "command" -> ChatItem.Command(o.getString("line"), if (o.isNull("ok")) false else o.getBoolean("ok"), o.optString("result"))
             "trigger" -> ChatItem.Trigger(o.optString("source"), o.optString("text"), o.optString("subagent"))
             // Saved while it ran: the run is over now (the app's process ended with it).
             "subagent" -> ChatItem.Subagent(

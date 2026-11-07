@@ -96,6 +96,11 @@ class AgentController(context: Context) {
             override fun continueTask() = appContext.getString(R.string.continue_task)
             override fun missingCore(core: String) = appContext.getString(R.string.err_missing_core, core)
             override fun agentName() = appContext.getString(R.string.agent_name)
+            override fun unknownCommand(core: String, name: String, known: List<String>): String {
+                val engine = cores[core]?.info?.shortName ?: core
+                val head = appContext.getString(R.string.command_unknown, name, engine)
+                return if (known.isEmpty()) head else head + " " + appContext.getString(R.string.command_known, known.joinToString(", ") { "/$it" })
+            }
         },
         settings = { with(_state.value) { SessionManager.RunSettings(providerId, modelId, thinkingLevel, mockBaseUrl) } },
         screens = screens,

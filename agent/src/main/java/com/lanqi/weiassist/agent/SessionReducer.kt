@@ -95,6 +95,15 @@ object SessionReducer {
             s.copy(error = err, pendingTask = null).endRun(now).undelivered().status(SessionStatus.Idle, now)
                 .add(ChatItem.Error(err), now).preview(err, now, error = true).trace("error · ${m.optString("message")}")
         }
+        // How the user's slash command went: its row (the latest one of that name still waiting) gets the outcome.
+        "command_result" -> {
+            val name = m.optString("name")
+            val at = s.items.indexOfLast { it is ChatItem.Command && it.ok == null && it.name == name }
+            if (at < 0) s.trace("command_result · /$name · no command waits for it")
+            else s.copy(items = s.items.toMutableList().also {
+                it[at] = (it[at] as ChatItem.Command).copy(ok = m.optString("kind") == "success", result = m.optString("text").trim())
+            }).trace("command_result · /$name · ${m.optString("kind")}")
+        }
         "idle" -> s.copy(streaming = "", pendingTask = null).endRun(now).status(SessionStatus.Idle, now).trace("idle")
         // The core started work by itself, not on a message from the app: e.g. DeepSeek Harness waking the session
         // when its background subagents report back. It is a run like any other (busy: its calls pass the gate).

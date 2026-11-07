@@ -17,6 +17,25 @@ class SessionReducerTest {
 
     private fun reduce(s: SessionState, m: JSONObject) = SessionReducer.reduce(s, m, now = 5)
 
+    @Test fun `a slash command's outcome goes to its row, the latest of that name still waiting`() {
+        val s0 = idle.copy(items = listOf(ChatItem.Command("/goal", ok = true, result = "old"), ChatItem.Command("/plan off"), ChatItem.Command("/goal")))
+        val s1 = reduce(s0, msg("command_result", "name" to "goal", "kind" to "success", "text" to "No goal is set.\n"))
+        assertEquals(ChatItem.Command("/goal", ok = true, result = "No goal is set."), s1.items[2])
+        assertEquals(s0.items[0], s1.items[0])
+        val s2 = reduce(s1, msg("command_result", "name" to "plan", "kind" to "unknown", "text" to "DSH has no /plan command."))
+        assertEquals(ChatItem.Command("/plan off", ok = false, result = "DSH has no /plan command."), s2.items[1])
+        // Nothing waits for it: nothing changes on the page.
+        assertEquals(s2.items, reduce(s2, msg("command_result", "name" to "compact", "kind" to "success")).items)
+        assertEquals(SessionStatus.Idle, s2.status)
+        assertEquals("plan", ChatItem.Command("/plan  do it").name)
+    }
+
+    @Test fun `a command is saved with its outcome, and one saved while it waited failed`() {
+        val done = ChatItem.Command("/compact", ok = true, result = "Compacted 2 history items.")
+        assertEquals(done, SessionStore.itemFrom(SessionStore.itemJson(done)))
+        assertEquals(ChatItem.Command("/goal", ok = false), SessionStore.itemFrom(SessionStore.itemJson(ChatItem.Command("/goal"))))
+    }
+
     @Test fun `a message starts a task, or queues it when the screen is taken`() {
         assertEquals(SessionStatus.Running, running.status)
         assertEquals(listOf<ChatItem>(ChatItem.User("check mail")), running.items)
