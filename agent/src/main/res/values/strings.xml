@@ -75,4 +75,13 @@
     <string name="tg_file_unreadable">I can\'t read %1$s here: I read pictures, PDFs and text files. (With Linux commands allowed, I get every file in Termux.)</string>
     <string name="tg_file_not_fetched">Couldn\'t fetch %1$s from Telegram: %2$s</string>
     <string name="confirm_typed">What it typed in this task</string>
+    <string name="notif_ask_title">%1$s asks you</string>
+    <string name="channel_questions">Questions</string>
+    <string name="tg_question">A question for you</string>
+    <string name="tg_question_or_type">Tap an answer, or reply with your own.</string>
+    <string name="tg_question_type">Reply with your answer.</string>
+    <string name="tg_question_next">Next ➡️</string>
+    <string name="tg_question_skip">Skip</string>
+    <string name="tg_question_skipped">(skipped)</string>
+    <string name="tg_question_closed">Answered on the phone, or no longer asked.</string>
 </resources>

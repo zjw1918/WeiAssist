@@ -606,9 +606,14 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
                     .padding(start = 12.dp, end = 12.dp, top = 4.dp, bottom = 10.dp),
             ) {
                 if (s.status != SessionStatus.Idle) Row(Modifier.fillMaxWidth().padding(bottom = 4.dp), horizontalArrangement = Arrangement.End) { SessionActions(s, vm) }
+                // The agent waits for the user's answer: its question, above the box (what is typed answers it).
+                val asking = session.asks.firstOrNull()
+                if (asking != null) QuestionCard(vm.draftOf(asking), { step -> vm.answer(s.id, asking, step) }, Modifier.padding(bottom = 8.dp))
                 // While it works, a message steers it: the model reads it after its current step.
                 Composer(
-                    vm.reply, { vm.reply = it }, stringResource(if (session.busy) R.string.steer_hint else R.string.reply_hint), onSend = vm::sendReply,
+                    vm.reply, { vm.reply = it },
+                    stringResource(when { asking != null -> R.string.question_hint; session.busy -> R.string.steer_hint; else -> R.string.reply_hint }),
+                    onSend = vm::sendReply,
                     sendEnabled = vm.reply.isNotBlank() || vm.replyAttachments.isNotEmpty(),
                     attachments = vm.replyAttachments, onAttach = { vm.attach(it, toReply = true) }, onRemoveAttachment = { vm.removeAttachment(it, fromReply = true) },
                 )

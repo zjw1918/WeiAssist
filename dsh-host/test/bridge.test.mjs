@@ -47,7 +47,7 @@ class FakeApp {
 	onMessage(m) {
 		this.messages.push(m);
 		for (const w of [...this.waiters]) if (w.match(m)) { this.waiters.splice(this.waiters.indexOf(w), 1); w.resolve(m); }
-		if (m.id && ["before_tool", "tool", "tool_cancel"].includes(m.type)) {
+		if (m.id && ["before_tool", "tool", "tool_cancel", "ask_user", "ask_user_cancel"].includes(m.type)) {
 			if (m.type === "tool") this.toolCalls.push(m);
 			const h = this.handlers[m.type] ?? (() => null);
 			Promise.resolve(h(m)).then(
@@ -245,6 +245,37 @@ test("a subagent's calls go through the app's before_tool, and its work shows in
 	const idles = app.messages.map((m, i) => (m.type === "idle" && m.session === id("sub") ? i : -1)).filter((i) => i >= 0);
 	assert.deepEqual(idles.length, 1, "one idle, at the end");
 	assert.ok(idles[0] > trigger, "idle came before the subagent's result reached the session");
+});
+
+test("dsh's question reaches the app (ask_user), and the app's answer reaches the model", { skip }, async () => {
+	let asked;
+	app.handlers = {
+		ask_user: (m) => { asked = m; return { answers: [{ id: "city", selected: [], custom: "Shanghai" }, { id: "unit", selected: ["°C", "°F"] }] }; },
+	};
+	await configure(id("ask"));
+	app.send({ type: "prompt", session: id("ask"), text: "weather [[script:dsh_ask]]" });
+	const end = await app.waitFor("tool_end", (m) => m.session === id("ask") && m.tool === "ask_user_question");
+	await app.waitFor("idle", (m) => m.session === id("ask"));
+	assert.equal(asked.session, id("ask"));
+	assert.match(asked.ask, /^q\d+$/);
+	assert.deepEqual(asked.questions[0], {
+		id: "city", question: "Which city?", header: "City", multiSelect: false,
+		options: [{ label: "Hangzhou (Recommended)", description: "Where you are" }, { label: "Beijing" }],
+	});
+	assert.equal(asked.questions[1].multiSelect, true);
+	assert.equal(end.isError, false, end.output);
+	assert.match(end.output, /Shanghai/);
+	assert.match(end.output, /°F/);
+});
+
+test("a question the app can't answer fails the tool call, not the run", { skip }, async () => {
+	app.handlers = { ask_user: () => ({ reason: "Nobody answered." }) };
+	await configure(id("ask2"));
+	app.send({ type: "prompt", session: id("ask2"), text: "weather [[script:dsh_ask]]" });
+	const end = await app.waitFor("tool_end", (m) => m.session === id("ask2") && m.tool === "ask_user_question");
+	await app.waitFor("idle", (m) => m.session === id("ask2"));
+	assert.equal(end.isError, true);
+	assert.match(end.output, /Nobody answered/);
 });
 
 test("Stop also stops the session's subagents", { skip }, async () => {

@@ -59,7 +59,7 @@ All messages are JSON.
 | JS→K | `credentials_changed` | Pi's credential store was written. Kotlin persists it encrypted. |
 | JS→K | `fetch` / `fetch_abort` | Native HTTP for Pi (no CORS). The reply streams back as `fetchHead`, `fetchChunk`, `fetchEnd` or `fetchError`. |
 | JS→K | `http_listen` / `http_close` / `http_response` | The `node:http` shim. Pi's OAuth callback server runs on a real loopback socket. |
-| JS→K | the host calls `before_tool`, `tool`, `tool_cancel`, with `session` | `bridgeCall(type, …)`, answered with `PiHost.reply(id, ok, value)`. `before_tool` {tool, args} runs before every tool call (Pi's `beforeToolCall`): it holds a paused session and runs the safety checks, answering null or `{ block, terminate, reason }`. `tool` {call, name, args} runs a tool (Kotlin's `ToolRouter`) and answers `{ text, isError?, image? }`. Tool arguments are nested under `args`. `tool_cancel` {call}: Stop during a call. |
+| JS→K | the host calls `before_tool`, `tool`, `tool_cancel`, with `session` | `bridgeCall(type, …)`, answered with `PiHost.reply(id, ok, value)`. `before_tool` {tool, args} runs before every tool call (Pi's `beforeToolCall`): it holds a paused session and runs the safety checks, answering null or `{ block, terminate, reason }`. `tool` {call, name, args} runs a tool (Kotlin's `ToolRouter`) and answers `{ text, isError?, image? }`. Tool arguments are nested under `args`. `tool_cancel` {call}: Stop during a call. DeepSeek Harness also calls `ask_user` and `ask_user_cancel` (see below). |
 | K→JS | `init` (with the user's `customProviders`), `status`, `login`, `answer`, `cancelLogin`, `logout`, `setCustomProviders` | App-wide commands |
 | K→JS | `lookupModels` (synchronous: its return value comes back through `evaluateJavascript`) | Pi's catalog entries for model ids (custom providers' context windows) |
 | K→JS | `configure` (optionally with saved `messages`), `prompt` and `steer` (optionally with attachment `content` blocks), `abort`, `dispose`, all with `session` | Session commands |
@@ -173,6 +173,13 @@ entry in the registry.
   session works is dsh's `steer`: it wakes the session's agent at once even when only its subagents work, as dsh's
   own chat does, so the user can talk to it without waiting for them. Only after the bridge said `idle` is it
   handed back as `steer_late` (a new message).
+- **dsh asks the user:** the bridge answers dsh's `user-questions/request` (the `ask_user_question` tool, which the
+  profile mounts since the headless template doesn't, plan mode's review of a plan, and dsh's approvals) with the
+  host call `ask_user` {session, ask, questions}. The app shows it above the session's message box (`QuestionCard`,
+  one question at a time; typed words answer it too), in its Telegram chat with a button per option, and as a
+  notification when the chat isn't open; the first answer counts. It answers `{ answers: [{id, selected, custom?}] }`,
+  or `{ reason }` when stopped or withdrawn, which fails the tool call. dsh withdraws a question whose turn ended
+  with `ask_user_cancel` {session, ask}.
 - **No sandbox on the phone:** dsh confines its bash and file tools with bubblewrap or Landlock, and neither works
   in proot on Android. So the phone launcher runs dsh in `danger-full-access` (a choice the user made): they run
   unconfined in Ubuntu, with Termux's home (and so `~/sessions`) as `/root`. That is the access the app's own Termux

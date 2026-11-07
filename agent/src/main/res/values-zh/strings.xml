@@ -73,4 +73,13 @@
     <string name="tg_file_unreadable">这里读不了 %1$s：我能读图片、PDF 和文本文件。（允许运行 Linux 命令时，所有文件都会放进 Termux。）</string>
     <string name="tg_file_not_fetched">没能从 Telegram 取到 %1$s：%2$s</string>
     <string name="confirm_typed">这次任务输入的内容</string>
+    <string name="notif_ask_title">%1$s 在问你</string>
+    <string name="channel_questions">提问</string>
+    <string name="tg_question">有个问题问你</string>
+    <string name="tg_question_or_type">点一个答案，或直接回复你的回答。</string>
+    <string name="tg_question_type">请直接回复你的回答。</string>
+    <string name="tg_question_next">下一个 ➡️</string>
+    <string name="tg_question_skip">跳过</string>
+    <string name="tg_question_skipped">（已跳过）</string>
+    <string name="tg_question_closed">已在手机上回答，或不再需要回答。</string>
 </resources>

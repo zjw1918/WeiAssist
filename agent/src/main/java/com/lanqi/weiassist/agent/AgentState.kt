@@ -211,6 +211,8 @@ data class SessionState(
     val thinkingSince: Long? = null,
     /** The run in progress, counted as it goes; it ends as a [ChatItem.Stats]. */
     val run: RunStats? = null,
+    /** Questions the agent waits for the user to answer, oldest first (not saved: they end with the run). */
+    val asks: List<Ask> = emptyList(),
 ) {
     val id get() = summary.id
     val status get() = summary.status

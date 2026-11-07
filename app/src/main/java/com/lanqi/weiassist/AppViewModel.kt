@@ -237,12 +237,37 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** A follow-up message in the open session (while it works, it steers the task). */
+    /**
+     * The answers given so far to the question the open session asks (its card above the message box), one question
+     * at a time; null until the user starts answering. Tied to its [Ask] by id: a new question starts a new draft.
+     */
+    var questionDraft by mutableStateOf<com.lanqi.weiassist.agent.AnswerDraft?>(null)
+        private set
+
+    /** The draft for [ask], as far as the user got with it. */
+    fun draftOf(ask: com.lanqi.weiassist.agent.Ask) = questionDraft?.takeIf { it.ask.id == ask.id } ?: com.lanqi.weiassist.agent.AnswerDraft(ask)
+
+    /** A step in answering session [id]'s question [ask]; once every question has its answer, they go to the agent. */
+    fun answer(id: String, ask: com.lanqi.weiassist.agent.Ask, step: (com.lanqi.weiassist.agent.AnswerDraft) -> com.lanqi.weiassist.agent.AnswerDraft) {
+        val next = step(draftOf(ask))
+        if (!next.done) { questionDraft = next; return }
+        questionDraft = null
+        controller.value?.sessions?.answer(id, ask.id, next.answers)
+    }
+
     fun sendReply() {
         val c = controller.value ?: return
         val id = openId.value ?: return
         val text = reply.trim()
         val files = replyAttachments.toList()
         if (text.isEmpty() && files.isEmpty()) return
+        // The agent waits for an answer: words typed now are the answer to its question (files go as a message).
+        val asking = c.sessions.live(id)?.asks?.firstOrNull()
+        if (asking != null && files.isEmpty()) {
+            answer(id, asking) { it.custom(text) }
+            reply = ""
+            return
+        }
         viewModelScope.launch {
             if (c.sessions.send(id, text, files)) {
                 reply = ""

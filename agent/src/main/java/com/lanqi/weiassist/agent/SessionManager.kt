@@ -69,6 +69,7 @@ class SessionManager(
     private val queue = ArrayDeque<String>()
     /** The session whose page the user has open ([view]). */
     private var viewing: String? = null
+    val viewingId: String? get() = viewing
     /** Sessions the user left while they worked: their apps close as soon as the task ends. */
     private val leftWhileBusy = HashSet<String>()
     /**
@@ -133,6 +134,9 @@ class SessionManager(
     }
 
     fun summary(id: String) = _summaries.value.firstOrNull { it.id == id }
+
+    /** Session [id] as it is now, if it is in memory (busy or on screen). */
+    fun live(id: String): SessionState? = live[id]?.value
 
     /** The supervisor session (created on first use). */
     fun supervisor(title: String): String = _summaries.value.firstOrNull { it.supervisor }?.id ?: create(phone = false, title = title, supervisor = true)
@@ -217,6 +221,47 @@ class SessionManager(
 
     /** Where session [id] keeps its files (attachments, and files the agent gave the user); deleted with it. */
     fun filesDir(id: String): java.io.File = store.attachmentsDir(id)
+
+    // ---- questions the agent asks the user -----------------------------------------------------------
+
+    /** Questions waiting for the user, by "<session>/<ask id>": their answers, or null when withdrawn. */
+    private val askWaits = HashMap<String, kotlinx.coroutines.CompletableDeferred<List<QuestionAnswer>?>>()
+
+    /** A question opened (true) or closed (false: answered or withdrawn) in a session: for its notification. */
+    data class Asked(val id: String, val ask: Ask, val open: Boolean)
+
+    private val _asked = kotlinx.coroutines.flow.MutableSharedFlow<Asked>(extraBufferCapacity = 16)
+    val asked: kotlinx.coroutines.flow.SharedFlow<Asked> = _asked
+
+    /**
+     * Session [id]'s agent asks the user [ask] (DeepSeek Harness's ask_user): shown in its chat until answered
+     * ([answer]), withdrawn by its core ([withdraw]), or the task is stopped. Returns the answers, or null.
+     */
+    suspend fun ask(id: String, ask: Ask): List<QuestionAnswer>? {
+        loadLive(id) ?: return null
+        if (live[id]?.value?.busy != true) return null
+        val key = "$id/${ask.id}"
+        val wait = kotlinx.coroutines.CompletableDeferred<List<QuestionAnswer>?>()
+        askWaits[key] = wait
+        update(id) { it.copy(asks = it.asks + ask) }
+        _asked.tryEmit(Asked(id, ask, open = true))
+        try {
+            return wait.await()
+        } finally {
+            askWaits.remove(key)
+            update(id) { s -> s.copy(asks = s.asks.filterNot { it.id == ask.id }) }
+            _asked.tryEmit(Asked(id, ask, open = false))
+        }
+    }
+
+    /** The user answered session [id]'s question [ask]. False when it is no longer asked (answered elsewhere, say). */
+    fun answer(id: String, ask: String, answers: List<QuestionAnswer>): Boolean = askWaits["$id/$ask"]?.complete(answers) == true
+
+    /** Session [id]'s core no longer waits for [ask] (its turn was stopped). */
+    fun withdraw(id: String, ask: String) { askWaits["$id/$ask"]?.complete(null) }
+
+    /** Every question session [id] asks is withdrawn (it was stopped, deleted, or its core went away). */
+    private fun withdrawAll(id: String) = askWaits.filterKeys { it.startsWith("$id/") }.values.forEach { it.complete(null) }
 
     /** Show a file the agent gave the user (send_file, already in [filesDir]) in session [id]'s chat. False: it is gone. */
     suspend fun addFile(id: String, file: Attachment, caption: String): Boolean {
@@ -303,6 +348,7 @@ class SessionManager(
         paused[id]?.value = false
         queue.remove(id)
         if (s.status != SessionStatus.Queued) coreOf(id)?.let { c -> scope.launch { c.abort(id) } }
+        withdrawAll(id)
         update(id) { SessionReducer.stopped(it, System.currentTimeMillis()) }
         endScreen(id) // kept a while if the user is on its page: they may correct the task and go on
     }
@@ -396,6 +442,7 @@ class SessionManager(
         prompted.removeAll(ours)
         val now = System.currentTimeMillis()
         live.keys.filter { it in ours }.forEach { id ->
+            withdrawAll(id)
             val wasBusy = live[id]!!.value.busy
             update(id) { SessionReducer.runtimeLost(it, strings.runtimeRestarted(), now) }
             if (wasBusy) finished(id)
@@ -433,6 +480,8 @@ class SessionManager(
 
     private fun finished(id: String) {
         prompted -= id
+        // The run is over: nothing waits for an answer any more.
+        withdrawAll(id)
         val onMain = screens.target(id) == com.lanqi.weiassist.phone.Target.Main // read before the screen is given up
         endScreen(id)
         _finished.tryEmit(Finished(id, onMain))

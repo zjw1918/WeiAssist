@@ -31,6 +31,12 @@
 - id: session-title-llm
   disabled: true
 
+# The headless template has no ask_user_question (only dsh's interactive profiles mount it): the app answers dsh's
+# questions (the bridge's ask_user), so the model may ask the user.
+- insert:
+    - id: tool-ask-user
+      name: '@deepseek-ai/dsh-tool-ask-user'
+
 - insert:
     - id: weiassist-bridge
       name: '@weiassist/dsh-bridge'

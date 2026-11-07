@@ -267,7 +267,7 @@ class DshEngine(
         const val ENV_PROXY_KEY = "WEIASSIST_KEY_PROXY"
         /** The dev mock server's route (the bridge sends a session with a baseUrl there). */
         const val MOCK_ROUTE = "mock"
-        private val HOST_CALLS = setOf("before_tool", "tool", "tool_cancel")
+        private val HOST_CALLS = setOf("before_tool", "tool", "tool_cancel", "ask_user", "ask_user_cancel")
         /** Where the bridge connects (dsh-host: 127.0.0.1). */
         val LOOPBACK: InetAddress = InetAddress.getByAddress(byteArrayOf(127, 0, 0, 1))
 

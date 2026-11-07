@@ -469,4 +469,15 @@
         <item quantity="one">%1$d line</item>
         <item quantity="other">%1$d lines</item>
     </plurals>
+    <string name="question_title">A question for you</string>
+    <string name="question_plan">A plan to review</string>
+    <string name="question_approval">May it go ahead?</string>
+    <string name="question_skip">Skip</string>
+    <string name="question_or_type">Or type your own answer below</string>
+    <string name="question_type_answer">Type your answer below</string>
+    <string name="question_next">Next</string>
+    <string name="question_send">Send</string>
+    <string name="question_hint">Your answer</string>
+    <string name="tool_ask_user">Ask you</string>
+    <string name="tool_exit_plan_mode">Present the plan</string>
 </resources>

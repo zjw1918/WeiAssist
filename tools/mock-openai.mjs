@@ -100,6 +100,11 @@ export const SCRIPTS = {
 	dsh_bash: [{ tool: "bash", args: { description: "Print a greeting", command: "echo hi from dsh" } }, { text: "ran it" }],
 	dsh_where: [{ tool: "bash", args: { description: "Show the working folder", command: "pwd; echo made by dsh > from-dsh.txt; ls" } }, { text: "looked around" }],
 	delegate: [{ tool: "subagent", args: { description: "Keep a todo list", prompt: "Write the todo list [[script:child_todo]]" } }, { text: "delegated" }],
+	// dsh asks the user (ask_user_question): the app answers it.
+	dsh_ask: [{ tool: "ask_user_question", args: { questions: [
+		{ id: "city", question: "Which city?", header: "City", options: [{ label: "Hangzhou (Recommended)", description: "Where you are" }, { label: "Beijing" }] },
+		{ id: "unit", question: "Which unit?", options: [{ label: "°C" }, { label: "°F" }], multi_select: true },
+	] } }, { text: "asked" }],
 	child_todo: [{ tool: "todo_write", args: { todos: [{ content: "Check the inbox", status: "pending" }] } }, { text: "listed" }],
 	// Three subagents that work for a while (to talk with the session meanwhile), each reporting back when done.
 	research: ["Rust", "Go", "Zig"].map((l, i) => ({ tool: "subagent", args: { description: `Research ${l}`, prompt: `Look into ${l} [[script:child_slow${i}]]` } }))
