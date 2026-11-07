@@ -35,6 +35,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: true # magpie/upstream: the AI gateway's source
       - uses: actions/setup-node@v7 # Gradle builds the Pi bundle with npm
         with:
           node-version-file: .nvmrc
@@ -44,6 +46,10 @@ jobs:
         with:
           distribution: temurin
           java-version: 25
+      - uses: actions/setup-go@v6 # Gradle builds the AI gateway (magpie) with Go
+        with:
+          go-version-file: magpie/upstream/go.mod
+          cache-dependency-path: magpie/upstream/go.sum
       - uses: gradle/actions/setup-gradle@v6
       - run: ./gradlew lint testDebugUnitTest assembleDebug --stacktrace
       - uses: actions/upload-artifact@v7

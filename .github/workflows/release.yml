@@ -25,6 +25,8 @@ jobs:
       EXPECTED_CERT: a4252ad1ebca49b6d011929fc951b0f4e6b0a59d400d831843bc516d7a8f6220
     steps:
       - uses: actions/checkout@v7
+        with:
+          submodules: true # magpie/upstream: the AI gateway's source
       - uses: actions/setup-node@v7 # Gradle builds the Pi bundle with npm
         with:
           node-version-file: .nvmrc
@@ -34,6 +36,10 @@ jobs:
         with:
           distribution: temurin
           java-version: 25
+      - uses: actions/setup-go@v6 # Gradle builds the AI gateway (magpie) with Go
+        with:
+          go-version-file: magpie/upstream/go.mod
+          cache-dependency-path: magpie/upstream/go.sum
       - uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: true # a release must not depend on, or write to, a tag's own cache
@@ -88,6 +94,26 @@ jobs:
           cp "${apk}" "WeiAssist-${{ steps.version.outputs.name }}.apk"
           sha256sum "WeiAssist-${{ steps.version.outputs.name }}.apk" > "WeiAssist-${{ steps.version.outputs.name }}.apk.sha256"
 
+      # The same app without the AI gateway (magpie, ~23 MB of the APK), for phones that don't serve one.
+      - name: Build the lite APK
+        run: >
+          ./gradlew assembleRelease --stacktrace -PmagpieAbis=none
+          -PversionName=${{ steps.version.outputs.name }}
+          -PversionCode=${{ steps.version.outputs.code }}
+
+      - name: Check the lite APK
+        run: |
+          set -o pipefail
+          apk=app/build/outputs/apk/release/app-release.apk
+          unzip -l "${apk}" > lite-files.txt
+          if grep -q libmagpie.so lite-files.txt; then echo "::error::the lite APK has the gateway in it"; exit 1; fi
+          bt="${ANDROID_HOME}/build-tools/$(ls "${ANDROID_HOME}/build-tools" | sort -V | tail -1)"
+          "${bt}/apksigner" verify --print-certs "${apk}" 2> /dev/null > apksigner-lite.txt
+          cert=$(grep -i -m1 'certificate SHA-256 digest' apksigner-lite.txt | awk '{print $NF}' | tr -d ':' | tr 'A-F' 'a-f')
+          [ "${cert}" = "${EXPECTED_CERT}" ] || { echo "::error::lite APK signed with ${cert:-nothing}, expected ${EXPECTED_CERT}"; exit 1; }
+          cp "${apk}" "WeiAssist-${{ steps.version.outputs.name }}-lite.apk"
+          sha256sum "WeiAssist-${{ steps.version.outputs.name }}-lite.apk" > "WeiAssist-${{ steps.version.outputs.name }}-lite.apk.sha256"
+
       - name: Keep the dry-run APK
         if: github.ref_type != 'tag'
         uses: actions/upload-artifact@v7
@@ -108,5 +134,7 @@ jobs:
           gh release create "${GITHUB_REF_NAME}"
           "WeiAssist-${{ steps.version.outputs.name }}.apk"
           "WeiAssist-${{ steps.version.outputs.name }}.apk.sha256"
+          "WeiAssist-${{ steps.version.outputs.name }}-lite.apk"
+          "WeiAssist-${{ steps.version.outputs.name }}-lite.apk.sha256"
           --title "WeiAssist ${{ steps.version.outputs.name }}"
           --generate-notes --verify-tag ${{ steps.version.outputs.prerelease }}
