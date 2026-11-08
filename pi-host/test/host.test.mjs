@@ -202,6 +202,41 @@ test("a custom model that thinks offers the efforts its server takes, and sends 
 	assert.equal(efforts["no-thinking"], false);
 });
 
+test("a custom model served natively in another format is asked in it, at that format's address", async () => {
+	const custom = { id: "custom-n", name: "N", baseUrl: mock.url, images: true, models: [
+		{ id: "codex/gpt-5.4-mini", api: "openai-responses", reasoning: true, efforts: ["low", "medium", "high"] },
+		{ id: "claude/claude-sonnet-4-5", api: "anthropic-messages", reasoning: true },
+		"plain",
+	] };
+	const host = await startHost({ customProviders: [custom], credentials: JSON.stringify({ "custom-n": { type: "api_key", key: "k" } }) });
+	await host.waitFor("status");
+
+	const before = mock.requests.length;
+	host.call("configure", { session: "n1", provider: "custom-n", modelId: "codex/gpt-5.4-mini", thinkingLevel: "high" });
+	const c1 = await host.waitFor("configured", (m) => m.session === "n1");
+	assert.equal(c1.api, "openai-responses");
+	host.call("prompt", { session: "n1", text: "hi" });
+	await host.waitFor("idle", (m) => m.session === "n1");
+	assert.equal(mock.requests[before].url, "/v1/responses");
+	assert.equal(JSON.parse(mock.requests[before].body).reasoning.effort, "high");
+
+	// Anthropic's format: its SDK adds /v1/messages, so the address loses /v1.
+	host.call("configure", { session: "n2", provider: "custom-n", modelId: "claude/claude-sonnet-4-5", thinkingLevel: "high" });
+	const c2 = await host.waitFor("configured", (m) => m.session === "n2");
+	assert.equal(c2.api, "anthropic-messages");
+	assert.equal(c2.baseUrl, mock.url.replace(/\/v1$/, ""));
+
+	// Another core gets one route per format; the first keeps the provider's id.
+	const routes = (await query(host, "coreRoutes")).filter((r) => r.id.startsWith("custom-n"));
+	const byId = Object.fromEntries(routes.map((r) => [r.id, r]));
+	assert.deepEqual(Object.keys(byId).sort(), ["custom-n", "custom-n--anthropic-messages", "custom-n--openai-completions"].sort());
+	assert.equal(byId["custom-n"].api, "openai-responses");
+	assert.equal(byId["custom-n--anthropic-messages"].baseUrl, mock.url.replace(/\/v1$/, ""));
+	assert.deepEqual(byId["custom-n--openai-completions"].models.map((m) => m.id), ["plain"]);
+	const auth = await query(host, "providerAuth", { provider: "custom-n--anthropic-messages" });
+	assert.equal(auth.baseUrl, mock.url.replace(/\/v1$/, ""));
+});
+
 // A 1×1 PNG.
 const PIXEL = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 

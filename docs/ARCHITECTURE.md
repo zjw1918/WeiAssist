@@ -426,4 +426,11 @@ back by itself (the other side has other models, accounts and bills, and a switc
   no key there. Pi has it as one provider (`weiassist-gateway`, never listed among WeiAssist's), with the models it
   lists (`AgentController.refreshGateway`, again each time the tab opens while it serves). It can be chosen only
   while it serves models; each side keeps its own provider and model for when the user switches back.
+- **Each model in its own format.** The gateway says which endpoints it serves a model on as it is
+  (`native_endpoints` in its model list). A model it serves natively on `/v1/messages` is asked in Anthropic's
+  format, on `/v1/responses` in OpenAI's Responses, else in Chat Completions (`CustomModel.api`), so its own
+  features come through untranslated: Claude's thinking and caching, GPT's reasoning items. Pi gives such a model
+  the settings its catalog has for it in that format, while the efforts the gateway lists stay its thinking
+  levels. A route speaks one format, so dsh gets the gateway as one route per format (`<id>--<api>`, each with its
+  own address), and a session goes on the one its model is on.
 

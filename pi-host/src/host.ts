@@ -27,6 +27,8 @@ import { moonshotaiProvider } from "@earendil-works/pi-ai/providers/moonshotai";
 import { moonshotaiCnProvider } from "@earendil-works/pi-ai/providers/moonshotai-cn";
 import { mistralProvider } from "@earendil-works/pi-ai/providers/mistral";
 import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
+import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
+import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
 import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
 import { opencodeGoProvider } from "@earendil-works/pi-ai/providers/opencode-go";
 // Pi's catalog of models OpenAI offers to ChatGPT accounts ("Codex with a ChatGPT account").
@@ -108,6 +110,11 @@ interface CustomModelConfig {
 	reasoning?: boolean;
 	/** The efforts the server accepts (magpie's reasoning_levels), when it says; absent = OpenAI's usual ones. */
 	efforts?: string[];
+	/**
+	 * The format to ask it in, when its server serves it natively in another than Chat Completions (magpie's
+	 * native_endpoints): its native features (Claude's thinking and caching, GPT's reasoning items) come through.
+	 */
+	api?: "openai-responses" | "anthropic-messages";
 }
 
 interface CustomProviderConfig {
@@ -142,19 +149,33 @@ function lookupModels(ids: string[]) {
 	const builtIn = models.getProviders().filter((p) => !customIds.has(p.id));
 	const ordered = [...builtIn.filter((p) => !AGGREGATORS.has(p.id)), ...builtIn.filter((p) => AGGREGATORS.has(p.id))];
 	const out: Record<string, { contextWindow: number; images: boolean; reasoning: boolean; match: string }> = {};
-	const find = (id: string, want: string) => {
-		for (const p of ordered) {
-			const m = models.getModels(p.id).find((x) => x.id === id) ?? models.getModels(p.id).find((x) => normalizeModelId(x.id) === want);
-			if (m) return { contextWindow: m.contextWindow, images: m.input.includes("image"), reasoning: !!m.reasoning, match: `${p.id}/${m.id}` };
-		}
-	};
 	for (const id of ids) {
-		const want = normalizeModelId(id);
-		// Relays often name a reasoning-effort variant with a suffix (gemini-3.8-flash-high): same model, same window.
-		const found = find(id, want) ?? find(id, want.replace(EFFORT_SUFFIX, ""));
-		if (found) out[id] = found;
+		const m = catalogModel(id);
+		if (m) out[id] = { contextWindow: m.contextWindow, images: m.input.includes("image"), reasoning: !!m.reasoning, match: `${m.provider}/${m.id}` };
 	}
 	return out;
+}
+
+/**
+ * Pi's catalog entry for a model id as a relay names it, [api]'s first when given (a vendor's own entry before an
+ * aggregator's); undefined when the catalog doesn't know it.
+ */
+function catalogModel(id: string, api?: string): Model<any> | undefined {
+	const builtIn = models.getProviders().filter((p) => !customIds.has(p.id));
+	const ordered = [...builtIn.filter((p) => !AGGREGATORS.has(p.id)), ...builtIn.filter((p) => AGGREGATORS.has(p.id))];
+	const find = (want: string, sameApi: boolean) => {
+		for (const p of ordered) {
+			const ms = models.getModels(p.id).filter((x) => !sameApi || x.api === api);
+			const m = ms.find((x) => x.id === id) ?? ms.find((x) => normalizeModelId(x.id) === want);
+			if (m) return m;
+		}
+	};
+	const want = normalizeModelId(id);
+	// Relays often name a reasoning-effort variant with a suffix (gemini-3.8-flash-high): same model, same window.
+	for (const w of [want, want.replace(EFFORT_SUFFIX, "")]) {
+		const m = (api ? find(w, true) : undefined) ?? find(w, false);
+		if (m) return m;
+	}
 }
 
 const customIds = new Set<string>();
@@ -172,6 +193,11 @@ function thinkingLevels(efforts?: string[]) {
 	return map;
 }
 
+/** Where a server takes [api] requests: Anthropic's SDK adds /v1/messages itself, so its base has no /v1. */
+export function apiBaseUrl(baseUrl: string, api: string) {
+	return api === "anthropic-messages" ? baseUrl.replace(/\/v1\/?$/, "") : baseUrl;
+}
+
 function customProvider(c: CustomProviderConfig) {
 	return createProvider({
 		id: c.id,
@@ -180,23 +206,30 @@ function customProvider(c: CustomProviderConfig) {
 		auth: { apiKey: envApiKeyAuth(`${c.name} API key`, []) },
 		models: c.models.map((x) => {
 			const m: CustomModelConfig = typeof x === "string" ? { id: x } : x;
+			const api = m.api ?? "openai-completions";
+			// Asked natively: the model as Pi's catalog knows it in that format (its quirks, its output limit, its
+			// thinking levels when the server names none), when it does; the server's figures win where it gives them.
+			const known = m.api ? catalogModel(m.id, api) : undefined;
+			const same = known?.api === api ? known : undefined;
 			return {
 			id: m.id,
 			name: m.id,
-			api: "openai-completions" as const,
+			api,
 			provider: c.id,
-			baseUrl: c.baseUrl,
-			reasoning: !!m.reasoning,
-			thinkingLevelMap: thinkingLevels(m.efforts),
+			baseUrl: apiBaseUrl(c.baseUrl, api),
+			reasoning: !!m.reasoning || !!same?.reasoning,
+			// The efforts the server names win (it knows what its route takes); else the catalog's levels.
+			thinkingLevelMap: m.efforts?.length ? thinkingLevels(m.efforts) : same?.thinkingLevelMap,
 			input: (m.images ?? c.images) ? (["text", "image"] as const) : (["text"] as const),
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-			contextWindow: m.contextWindow || DEFAULT_CONTEXT,
-			maxTokens: 16_384,
-			// Many OpenAI-compatible servers reject OpenAI's newer "developer" role and "store" field.
-			compat: { supportsStore: false, supportsDeveloperRole: false },
+			contextWindow: m.contextWindow || same?.contextWindow || DEFAULT_CONTEXT,
+			maxTokens: same?.maxTokens ?? 16_384,
+			// Chat Completions: many OpenAI-compatible servers reject OpenAI's newer "developer" role and "store" field.
+			compat: same ? same.compat : api === "openai-completions" ? { supportsStore: false, supportsDeveloperRole: false } : undefined,
 			};
 		}),
-		api: openAICompletionsApi(),
+		// Each model in its own format.
+		api: { "openai-completions": openAICompletionsApi(), "openai-responses": openAIResponsesApi(), "anthropic-messages": anthropicMessagesApi() },
 	});
 }
 
@@ -574,18 +607,23 @@ async function coreRoutes() {
 			.filter((m) => !(p.id === "openai" && credential === "oauth") || SUBSCRIPTION_IDS.has(m.id));
 		if (ms.length === 0) continue;
 		const custom = customIds.has(p.id);
-		routes.push({
-			id: p.id,
+		// One route per format (another core's route speaks one): the first keeps the provider's id, the others are
+		// "<id>--<api>" (see routeOf).
+		const apis = [...new Set(ms.map((m: any) => m.api))];
+		for (const api of apis) routes.push({
+			id: api === apis[0] ? p.id : `${p.id}--${api}`,
 			name: p.name,
-			api: ms[0].api,
-			models: ms.map((m: any) => ({
+			api,
+			baseUrl: ms.find((m: any) => m.api === api)?.baseUrl ?? null,
+			models: ms.filter((m: any) => m.api === api).map((m: any) => ({
 				id: m.id,
 				name: m.name,
 				contextWindow: m.contextWindow,
 				maxTokens: m.maxTokens,
 				input: [...m.input],
-				// A custom server's quirks (no "developer" role…); a catalog model's are known to the other core too.
-				...(custom && m.compat ? { compat: m.compat } : {}),
+				// A custom server's Chat Completions quirks (no "developer" role…); a catalog model's are known to the other
+				// core too, and its other formats' compat is Pi's own vocabulary, which the other core may not take.
+				...(custom && m.compat && api === "openai-completions" ? { compat: m.compat } : {}),
 				// And whether it thinks, with each level's spelling: the other core has no catalog entry to know it from.
 				...(custom ? { reasoningEfforts: reasoningEfforts(m) } : {}),
 			})),
@@ -608,16 +646,21 @@ function reasoningEfforts(m: any): false | Record<string, string | null> {
 	return out;
 }
 
-/** A provider's current auth for a request: its key (a sign-in's token, refreshed if due), headers and endpoint. */
-async function providerAuth(id: string) {
+/**
+ * A route's current auth for a request: its provider's key (a sign-in's token, refreshed if due), headers and the
+ * endpoint of the route's format ("<provider>--<api>": see coreRoutes).
+ */
+async function providerAuth(route: string) {
+	const [id, api] = route.split("--");
 	const p: any = models.getProvider(id);
 	if (!p) return null;
 	const r = await models.getAuth(id);
 	if (!r) return null;
+	const ms = models.getModels(id);
 	return {
 		apiKey: r.auth.apiKey ?? null,
 		headers: r.auth.headers ?? {},
-		baseUrl: r.auth.baseUrl ?? p.baseUrl ?? models.getModels(id)[0]?.baseUrl ?? null,
+		baseUrl: (api ? ms.find((m) => m.api === api)?.baseUrl : undefined) ?? r.auth.baseUrl ?? p.baseUrl ?? ms[0]?.baseUrl ?? null,
 	};
 }
 

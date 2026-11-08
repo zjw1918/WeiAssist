@@ -618,7 +618,7 @@ class AgentController(context: Context) {
 
     /**
      * dsh's model routes, from the source in use. WeiAssist: its providers, through the key proxy. Gateway: the gateway
-     * alone, reached directly ("direct": dsh calls it itself, with the loopback key; no key of WeiAssist's is involved).
+     * alone (a route per format it serves models natively in), reached directly ("direct": dsh calls it itself, with the loopback key; no key of WeiAssist's is involved).
      */
     private suspend fun dshRoutes(): org.json.JSONArray {
         val gateway = _state.value.source == ProviderSource.Gateway
@@ -626,8 +626,9 @@ class AgentController(context: Context) {
         return org.json.JSONArray().apply {
             for (i in 0 until all.length()) {
                 val r = all.getJSONObject(i)
-                val isGateway = r.optString("id") == GatewayLink.PROVIDER_ID
-                if (isGateway == gateway) put(if (isGateway) r.put("direct", GatewayLink.BASE_URL) else r)
+                // The gateway may come as one route per format ("<id>--<api>"), each with its own address.
+                val isGateway = r.optString("id").substringBefore("--") == GatewayLink.PROVIDER_ID
+                if (isGateway == gateway) put(if (isGateway) r.put("direct", r.optString("baseUrl").ifEmpty { GatewayLink.BASE_URL }) else r)
             }
         }
     }

@@ -12,11 +12,12 @@ private fun strings(a: JSONArray) = (0 until a.length()).mapNotNull { a.optStrin
 
 /**
  * A model as a server's /models lists it: 0 / null where the server doesn't say. [efforts]: the reasoning efforts
- * it takes, when the server names them (magpie's reasoning_levels).
+ * it takes, when the server names them (magpie's reasoning_levels). [native]: the endpoints it is served on as it is,
+ * best first (magpie's native_endpoints: /v1/messages, /v1/responses, /v1/chat/completions).
  */
 data class ServerModel(
     val id: String, val contextWindow: Int = 0, val images: Boolean? = null,
-    val reasoning: Boolean? = null, val efforts: List<String>? = null,
+    val reasoning: Boolean? = null, val efforts: List<String>? = null, val native: List<String>? = null,
 )
 
 /** Pi's catalog entry for a model id ([match] = "<provider>/<model>"). */
@@ -27,26 +28,33 @@ data class CatalogModel(val contextWindow: Int, val images: Boolean, val match: 
  * the values came from: [SOURCE_SERVER] (the server's model list), "pi:<provider>/<model>" (Pi's catalog),
  * [SOURCE_USER] (typed in the form), or null (nothing known: defaults). [reasoning]: it thinks, so it takes a
  * reasoning effort (the thinking levels); [efforts]: the efforts the server takes, null = OpenAI's usual ones.
+ * [api]: the format to ask it in, when the server serves it natively in one other than Chat Completions
+ * ([API_RESPONSES], [API_ANTHROPIC]); null = Chat Completions.
  */
 data class CustomModel(
     val id: String, val contextWindow: Int = 0, val images: Boolean = true, val source: String? = null,
-    val reasoning: Boolean = false, val efforts: List<String>? = null,
+    val reasoning: Boolean = false, val efforts: List<String>? = null, val api: String? = null,
 ) {
     fun toJson(): JSONObject = JSONObject().put("id", id).put("images", images).apply {
         if (contextWindow > 0) put("contextWindow", contextWindow)
         if (source != null) put("source", source)
         if (reasoning) put("reasoning", true)
         if (efforts != null) put("efforts", JSONArray(efforts))
+        if (api != null) put("api", api)
     }
 
     companion object {
         const val SOURCE_SERVER = "server"
         const val SOURCE_USER = "user"
         const val DEFAULT_CONTEXT = 128_000
+        /** Pi's names for the formats a model may be asked in besides Chat Completions. */
+        const val API_RESPONSES = "openai-responses"
+        const val API_ANTHROPIC = "anthropic-messages"
 
         fun fromJson(o: JSONObject, imagesDefault: Boolean) = CustomModel(
             o.getString("id"), o.optInt("contextWindow"), o.optBoolean("images", imagesDefault),
             o.optString("source").ifEmpty { null }, o.optBoolean("reasoning"), o.optJSONArray("efforts")?.let(::strings),
+            o.optString("api").ifEmpty { null },
         )
     }
 }
@@ -148,6 +156,7 @@ data class CustomProvider(
                 ?: o.optJSONObject("modalities")?.optJSONArray("input")
             val images = modalities?.let { m -> (0 until m.length()).any { m.optString(it) == "image" } }
             val efforts = o.optJSONArray("reasoning_levels")?.let(::strings)?.ifEmpty { null }
+            val native = o.optJSONArray("native_endpoints")?.let(::strings)?.ifEmpty { null }
             val params = o.optJSONArray("supported_parameters")?.let(::strings)
             val reasoning = when {
                 o.opt("reasoning") is Boolean -> o.getBoolean("reasoning")
@@ -155,7 +164,20 @@ data class CustomProvider(
                 params != null -> "reasoning" in params || "reasoning_effort" in params
                 else -> null
             }
-            return ServerModel(id, ctx, images, reasoning, efforts)
+            return ServerModel(id, ctx, images, reasoning, efforts, native)
+        }
+
+        /**
+         * The format to ask a model in, from the endpoints its server serves it on as it is (best first): the first
+         * one Pi speaks. Chat Completions, or none listed (translated anyway), is null: the default.
+         */
+        fun nativeApi(endpoints: List<String>?): String? {
+            for (e in endpoints.orEmpty()) when (e.trimEnd('/')) {
+                "/v1/messages" -> return CustomModel.API_ANTHROPIC
+                "/v1/responses" -> return CustomModel.API_RESPONSES
+                "/v1/chat/completions" -> return null
+            }
+            return null
         }
 
         /**
@@ -171,7 +193,7 @@ data class CustomProvider(
                 catalog != null -> "pi:${catalog.match}"
                 else -> null
             }
-            return CustomModel(server.id, ctx, images, source, reasoning, server.efforts.takeIf { reasoning })
+            return CustomModel(server.id, ctx, images, source, reasoning, server.efforts.takeIf { reasoning }, nativeApi(server.native))
         }
     }
 }
