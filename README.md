@@ -33,6 +33,11 @@ servers of ours in between: the app talks to your provider directly, and your ke
 Download the APK from [Releases](https://github.com/zjw1918/WeiAssist/releases/latest) and open it. Allow
 installs from your browser or file manager when Android asks.
 
+Optional: **WeiAssist Gateway** (`WeiAssist-Gateway-<version>.apk`, same release) makes the phone an AI gateway
+for its own apps and the devices on its network: your providers, subscriptions and routing behind one
+OpenAI-, Anthropic- and Gemini-compatible API. It runs [magpie](https://github.com/yetone/magpie). Skip it if you
+only want the assistant.
+
 ## Quick start
 
 1. Open WeiAssist and connect an AI provider: sign in with ChatGPT, SuperGrok or X Premium, or paste an API key.
@@ -118,7 +123,8 @@ More in [SECURITY.md](SECURITY.md).
 Requirements: Android SDK (platform 37), Node per [`.nvmrc`](.nvmrc) with npm, and a JDK.
 
 ```bash
-./gradlew assembleDebug          # bundles Pi (pi-host/) and the DeepSeek Harness bridge (dsh-host/)
+git submodule update --init      # magpie/upstream: the gateway app's source (needs Go to build)
+./gradlew assembleDebug          # bundles Pi (pi-host/) and the DeepSeek Harness bridge (dsh-host/); builds both apps
 ./gradlew testDebugUnitTest lint
 cd pi-host && npm test           # the bundled agent, end to end
 cd dsh-host && npm test          # the dsh bridge; set DSH_RUN and DSH_HOME to run it against a real dsh
@@ -132,7 +138,8 @@ Releases are built and signed by the Release workflow when a version tag is push
 
 [Apache License 2.0](LICENSE). Bundled third-party software is listed in [NOTICE](NOTICE).
 
-Thanks to [Pi](https://github.com/earendil-works/pi) (MIT, Mario Zechner),
+Thanks to [Pi](https://github.com/earendil-works/pi) (MIT, Mario Zechner), [magpie](https://github.com/yetone/magpie)
+(MIT, yetone; in WeiAssist Gateway),
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (MIT, DeepSeek; installed in Termux on request,
 not bundled) and [Termux](https://termux.dev). Product names and logos are trademarks of their owners; WeiAssist is
 not affiliated with any AI provider.

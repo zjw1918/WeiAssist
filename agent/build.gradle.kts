@@ -23,7 +23,6 @@ dependencies {
     api(project(":phone"))
     api(project(":shell"))
     api(project(":channels"))
-    api(project(":magpie"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.process)
     testImplementation(libs.junit)

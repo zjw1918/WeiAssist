@@ -55,7 +55,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: weiassist-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            app/build/outputs/apk/debug/app-debug.apk
+            gateway/build/outputs/apk/debug/gateway-debug.apk
           retention-days: 14
       - uses: actions/upload-artifact@v7
         if: always()

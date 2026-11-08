@@ -39,7 +39,6 @@ class AgentService : Service() {
     }
 
     private lateinit var controller: AgentController
-    private val magpie by lazy { com.lanqi.weiassist.magpie.MagpieHost.get(this) }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var foreground = false
     /** Whether any screen is bound. With none (or the app not visible), a finished task is reported in a notification. */
@@ -52,10 +51,8 @@ class AgentService : Service() {
         createChannel()
         // The shell helper (for virtual displays): start it if it was set up and isn't running (e.g. after a reboot).
         com.lanqi.weiassist.shell.ShellBackend.get(this).autoStart()
-        // The AI gateway, if the user left it on.
-        magpie.autoStart()
         scope.launch {
-            kotlinx.coroutines.flow.combine(controller.state, controller.sessions.summaries, controller.gateway.state, magpie.state, ::work)
+            kotlinx.coroutines.flow.combine(controller.state, controller.sessions.summaries, controller.gateway.state, ::work)
                 .distinctUntilChanged()
                 .collect(::onWork)
         }
@@ -99,21 +96,17 @@ class AgentService : Service() {
         if (allowed && nm.areNotificationsEnabled()) nm.notify(a.id, NOTIFICATION_ASK, n)
     }
 
-    private fun work(s: AgentState, list: List<SessionSummary>, g: Gateway.State, m: com.lanqi.weiassist.magpie.MagpieHost.State): Work {
+    private fun work(s: AgentState, list: List<SessionSummary>, g: Gateway.State): Work {
         val active = list.filter { it.status.active }
-        val serving = m != com.lanqi.weiassist.magpie.MagpieHost.State.Off && m != com.lanqi.weiassist.magpie.MagpieHost.State.Unavailable
-        return Work(active.size, s.signingInWithBrowser, active.singleOrNull()?.title, g.bot.takeIf { g.listening }, serving)
+        return Work(active.size, s.signingInWithBrowser, active.singleOrNull()?.title, g.bot.takeIf { g.listening })
     }
 
     /**
      * [running] = sessions with work (running, queued or paused); [task] names it when there is one.
      * [listening]: the Telegram bot (its @username) that messages may come to at any time.
-     * [serving]: the AI gateway is on, for this phone's apps and the devices on its network.
      */
-    private data class Work(
-        val running: Int, val signingIn: Boolean, val task: String?, val listening: String? = null, val serving: Boolean = false,
-    ) {
-        val active get() = running > 0 || signingIn || listening != null || serving
+    private data class Work(val running: Int, val signingIn: Boolean, val task: String?, val listening: String? = null) {
+        val active get() = running > 0 || signingIn || listening != null
     }
 
     private fun onWork(w: Work) {
@@ -133,7 +126,7 @@ class AgentService : Service() {
         when (intent?.action) {
             ACTION_STOP -> controller.stopAll()
             else -> {
-                val w = work(controller.state.value, controller.sessions.summaries.value, controller.gateway.state.value, magpie.state.value)
+                val w = work(controller.state.value, controller.sessions.summaries.value, controller.gateway.state.value)
                 // startForegroundService() promises startForeground(); keep it even if the work just ended.
                 goForeground(w)
                 if (!w.active) onWork(w)
@@ -192,10 +185,8 @@ class AgentService : Service() {
                 .addAction(android.R.drawable.ic_menu_close_clear_cancel, getString(if (w.running == 1) R.string.notif_stop else R.string.notif_stop_all), stop)
         } else if (w.signingIn) {
             b.setContentText(getString(R.string.notif_signin))
-        } else if (w.listening != null) {
-            b.setContentText(getString(R.string.notif_listening, w.listening))
         } else {
-            b.setContentText(getString(R.string.notif_gateway))
+            b.setContentText(getString(R.string.notif_listening, w.listening.orEmpty()))
         }
         return b.build()
     }

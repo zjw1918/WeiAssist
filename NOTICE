@@ -24,5 +24,13 @@ The shell backend (module :shell) bundles native code:
 Its adb pairing and connection protocol follows the Android Open Source Project's
 adb (packages/modules/adb), Apache License 2.0.
 
+WeiAssist Gateway (module :gateway), a separate optional app, bundles magpie as
+a program (lib/arm64-v8a/libmagpie.so), built from the pinned source in
+magpie/upstream:
+
+- magpie — https://github.com/yetone/magpie — MIT License, Copyright (c) 2026
+  yetone. Its license and the notices of the software it compiles in ship in
+  that app as assets/magpie/LICENSE and assets/magpie/THIRD_PARTY_NOTICES.
+
 Android libraries (AndroidX, Jetpack Compose, Kotlin) are used under the
 Apache License 2.0.

@@ -6,7 +6,8 @@ plugins {
 
 // The AI gateway: magpie (upstream/, a git submodule pinned to one commit) built for Android as a program and
 // shipped as lib/<abi>/libmagpie.so, so it is extracted to nativeLibraryDir, where an app may run programs
-// (see MagpieHost). It serves every device on the network an OpenAI/Anthropic/Gemini-compatible API.
+// (see MagpieHost). It serves every device on the network an OpenAI/Anthropic/Gemini-compatible API. Only the
+// WeiAssist Gateway app (:gateway) uses this module; WeiAssist itself doesn't carry it.
 android {
     namespace = "com.lanqi.weiassist.magpie"
     compileSdk {
@@ -102,7 +103,7 @@ val buildMagpie = tasks.register<BuildMagpie>("buildMagpie") {
     })
     ndkDir.set(androidComponents.sdkComponents.ndkDirectory)
     // -PmagpieAbis=arm64-v8a,x86_64 adds the emulator's. One ABI is ~58 MB, so only phones' by default.
-    // -PmagpieAbis=none: a build without the gateway (the release's -lite APK); Settings then says it isn't in it.
+    // -PmagpieAbis=none: build without the program (quicker local builds); the gateway app then says it isn't in it.
     abis.set((providers.gradleProperty("magpieAbis").orNull ?: "arm64-v8a").split(',').map { it.trim() }
         .filter { it.isNotEmpty() && it != "none" })
     version.set(providers.exec { workingDir = upstream.asFile; commandLine("git", "rev-parse", "--short", "HEAD"); isIgnoreExitValue = true }
@@ -110,8 +111,33 @@ val buildMagpie = tasks.register<BuildMagpie>("buildMagpie") {
     outputDir.set(layout.buildDirectory.dir("generated/magpie/jniLibs"))
 }
 
+// magpie's MIT license, and the notices of what it compiles in, ship with the app as assets/magpie/ (MIT asks
+// that its notice go with every copy).
+abstract class MagpieNotices : DefaultTask() {
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val files: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun copy() {
+        val out = outputDir.get().asFile.resolve("magpie").also { it.deleteRecursively(); it.mkdirs() }
+        files.forEach { it.copyTo(out.resolve(it.name)) }
+    }
+}
+
+val magpieNotices = tasks.register<MagpieNotices>("magpieNotices") {
+    files.from(upstream.file("LICENSE"), upstream.file("THIRD_PARTY_NOTICES"))
+    outputDir.set(layout.buildDirectory.dir("generated/magpie/assets"))
+}
+
 androidComponents {
-    onVariants { variant -> variant.sources.jniLibs?.addGeneratedSourceDirectory(buildMagpie, BuildMagpie::outputDir) }
+    onVariants { variant ->
+        variant.sources.jniLibs?.addGeneratedSourceDirectory(buildMagpie, BuildMagpie::outputDir)
+        variant.sources.assets?.addGeneratedSourceDirectory(magpieNotices, MagpieNotices::outputDir)
+    }
 }
 
 dependencies {

@@ -26,6 +26,8 @@
 
 从 [Releases](https://github.com/zjw1918/WeiAssist/releases/latest) 下载 APK 并打开。Android 询问时，允许浏览器或文件管理器安装应用。
 
+可选：**WeiAssist 网关**（同一版本中的 `WeiAssist-Gateway-<版本>.apk`）让手机成为 AI 网关，服务本机应用和局域网设备：你的服务商、订阅和路由，统一成一个兼容 OpenAI、Anthropic 和 Gemini 的 API。它运行 [magpie](https://github.com/yetone/magpie)。只用助手的话不必安装。
+
 ## 快速开始
 
 1. 打开小维助手，连接一个 AI 服务：用 ChatGPT、SuperGrok 或 X Premium 账号登录，或粘贴 API 密钥。
@@ -99,7 +101,8 @@
 需要：Android SDK（platform 37）、[`.nvmrc`](.nvmrc) 指定版本的 Node 和 npm，以及 JDK。
 
 ```bash
-./gradlew assembleDebug          # 同时打包 Pi（pi-host/）和 DeepSeek Harness 桥接（dsh-host/）
+git submodule update --init      # magpie/upstream：网关应用的源码（构建需要 Go）
+./gradlew assembleDebug          # 同时打包 Pi（pi-host/）和 DeepSeek Harness 桥接（dsh-host/）；构建两个应用
 ./gradlew testDebugUnitTest lint
 cd pi-host && npm test           # 内置智能体的端到端测试
 cd dsh-host && npm test          # dsh 桥接测试；设置 DSH_RUN 和 DSH_HOME 后针对真实的 dsh 运行
@@ -113,4 +116,4 @@ cd dsh-host && npm test          # dsh 桥接测试；设置 DSH_RUN 和 DSH_HOM
 
 [Apache License 2.0](LICENSE)。附带的第三方软件见 [NOTICE](NOTICE)。
 
-感谢 [Pi](https://github.com/earendil-works/pi)（MIT，Mario Zechner）、[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（MIT，DeepSeek；按需安装到 Termux，不随应用附带）和 [Termux](https://termux.dev)。产品名称和标志归其各自所有者；小维助手与任何 AI 服务商均无关联。
+感谢 [Pi](https://github.com/earendil-works/pi)（MIT，Mario Zechner）、[magpie](https://github.com/yetone/magpie)（MIT，yetone；用于 WeiAssist 网关）、[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（MIT，DeepSeek；按需安装到 Termux，不随应用附带）和 [Termux](https://termux.dev)。产品名称和标志归其各自所有者；小维助手与任何 AI 服务商均无关联。

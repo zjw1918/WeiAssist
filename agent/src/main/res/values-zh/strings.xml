@@ -32,7 +32,6 @@
 
     <!-- Telegram（Gateway.kt） -->
     <string name="notif_listening">正在接收 Telegram 消息（@%1$s）</string>
-    <string name="notif_gateway">AI 网关已开启：为本机和局域网提供服务</string>
     <string name="tg_token_malformed">这不像机器人令牌。它的样子是 123456789:AA…（从 @BotFather 复制）。</string>
     <string name="tg_token_rejected">Telegram 拒绝了这个机器人令牌，可能已被撤销：请在 @BotFather 获取新的。</string>
     <string name="tg_unreachable">连不上 Telegram：%1$s</string>

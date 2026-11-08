@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Launcher icon foreground: a cute blue tuna blowing bubbles.
+     Inside the 66dp safe zone (radius 33 around 54,54). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <group android:translateY="4">
+        <!-- Tail and dorsal fin, stroked in their own colour to round the tips. -->
+        <path android:pathData="M70,54L83,41Q78.5,54 83,67Z" android:fillColor="#FF2F6FE0"
+            android:strokeColor="#FF2F6FE0" android:strokeWidth="4" android:strokeLineJoin="round" />
+        <path android:pathData="M45,40Q52,28 62,41Z" android:fillColor="#FF2F6FE0"
+            android:strokeColor="#FF2F6FE0" android:strokeWidth="3" android:strokeLineJoin="round" />
+        <path android:pathData="M27,55C27,44 39,38 51,38C62,38 68,46 73,54C68,62 62,70 51,70C39,70 27,66 27,55Z" android:fillColor="#FF3D86F5" />
+        <!-- Pale belly. -->
+        <path android:pathData="M29,60C35,67 43,70 51,70C61,70 67,63 71,57C60,62 43,64 29,60Z" android:fillColor="#FFCDE8FF" />
+        <!-- Side fin. -->
+        <path android:pathData="M50,55Q57,57 57,63Q51,62 50,55Z" android:fillColor="#FF2F6FE0" />
+        <!-- Eye with highlight, smile, blush. -->
+        <path android:pathData="M42,51A4,4 0,1 1,34 51A4,4 0,1 1,42 51Z" android:fillColor="#FF14295C" />
+        <path android:pathData="M40.7,49.6A1.4,1.4 0,1 1,37.9 49.6A1.4,1.4 0,1 1,40.7 49.6Z" android:fillColor="#FFFFFFFF" />
+        <path android:pathData="M30,59Q32.5,61 35,59" android:strokeColor="#FF14295C"
+            android:strokeWidth="1.6" android:strokeLineCap="round" />
+        <path android:pathData="M45.6,58A2.6,2.6 0,1 1,40.4 58A2.6,2.6 0,1 1,45.6 58Z" android:fillColor="#CCFF9EB5" />
+        <!-- Bubbles. -->
+        <path android:pathData="M32.6,38A2.6,2.6 0,1 1,27.4 38A2.6,2.6 0,1 1,32.6 38Z"
+            android:strokeColor="#FFFFFFFF" android:strokeWidth="1.6" />
+        <path android:pathData="M36.8,31A1.8,1.8 0,1 1,33.2 31A1.8,1.8 0,1 1,36.8 31Z"
+            android:strokeColor="#FFFFFFFF" android:strokeWidth="1.4" />
+    </group>
+</vector>

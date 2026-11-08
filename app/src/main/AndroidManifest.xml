@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- WeiAssist Gateway, the optional AI gateway app: Settings says whether it is installed (GatewayCard). -->
+    <queries>
+        <package android:name="com.lanqi.weiassist.gateway" />
+    </queries>
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"

@@ -63,11 +63,6 @@ android {
         compose = true
         buildConfig = true
     }
-    // Native libs are extracted at install (to nativeLibraryDir), not run from inside the APK: the AI gateway
-    // (libmagpie.so) is a program, and Android runs an app's programs only from there.
-    packaging {
-        jniLibs { useLegacyPackaging = true }
-    }
 }
 
 composeCompiler {
