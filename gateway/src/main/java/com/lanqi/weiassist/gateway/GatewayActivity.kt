@@ -16,6 +16,8 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.lanqi.weiassist.magpie.MagpieHost
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -45,20 +47,26 @@ class GatewayActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad, pad, pad)
         }
+        // Android 15+ draws the app under the status and navigation bars: keep the content (the switch first) clear of them.
+        ViewCompat.setOnApplyWindowInsetsListener(column) { v, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            v.setPadding(pad + bars.left, pad + bars.top, pad + bars.right, pad + bars.bottom)
+            insets
+        }
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, 0, 0, dp(8))
         }
-        status = text("", 18f)
+        status = text("", 24f)
         row.addView(status, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
         toggle = Switch(this).apply {
             setOnClickListener { if (isChecked) turnOn() else GatewayService.stop(this@GatewayActivity) }
         }
         row.addView(toggle)
         column.addView(row)
-        column.addView(text(getString(R.string.why), 15f, muted = true))
-        addresses = text("", 14f).apply {
+        column.addView(text(getString(R.string.why), 18f, muted = true))
+        addresses = text("", 16f).apply {
             typeface = Typeface.MONOSPACE
             setTextIsSelectable(true)
             setPadding(0, dp(16), 0, dp(8))
@@ -66,6 +74,7 @@ class GatewayActivity : Activity() {
         column.addView(addresses)
         console = Button(this).apply {
             text = getString(R.string.open_console)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
             setOnClickListener {
                 runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(host.consoleUrl))) }
             }
@@ -73,9 +82,10 @@ class GatewayActivity : Activity() {
         column.addView(console, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
         // Many phones (realme, OPPO, Xiaomi, vivo…) don't let an app start by itself after a restart or an update
         // until the user allows it (on the realme, OplusAppStartupManager refused MY_PACKAGE_REPLACED's start).
-        column.addView(text(getString(R.string.autostart_hint), 14f, muted = true).apply { setPadding(0, dp(24), 0, dp(4)) })
+        column.addView(text(getString(R.string.autostart_hint), 17f, muted = true).apply { setPadding(0, dp(24), 0, dp(4)) })
         column.addView(Button(this).apply {
             text = getString(R.string.autostart_settings)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
             setOnClickListener {
                 runCatching {
                     startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
@@ -127,7 +137,10 @@ class GatewayActivity : Activity() {
     private fun text(s: String, sp: Float, muted: Boolean = false) = TextView(this).apply {
         text = s
         setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
-        if (muted) alpha = 0.7f
+        // A plain TextView takes the theme's grey default; these are the theme's real text colours, light and dark.
+        val colors = theme.obtainStyledAttributes(intArrayOf(if (muted) android.R.attr.textColorSecondary else android.R.attr.textColorPrimary))
+        setTextColor(colors.getColorStateList(0))
+        colors.recycle()
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
