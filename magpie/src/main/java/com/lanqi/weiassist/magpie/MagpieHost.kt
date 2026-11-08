@@ -147,10 +147,11 @@ class MagpieHost private constructor(context: Context) {
         e["TMPDIR"] = tmp.path // Go's default on Android is /data/local/tmp, which an app can't write
         e["MAGPIE_ADDR"] = "0.0.0.0:$GATEWAY_PORT"
         e["MAGPIE_WEB_KEY"] = webKey
-        // Not a desktop: nothing to put on a PATH or a menu, no other agents' sign-ins to read.
+        // Not a desktop: nothing to put on a PATH or a menu. Subscription accounts stay on (MAGPIE_NO_ACCOUNTS would
+        // refuse every sign-in, ChatGPT's too); HOME is this app's own folder, so the only sign-ins magpie can read
+        // are the ones made in its console.
         e["MAGPIE_NO_INSTALL"] = "1"
         e["MAGPIE_NO_SHORTCUT"] = "1"
-        e["MAGPIE_NO_ACCOUNTS"] = "1"
         e["DO_NOT_TRACK"] = "1"
     }
 
