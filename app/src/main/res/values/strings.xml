@@ -165,11 +165,6 @@
     <string name="gateway_no_network">Network: not on a local network</string>
     <string name="gateway_get">Get WeiAssist Gateway</string>
     <string name="gateway_open">Open WeiAssist Gateway</string>
-    <string name="gateway_provider_row">Your subscriptions and providers in WeiAssist Gateway, through one connection on this phone.</string>
-    <string name="gateway_provider_get">Not installed. Tap to download WeiAssist Gateway.</string>
-    <string name="gateway_provider_off">Turn the gateway on first. Tap to open it.</string>
-    <string name="gateway_provider_empty">The gateway has no models yet. Add a provider or sign in in its console.</string>
-    <string name="gateway_provider_failed">Couldn\'t reach the gateway: %1$s</string>
     <string name="shell_title">Shell backend (virtual displays)</string>
     <string name="shell_why">Lets each phone task run in its own virtual display, so several can work at once and you can watch them. Set up once with Wireless debugging (Developer options).</string>
     <string name="shell_unsupported">Needs Android 11 or later (Wireless debugging).</string>
@@ -219,6 +214,16 @@
     <string name="sessions_empty_title">No conversations yet</string>
     <string name="hide_ai_events">Hide AI events</string>
     <!-- AI providers -->
+    <string name="welcome_gateway">Use Gateway</string>
+    <string name="section_source">AI providers from</string>
+    <string name="source_weiassist">WeiAssist</string>
+    <string name="source_weiassist_desc">The providers, keys and sign-ins you set up here.</string>
+    <string name="source_gateway">Gateway</string>
+    <string name="source_gateway_desc">The Gateway app on this phone: its providers and subscriptions, for every engine.</string>
+    <string name="source_gateway_get">The Gateway app isn\'t installed. Tap to download it.</string>
+    <string name="source_gateway_off">Gateway is off. Tap to open it and turn it on.</string>
+    <string name="source_gateway_stopped">Gateway is off, so the assistant can\'t answer. Tap to open it, or choose WeiAssist.</string>
+    <string name="gateway_manage">%1$d models. Its providers and sign-ins are in the Gateway app: tap to open it.</string>
     <string name="section_provider">Provider</string>
     <string name="provider_connected">Connected</string>
     <string name="provider_via">Connected with %1$s</string>

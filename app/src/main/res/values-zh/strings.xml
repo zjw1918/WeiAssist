@@ -162,11 +162,6 @@
     <string name="gateway_no_network">局域网：未连接局域网</string>
     <string name="gateway_get">获取 WeiAssist 网关</string>
     <string name="gateway_open">打开 WeiAssist 网关</string>
-    <string name="gateway_provider_row">通过本机的一个连接，使用 WeiAssist 网关里的订阅和服务商。</string>
-    <string name="gateway_provider_get">未安装。点按下载 WeiAssist 网关。</string>
-    <string name="gateway_provider_off">请先打开网关。点按前往。</string>
-    <string name="gateway_provider_empty">网关里还没有模型。请先在其控制台添加服务商或登录。</string>
-    <string name="gateway_provider_failed">无法连接网关：%1$s</string>
     <string name="shell_title">Shell 后台（虚拟显示器）</string>
     <string name="shell_why">让每个手机任务在自己的虚拟显示器里运行，多个任务可以同时进行，你也能看到它们在做什么。只需用「无线调试」（开发者选项）设置一次。</string>
     <string name="shell_unsupported">需要 Android 11 或更高版本（无线调试）。</string>
@@ -216,6 +211,16 @@
     <string name="sessions_empty_title">还没有对话</string>
     <string name="hide_ai_events">隐藏 AI 事件</string>
     <!-- AI 服务 -->
+    <string name="welcome_gateway">使用网关</string>
+    <string name="section_source">AI 服务商来源</string>
+    <string name="source_weiassist">WeiAssist</string>
+    <string name="source_weiassist_desc">在这里设置的服务商、密钥和登录。</string>
+    <string name="source_gateway">网关</string>
+    <string name="source_gateway_desc">本机的“网关”应用：它的服务商和订阅，供所有引擎使用。</string>
+    <string name="source_gateway_get">未安装“网关”应用。点按下载。</string>
+    <string name="source_gateway_off">网关已关闭。点按打开并开启它。</string>
+    <string name="source_gateway_stopped">网关已关闭，助手无法回答。点按打开它，或改选 WeiAssist。</string>
+    <string name="gateway_manage">%1$d 个模型。它的服务商和登录在“网关”应用里：点按打开。</string>
     <string name="section_provider">服务商</string>
     <string name="provider_connected">已连接</string>
     <string name="provider_via">已通过%1$s连接</string>

@@ -54,6 +54,11 @@ class DshEngine(
      * each as a model route through [proxy], so it uses the app's providers, keys and sign-ins: no settings of its own.
      */
     private val routes: suspend () -> JSONArray = { JSONArray() },
+    /**
+     * The key for routes that go straight to their server ("direct": the Gateway app on loopback, which needs no key
+     * of WeiAssist's): set in dsh's environment, so it is the only key dsh holds. Null: no direct routes.
+     */
+    private val directKey: String? = null,
     private val log: (String) -> Unit = {},
     /** How long dsh may take to boot and connect (installing nothing, but loading ~600 packages on a phone). */
     private val connectTimeoutMs: Long = 180_000,
@@ -99,6 +104,7 @@ class DshEngine(
                 put(ENV_PROXY, p.start())
                 put(ENV_PROXY_KEY, p.token)
             }
+            directKey?.let { put(ENV_DIRECT_KEY, it) }
         }
         launch(env)?.let { throw IllegalStateException(it) }
         log("dsh launched; waiting for it on port ${srv.localPort}")
@@ -177,7 +183,8 @@ class DshEngine(
 
     /**
      * dsh's model routes: every provider the app can use, and in dev mode the mock server (standing in for the
-     * session's model), all through the key proxy (`<proxy>/<route>`, the proxy's token as the key).
+     * session's model), through the key proxy (`<proxy>/<route>`, the proxy's token as the key); a route with
+     * "direct" (the Gateway app) straight to that address, with [directKey].
      */
     private suspend fun routeProfiles(config: SessionConfig): JSONObject {
         val p = proxy ?: return JSONObject()
@@ -186,8 +193,10 @@ class DshEngine(
         val list = routes()
         for (i in 0 until list.length()) {
             val r = list.getJSONObject(i)
+            val direct = r.optString("direct").takeIf { it.isNotEmpty() && directKey != null }
             out.put(r.getString("id"), JSONObject().put("displayName", r.optString("name")).put("api", r.getString("api"))
-                .put("apiKeyEnv", ENV_PROXY_KEY).put("baseURL", "$base/${r.getString("id")}").put("models", r.getJSONArray("models")))
+                .put("apiKeyEnv", if (direct != null) ENV_DIRECT_KEY else ENV_PROXY_KEY)
+                .put("baseURL", direct ?: "$base/${r.getString("id")}").put("models", r.getJSONArray("models")))
         }
         if (!config.model.baseUrl.isNullOrBlank()) {
             out.put(MOCK_ROUTE, JSONObject().put("displayName", "WeiAssist mock").put("api", "openai-responses")
@@ -266,6 +275,8 @@ class DshEngine(
         const val ENV_PROXY = "WEIASSIST_PROXY_URL"
         /** The env var holding the proxy's token, every route's key in dsh. */
         const val ENV_PROXY_KEY = "WEIASSIST_KEY_PROXY"
+        /** The env var holding the key of routes dsh reaches directly (see directKey). */
+        const val ENV_DIRECT_KEY = "WEIASSIST_DIRECT_KEY"
         /** The dev mock server's route (the bridge sends a session with a baseUrl there). */
         const val MOCK_ROUTE = "mock"
         private val HOST_CALLS = setOf("before_tool", "tool", "tool_cancel", "ask_user", "ask_user_cancel")

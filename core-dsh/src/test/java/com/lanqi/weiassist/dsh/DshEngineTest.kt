@@ -166,4 +166,27 @@ class DshEngineTest {
         dsh!!.socket.close()
         e.destroy()
     }
+
+    @Test fun `a direct route (the Gateway app) goes straight to its address with the direct key, not through the proxy`() = runBlocking {
+        var dsh: FakeDsh? = null
+        var env: Map<String, String> = emptyMap()
+        val e = DshEngine(
+            launch = { en -> env = en; dsh = FakeDsh(en.getValue(DshEngine.ENV_PORT).toInt(), en.getValue(DshEngine.ENV_SECRET)); null },
+            proxy = proxy,
+            routes = {
+                JSONArray().put(JSONObject().put("id", "weiassist-gateway").put("name", "Gateway").put("api", "openai-completions")
+                    .put("direct", "http://127.0.0.1:3425/v1").put("models", JSONArray().put(JSONObject().put("id", "codex/gpt-x"))))
+            },
+            directKey = "local",
+            connectTimeoutMs = 5_000,
+        )
+        e.configure("s1", SessionConfig(ModelSelection("weiassist-gateway", "codex/gpt-x", "low")))
+        val gw = dsh!!.next().getJSONObject("providers").getJSONObject("weiassist-gateway")
+        assertEquals("http://127.0.0.1:3425/v1", gw.getString("baseURL"))
+        assertEquals(DshEngine.ENV_DIRECT_KEY, gw.getString("apiKeyEnv"))
+        assertEquals("local", env[DshEngine.ENV_DIRECT_KEY])
+        assertFalse(gw.has("direct"))
+        dsh!!.socket.close()
+        e.destroy()
+    }
 }

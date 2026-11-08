@@ -206,6 +206,9 @@ entry in the registry.
   route is the proxy's token. The proxy refuses a request without the token, reaches only the app's routes, puts
   the key in place of the token in whatever header carries it, and streams the answer back. Whoever reads the token
   can still spend through the proxy while the app runs, but never learns a key.
+- **With Gateway as the source** (below), dsh's one route is the Gateway app itself, reached directly
+  (`http://127.0.0.1:3425/v1`, key `WEIASSIST_DIRECT_KEY`): the proxy carries nothing, since no key of the app's is
+  involved.
 - **The same providers as Pi, no settings of its own.** Before setting a session up, `DshEngine` asks Pi for the
   providers usable now (`CoreAccounts.routes`: signed in, or custom with a key, each with its models from Pi's
   catalog) and sends them as `routes` when they changed. The bridge mounts an `llm-pi-ai` of its own with them
@@ -409,3 +412,18 @@ The threat model (prompt injection from screen content, sensitive apps) is track
 - **App:** `./gradlew assembleDebug`. `:core-pi` runs `buildPiHost<Variant>` (npm ci, tsc, esbuild) into generated assets, so you need Node from `.nvmrc`.
 - **Tests:** `cd pi-host && npm test` for the bundle end to end; `./gradlew testDebugUnitTest` for the JVM tests.
 - **Mock provider:** `node tools/mock-openai.mjs` with `adb reverse tcp:8787 tcp:8787`, then the dev switch in the app.
+
+## Where the AI providers come from
+
+One setting, at the top of the AI providers tab (`ProviderSource`, saved as `providerSource`), decides it for every
+engine. Only the user changes it: a gateway that stops fails the run with a message saying so, and nothing falls
+back by itself (the other side has other models, accounts and bills, and a switch would lose the prompt cache).
+
+- **WeiAssist** (the default, always there): Pi's own providers, keys and sign-ins. Pi calls them; dsh reaches them
+  through the key proxy.
+- **Gateway** (optional): the Gateway app (magpie, `:gateway`) on this phone serves every model, and every engine
+  goes straight to it on loopback. Its providers and sign-ins are its own, managed in its console; WeiAssist copies
+  no key there. Pi has it as one provider (`weiassist-gateway`, never listed among WeiAssist's), with the models it
+  lists (`AgentController.refreshGateway`, again each time the tab opens while it serves). It can be chosen only
+  while it serves models; each side keeps its own provider and model for when the user switches back.
+

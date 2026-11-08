@@ -218,6 +218,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun describeCustomModels(ids: List<String>) =
         controller.value?.describeCustomModels(ids) ?: ids.map { com.lanqi.weiassist.agent.CustomModel(it) }
     fun selectThinking(level: String) = withAgent { selectThinking(level) }
+    /** Take the AI providers from [source] (WeiAssist's own, or the Gateway app); the problem to show, or null. */
+    suspend fun selectSource(source: com.lanqi.weiassist.agent.ProviderSource): String? = controller.value?.selectSource(source)
+    /** List the gateway's models again, while it is the source. */
+    suspend fun refreshGateway() { controller.value?.refreshGateway() }
     fun debugCrashRuntime() { if (BuildConfig.DEBUG) withAgent { debugCrashRuntime() } }
     fun debugMainOnly(on: Boolean) { if (BuildConfig.DEBUG) withAgent { debugMainOnly(on) } }
 

@@ -1,5 +1,6 @@
 package com.lanqi.weiassist.ui
 
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.layout.Column
@@ -39,7 +40,7 @@ import com.lanqi.weiassist.agent.ProviderInfo
 
 /** Step 1: pick how to connect. The cards are Pi's own auth methods, for every provider Pi offers here. */
 @Composable
-fun WelcomeScreen(providers: List<ProviderInfo>, piVersion: String?, error: String?, onPick: (String, AuthMethod) -> Unit, onCustom: () -> Unit) {
+fun WelcomeScreen(providers: List<ProviderInfo>, piVersion: String?, error: String?, onPick: (String, AuthMethod) -> Unit, onCustom: () -> Unit, onGateway: (suspend () -> String?)? = null) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Text(stringResource(R.string.welcome_title), style = MaterialTheme.typography.headlineMedium)
         Text(stringResource(R.string.welcome_body, piVersion.orEmpty()),
@@ -57,6 +58,13 @@ fun WelcomeScreen(providers: List<ProviderInfo>, piVersion: String?, error: Stri
         }
         // The user's own OpenAI-compatible server (CustomProviderScreen).
         MethodCard(stringResource(R.string.custom_add_title), stringResource(R.string.custom_add_row), note = null, primary = false, onClick = onCustom)
+        // Gateway installed and serving: use its providers instead of signing in here.
+        if (onGateway != null && rememberGatewayStatus() == GatewayStatus.Serving) {
+            val scope = androidx.compose.runtime.rememberCoroutineScope()
+            var problem by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
+            MethodCard(stringResource(R.string.welcome_gateway), problem ?: stringResource(R.string.source_gateway_desc), note = null, primary = false,
+                onClick = { scope.launch { problem = onGateway() } })
+        }
         error?.let { Text(stringResource(R.string.last_error, it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
     }
 }
