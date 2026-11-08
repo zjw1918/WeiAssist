@@ -46,6 +46,14 @@ fun ProvidersTab(vm: AppViewModel, s: AgentState) {
     // The custom-provider form: "" = adding one, else the id being edited.
     var customForm by rememberSaveable { mutableStateOf<String?>(null) }
     val customs by vm.customProviders.collectAsStateWithLifecycle()
+    // The gateway, once added: its models as it serves them now, each time this tab opens.
+    val gateway = customs.firstOrNull { it.id == GatewayProvider.ID }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    androidx.compose.runtime.LaunchedEffect(gateway != null) {
+        if (gateway != null && kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { GatewayStatus.check(ctx) } == GatewayStatus.Serving) {
+            GatewayProvider.refresh(vm, gateway)
+        }
+    }
     customForm?.let { id ->
         // Home's scaffold leaves the insets to each tab (contentWindowInsets = 0): keep clear of the status bar.
         Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 32.dp)) {

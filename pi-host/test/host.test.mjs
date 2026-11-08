@@ -173,6 +173,28 @@ test("a custom provider's models keep their own context window and image support
 	assert.deepEqual(small.input, ["text"]);
 });
 
+test("a custom model that thinks offers the efforts its server takes, and sends the one chosen", async () => {
+	const custom = { id: "custom-g", name: "G", baseUrl: mock.url, images: true, models: [
+		{ id: "gw-thinker", reasoning: true, efforts: ["low", "medium", "high", "xhigh", "max", "ultra"] },
+		{ id: "plain-thinker", reasoning: true },
+		"no-thinking",
+	] };
+	const host = await startHost({ customProviders: [custom], credentials: JSON.stringify({ "custom-g": { type: "api_key", key: "k" } }) });
+	const p = (await host.waitFor("status")).providers.find((x) => x.id === "custom-g");
+	const levels = Object.fromEntries(p.models.map((m) => [m.id, m.thinkingLevels]));
+	// No "none" among the server's efforts: it always thinks, so no Off; "ultra" has no Pi level.
+	assert.deepEqual(levels["gw-thinker"], ["low", "medium", "high", "xhigh", "max"]);
+	assert.deepEqual(levels["plain-thinker"], ["off", "minimal", "low", "medium", "high"]);
+	assert.deepEqual(levels["no-thinking"], ["off"]);
+
+	const before = mock.requests.length;
+	host.call("configure", { session: "g1", provider: "custom-g", modelId: "gw-thinker", thinkingLevel: "xhigh" });
+	await host.waitFor("configured");
+	host.call("prompt", { session: "g1", text: "hi" });
+	await host.waitFor("idle");
+	assert.equal(JSON.parse(mock.requests[before].body).reasoning_effort, "xhigh");
+});
+
 // A 1×1 PNG.
 const PIXEL = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
