@@ -193,6 +193,13 @@ test("a custom model that thinks offers the efforts its server takes, and sends 
 	host.call("prompt", { session: "g1", text: "hi" });
 	await host.waitFor("idle");
 	assert.equal(JSON.parse(mock.requests[before].body).reasoning_effort, "xhigh");
+
+	// Another core (dsh) gets the same levels, each with the value to send.
+	const route = (await query(host, "coreRoutes")).find((r) => r.id === "custom-g");
+	const efforts = Object.fromEntries(route.models.map((m) => [m.id, m.reasoningEfforts]));
+	assert.deepEqual(efforts["gw-thinker"], { low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" });
+	assert.deepEqual(efforts["plain-thinker"], { off: null, minimal: "minimal", low: "low", medium: "medium", high: "high" });
+	assert.equal(efforts["no-thinking"], false);
 });
 
 // A 1×1 PNG.
@@ -857,6 +864,7 @@ test("a custom provider is a route with its endpoint's quirks, and its key and b
 	assert.equal(route.api, "openai-completions");
 	assert.deepEqual(route.models.map((m) => [m.id, m.contextWindow, m.input]), [["qwen-9", 32768, ["text"]]]);
 	assert.equal(route.models[0].compat.supportsDeveloperRole, false);
+	assert.equal(route.models[0].reasoningEfforts, false, "a custom model that doesn't think says so");
 	const auth = await query(host, "providerAuth", { provider: "custom-x" });
 	assert.deepEqual([auth.apiKey, auth.baseUrl], ["sk-x", "http://10.0.0.2:8000/v1"]);
 });

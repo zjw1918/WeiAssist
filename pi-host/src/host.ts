@@ -586,10 +586,26 @@ async function coreRoutes() {
 				input: [...m.input],
 				// A custom server's quirks (no "developer" role…); a catalog model's are known to the other core too.
 				...(custom && m.compat ? { compat: m.compat } : {}),
+				// And whether it thinks, with each level's spelling: the other core has no catalog entry to know it from.
+				...(custom ? { reasoningEfforts: reasoningEfforts(m) } : {}),
 			})),
 		});
 	}
 	return routes;
+}
+
+/**
+ * A model's thinking levels as another core declares them (dsh's llm-pi-ai `reasoningEfforts`): each level it offers
+ * and the value sent for it; Off with null when off sends no effort. False: it doesn't think.
+ */
+function reasoningEfforts(m: any): false | Record<string, string | null> {
+	if (!m.reasoning) return false;
+	const out: Record<string, string | null> = {};
+	for (const level of getSupportedThinkingLevels(m)) {
+		const wire = m.thinkingLevelMap?.[level];
+		out[level] = level === "off" ? (typeof wire === "string" ? wire : null) : (wire ?? level);
+	}
+	return out;
 }
 
 /** A provider's current auth for a request: its key (a sign-in's token, refreshed if due), headers and endpoint. */
