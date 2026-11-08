@@ -1,15 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Themed (Material You) launcher icon: the arch and the tuna's silhouette, eye cut out; the launcher tints it. -->
+<!-- Themed (Material You) launcher icon: the doorway at half strength, the tuna's silhouette (eye cut out) swimming
+     out of it; the launcher tints it. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <path android:pathData="M33,78V52A21,21 0,0 1,75,52V78" android:strokeColor="#FF000000"
-        android:strokeWidth="7" android:strokeLineCap="round" />
-    <path android:pathData="M61,63L69,56Q66.5,63 69,70Z" android:fillColor="#FF000000"
-        android:strokeColor="#FF000000" android:strokeWidth="2.5" android:strokeLineJoin="round" />
-    <path android:fillColor="#FF000000" android:fillType="evenOdd"
-        android:pathData="M41,63C41,57.5 46,55 51,55C56,55 59,59 62,63C59,67 56,71 51,71C46,71 41,68.5 41,63Z M48.2,61.5A2,2 0,1 1,44.2 61.5A2,2 0,1 1,48.2 61.5Z" />
-    <path android:pathData="M45.4,46A2.4,2.4 0,1 1,40.6 46A2.4,2.4 0,1 1,45.4 46Z"
-        android:strokeColor="#FF000000" android:strokeWidth="1.5" />
-    <path android:pathData="M49.6,39.5A1.6,1.6 0,1 1,46.4 39.5A1.6,1.6 0,1 1,49.6 39.5Z"
-        android:strokeColor="#FF000000" android:strokeWidth="1.3" />
+    <path android:pathData="M46,76V50A16,16 0,0 1,78,50V76" android:strokeColor="#80000000"
+        android:strokeWidth="6" android:strokeLineCap="round" />
+    <group android:scaleX="0.8" android:scaleY="0.8" android:translateX="2.4" android:translateY="18.8">
+        <path android:pathData="M70,54L83,41Q78.5,54 83,67Z" android:fillColor="#FF000000"
+            android:strokeColor="#FF000000" android:strokeWidth="4" android:strokeLineJoin="round" />
+        <path android:pathData="M45,40Q52,28 62,41Z" android:fillColor="#FF000000"
+            android:strokeColor="#FF000000" android:strokeWidth="3" android:strokeLineJoin="round" />
+        <path android:fillColor="#FF000000" android:fillType="evenOdd"
+            android:pathData="M27,55C27,44 39,38 51,38C62,38 68,46 73,54C68,62 62,70 51,70C39,70 27,66 27,55Z M42,51A4,4 0,1 1,34 51A4,4 0,1 1,42 51Z" />
+        <path android:pathData="M32.6,38A2.6,2.6 0,1 1,27.4 38A2.6,2.6 0,1 1,32.6 38Z"
+            android:strokeColor="#FF000000" android:strokeWidth="1.6" />
+        <path android:pathData="M36.8,31A1.8,1.8 0,1 1,33.2 31A1.8,1.8 0,1 1,36.8 31Z"
+            android:strokeColor="#FF000000" android:strokeWidth="1.4" />
+    </group>
 </vector>
