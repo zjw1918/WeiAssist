@@ -14,6 +14,7 @@ class CustomProviderTest {
             {"id":"lmstudio-model","max_context_length":8192},
             {"id":"llamacpp-model","meta":{"n_ctx_train":65536}},
             {"id":"text-only","architecture":{"input_modalities":["text"]}},
+            {"id":"magpie-model","context_window":500000,"modalities":{"input":["text","image"]}},
             {"id":"plain"}
         ]}""").associateBy { it.id }
         assertEquals(32768, ms.getValue("vllm-model").contextWindow)
@@ -23,6 +24,8 @@ class CustomProviderTest {
         assertEquals(8192, ms.getValue("lmstudio-model").contextWindow)
         assertEquals(65536, ms.getValue("llamacpp-model").contextWindow)
         assertEquals(false, ms.getValue("text-only").images)
+        assertEquals(500000, ms.getValue("magpie-model").contextWindow)
+        assertEquals(true, ms.getValue("magpie-model").images)
         assertEquals(0, ms.getValue("plain").contextWindow)
         assertNull(ms.getValue("plain").images)
     }
