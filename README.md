@@ -33,7 +33,7 @@ servers of ours in between: the app talks to your provider directly, and your ke
 Download the APK from [Releases](https://github.com/zjw1918/WeiAssist/releases/latest) and open it. Allow
 installs from your browser or file manager when Android asks.
 
-Optional: **WeiAssist Gateway** (`WeiAssist-Gateway-<version>.apk`, same release) makes the phone an AI gateway
+Optional: **Gateway** (`Gateway-<version>.apk`, same release) makes the phone an AI gateway
 for its own apps and the devices on its network: your providers, subscriptions and routing behind one
 OpenAI-, Anthropic- and Gemini-compatible API. It runs [magpie](https://github.com/yetone/magpie). Skip it if you
 only want the assistant.

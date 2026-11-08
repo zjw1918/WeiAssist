@@ -108,15 +108,17 @@ jobs:
           "${bt}/apksigner" verify --print-certs "${apk}" 2> /dev/null > apksigner-gateway.txt
           cert=$(grep -i -m1 'certificate SHA-256 digest' apksigner-gateway.txt | awk '{print $NF}' | tr -d ':' | tr 'A-F' 'a-f')
           [ "${cert}" = "${EXPECTED_CERT}" ] || { echo "::error::gateway APK signed with ${cert:-nothing}, expected ${EXPECTED_CERT}"; exit 1; }
-          cp "${apk}" "WeiAssist-Gateway-${{ steps.version.outputs.name }}.apk"
-          sha256sum "WeiAssist-Gateway-${{ steps.version.outputs.name }}.apk" > "WeiAssist-Gateway-${{ steps.version.outputs.name }}.apk.sha256"
+          cp "${apk}" "Gateway-${{ steps.version.outputs.name }}.apk"
+          sha256sum "Gateway-${{ steps.version.outputs.name }}.apk" > "Gateway-${{ steps.version.outputs.name }}.apk.sha256"
 
       - name: Keep the dry-run APK
         if: github.ref_type != 'tag'
         uses: actions/upload-artifact@v7
         with:
           name: weiassist-release-dryrun
-          path: WeiAssist-*.apk*
+          path: |
+            WeiAssist-*.apk*
+            Gateway-*.apk*
           retention-days: 3
 
       - name: Remove the key
@@ -131,7 +133,7 @@ jobs:
           gh release create "${GITHUB_REF_NAME}"
           "WeiAssist-${{ steps.version.outputs.name }}.apk"
           "WeiAssist-${{ steps.version.outputs.name }}.apk.sha256"
-          "WeiAssist-Gateway-${{ steps.version.outputs.name }}.apk"
-          "WeiAssist-Gateway-${{ steps.version.outputs.name }}.apk.sha256"
+          "Gateway-${{ steps.version.outputs.name }}.apk"
+          "Gateway-${{ steps.version.outputs.name }}.apk.sha256"
           --title "WeiAssist ${{ steps.version.outputs.name }}"
           --generate-notes --verify-tag ${{ steps.version.outputs.prerelease }}
