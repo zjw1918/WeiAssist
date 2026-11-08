@@ -356,7 +356,7 @@ class SessionManager(
             val config = SessionConfig(
                 ModelSelection(provider, model, thinking, mock), kind, ToolCatalog.forSession(s.summary),
                 bash = s.summary.termux && !s.summary.supervisor, channel = s.summary.channel.takeUnless { s.summary.supervisor },
-                prompt = Prompts.forSession(s.summary, strings.agentName(), model.takeIf { mock == null }),
+                prompt = Prompts.forSession(s.summary, strings.agentName()),
             )
             if (configured[id] != config) {
                 // First use in this runtime: give the core the saved conversation back.

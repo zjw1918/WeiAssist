@@ -33,24 +33,14 @@ class PromptsTest {
         val ownBash = composePrompt(Prompts.forSession(s, "WeiAssist"), all(s) - "bash")
         assertTrue(full.contains("Linux (Termux)"))
         assertFalse(ownBash.contains("Linux (Termux)"))
-        assertTrue(ownBash.startsWith("You are WeiAssist, an assistant that operates the user's Android phone"))
+        assertTrue(ownBash.startsWith("You are an assistant that operates the user's Android phone for them, working in the WeiAssist app."))
         assertTrue(ownBash.contains("from Telegram"))
         assertTrue(ownBash.contains("use send_file"))
     }
 
     @Test fun `names are filled in`() {
         val p = composePrompt(Prompts.forSession(session("chat", termux = false, channel = "telegram"), "Ada"), emptyList())
-        assertTrue(p.startsWith("You are Ada,"))
+        assertTrue(p.contains("working in the Ada app") && p.contains("Ada is the app, not you"))
         assertFalse(p.contains("{name}") || p.contains("{channel}"))
-    }
-
-    @Test fun `the persona names the model in use, so it answers which model it is truthfully`() {
-        for (kind in listOf("chat", "phone", "supervisor")) {
-            val s = session(kind, termux = false, channel = null)
-            val p = composePrompt(Prompts.forSession(s, "WeiAssist", "codex/gpt-6.1-terra"), all(s))
-            assertTrue(p, p.contains("The model answering is codex/gpt-6.1-terra"))
-            assertFalse(p.contains("{model}") || p.contains("{name}"))
-            assertFalse(composePrompt(Prompts.forSession(s, "WeiAssist"), all(s)).contains("model answering"))
-        }
     }
 }
