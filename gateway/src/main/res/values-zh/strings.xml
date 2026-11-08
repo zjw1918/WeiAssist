@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">WeiAssist 网关</string>
+    <string name="app_name">网关</string>
     <string name="why">一个 API 服务所有 AI 应用和设备：本机把你的服务商、订阅和路由（OpenAI、Anthropic、Gemini 格式）提供给本机应用（包括 WeiAssist）和同一局域网的设备。其他设备需要网关密钥，在控制台创建。</string>
     <string name="status_unavailable">此版本不含适用于本机处理器的网关</string>
     <string name="status_off">已关闭</string>
