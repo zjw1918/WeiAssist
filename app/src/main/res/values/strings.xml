@@ -93,6 +93,7 @@
     <string name="custom_src_server">From the server\'s model list</string>
     <string name="custom_model_remove">Remove model</string>
     <string name="custom_model_images">Reads images</string>
+    <string name="custom_model_reasoning">Thinks (takes a reasoning effort)</string>
     <string name="custom_context">Context (tokens)</string>
     <string name="custom_chosen">Chosen models</string>
     <string name="provider_not_connected">Not connected. Tap to add.</string>

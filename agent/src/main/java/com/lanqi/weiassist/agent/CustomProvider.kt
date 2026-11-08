@@ -7,21 +7,36 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
-/** A model as a server's /models lists it: 0 / null where the server doesn't say. */
-data class ServerModel(val id: String, val contextWindow: Int = 0, val images: Boolean? = null)
+/** A JSON array's non-empty strings. */
+private fun strings(a: JSONArray) = (0 until a.length()).mapNotNull { a.optString(it).ifEmpty { null } }
+
+/**
+ * A model as a server's /models lists it: 0 / null where the server doesn't say. [efforts]: the reasoning efforts
+ * it takes, when the server names them (magpie's reasoning_levels).
+ */
+data class ServerModel(
+    val id: String, val contextWindow: Int = 0, val images: Boolean? = null,
+    val reasoning: Boolean? = null, val efforts: List<String>? = null,
+)
 
 /** Pi's catalog entry for a model id ([match] = "<provider>/<model>"). */
-data class CatalogModel(val contextWindow: Int, val images: Boolean, val match: String)
+data class CatalogModel(val contextWindow: Int, val images: Boolean, val match: String, val reasoning: Boolean = false)
 
 /**
  * One model of a [CustomProvider]. [contextWindow] 0 = unknown (Pi host assumes 128K). [source] says where
  * the values came from: [SOURCE_SERVER] (the server's model list), "pi:<provider>/<model>" (Pi's catalog),
- * [SOURCE_USER] (typed in the form), or null (nothing known: defaults).
+ * [SOURCE_USER] (typed in the form), or null (nothing known: defaults). [reasoning]: it thinks, so it takes a
+ * reasoning effort (the thinking levels); [efforts]: the efforts the server takes, null = OpenAI's usual ones.
  */
-data class CustomModel(val id: String, val contextWindow: Int = 0, val images: Boolean = true, val source: String? = null) {
+data class CustomModel(
+    val id: String, val contextWindow: Int = 0, val images: Boolean = true, val source: String? = null,
+    val reasoning: Boolean = false, val efforts: List<String>? = null,
+) {
     fun toJson(): JSONObject = JSONObject().put("id", id).put("images", images).apply {
         if (contextWindow > 0) put("contextWindow", contextWindow)
         if (source != null) put("source", source)
+        if (reasoning) put("reasoning", true)
+        if (efforts != null) put("efforts", JSONArray(efforts))
     }
 
     companion object {
@@ -31,7 +46,7 @@ data class CustomModel(val id: String, val contextWindow: Int = 0, val images: B
 
         fun fromJson(o: JSONObject, imagesDefault: Boolean) = CustomModel(
             o.getString("id"), o.optInt("contextWindow"), o.optBoolean("images", imagesDefault),
-            o.optString("source").ifEmpty { null },
+            o.optString("source").ifEmpty { null }, o.optBoolean("reasoning"), o.optJSONArray("efforts")?.let(::strings),
         )
     }
 }
@@ -121,7 +136,7 @@ data class CustomProvider(
          * What one /models entry says beyond its id. Context window: vLLM max_model_len; OpenRouter, Together,
          * Fireworks context_length; Groq context_window; LM Studio max_context_length; llama.cpp meta.n_ctx_train.
          * Images: OpenRouter-style architecture.input_modalities (or a top-level input_modalities); magpie's
-     * modalities.input.
+         * modalities.input. Reasoning: magpie's reasoning and reasoning_levels; OpenRouter's supported_parameters.
          */
         private fun describe(id: String, o: JSONObject): ServerModel {
             val ctx = listOf(
@@ -132,7 +147,15 @@ data class CustomProvider(
             val modalities = o.optJSONObject("architecture")?.optJSONArray("input_modalities") ?: o.optJSONArray("input_modalities")
                 ?: o.optJSONObject("modalities")?.optJSONArray("input")
             val images = modalities?.let { m -> (0 until m.length()).any { m.optString(it) == "image" } }
-            return ServerModel(id, ctx, images)
+            val efforts = o.optJSONArray("reasoning_levels")?.let(::strings)?.ifEmpty { null }
+            val params = o.optJSONArray("supported_parameters")?.let(::strings)
+            val reasoning = when {
+                o.opt("reasoning") is Boolean -> o.getBoolean("reasoning")
+                efforts != null -> true
+                params != null -> "reasoning" in params || "reasoning_effort" in params
+                else -> null
+            }
+            return ServerModel(id, ctx, images, reasoning, efforts)
         }
 
         /**
@@ -142,12 +165,13 @@ data class CustomProvider(
         fun merge(server: ServerModel, catalog: CatalogModel?): CustomModel {
             val ctx = server.contextWindow.takeIf { it > 0 } ?: catalog?.contextWindow ?: 0
             val images = server.images ?: catalog?.images ?: true
+            val reasoning = server.reasoning ?: catalog?.reasoning ?: false
             val source = when {
-                server.contextWindow > 0 || server.images != null -> CustomModel.SOURCE_SERVER
+                server.contextWindow > 0 || server.images != null || server.reasoning != null -> CustomModel.SOURCE_SERVER
                 catalog != null -> "pi:${catalog.match}"
                 else -> null
             }
-            return CustomModel(server.id, ctx, images, source)
+            return CustomModel(server.id, ctx, images, source, reasoning, server.efforts.takeIf { reasoning })
         }
     }
 }

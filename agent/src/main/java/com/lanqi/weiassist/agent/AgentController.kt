@@ -457,7 +457,7 @@ class AgentController(context: Context) {
         val o = runCatching { accounts.lookupModels(ids) }.getOrElse { JSONObject() }
         return o.keys().asSequence().associateWith { id ->
             val m = o.getJSONObject(id)
-            CatalogModel(m.optInt("contextWindow"), m.optBoolean("images", true), m.optString("match"))
+            CatalogModel(m.optInt("contextWindow"), m.optBoolean("images", true), m.optString("match"), m.optBoolean("reasoning"))
         }
     }
 

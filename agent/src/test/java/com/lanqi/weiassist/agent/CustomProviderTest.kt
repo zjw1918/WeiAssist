@@ -37,6 +37,33 @@ class CustomProviderTest {
         assertEquals(CustomModel("m", 0, true, null), CustomProvider.merge(ServerModel("m"), null))
     }
 
+    @Test fun `whether a model thinks, and the efforts it takes, are read from magpie's and OpenRouter's lists`() {
+        val ms = CustomProvider.parseModelList("""{"data":[
+            {"id":"codex/gpt","reasoning":true,"reasoning_levels":["low","medium","high","xhigh","max","ultra"]},
+            {"id":"magpie-plain","reasoning":false},
+            {"id":"or/thinker","supported_parameters":["tools","reasoning"]},
+            {"id":"or/plain","supported_parameters":["tools"]},
+            {"id":"bare"}
+        ]}""").associateBy { it.id }
+        assertEquals(true, ms.getValue("codex/gpt").reasoning)
+        assertEquals(listOf("low", "medium", "high", "xhigh", "max", "ultra"), ms.getValue("codex/gpt").efforts)
+        assertEquals(false, ms.getValue("magpie-plain").reasoning)
+        assertEquals(true, ms.getValue("or/thinker").reasoning)
+        assertNull(ms.getValue("or/thinker").efforts)
+        assertEquals(false, ms.getValue("or/plain").reasoning)
+        assertNull(ms.getValue("bare").reasoning)
+
+        // The server's word, else Pi's catalog, else not; efforts only for a model that thinks.
+        val thinks = CatalogModel(200_000, true, "openai/o9", reasoning = true)
+        assertEquals(true, CustomProvider.merge(ServerModel("x"), thinks).reasoning)
+        assertEquals(false, CustomProvider.merge(ServerModel("x", reasoning = false), thinks).reasoning)
+        assertEquals(false, CustomProvider.merge(ServerModel("x"), null).reasoning)
+        assertNull(CustomProvider.merge(ServerModel("x", reasoning = false, efforts = listOf("low")), null).efforts)
+
+        val saved = CustomProvider("custom-g", "G", "http://x/v1", listOf(CustomProvider.merge(ms.getValue("codex/gpt"), null)))
+        assertEquals(saved, CustomProvider.fromJson(saved.toJson()))
+    }
+
     @Test fun `providers saved as model ids by the previous version still load`() {
         val old = JSONObject("""{"id":"custom-1","name":"Old","baseUrl":"https://x/v1","models":["a","b"],"images":false}""")
         val p = CustomProvider.fromJson(old)

@@ -104,6 +104,10 @@ interface CustomModelConfig {
 	contextWindow?: number;
 	/** Whether it reads images (phone tasks send screenshots); absent = the provider's `images`. */
 	images?: boolean;
+	/** Whether it thinks before answering, so it takes a reasoning effort (OpenAI's `reasoning_effort`). */
+	reasoning?: boolean;
+	/** The efforts the server accepts (magpie's reasoning_levels), when it says; absent = OpenAI's usual ones. */
+	efforts?: string[];
 }
 
 interface CustomProviderConfig {
@@ -137,11 +141,11 @@ const EFFORT_SUFFIX = /-(minimal|low|medium|high|xhigh|max|thinking|nothinking|n
 function lookupModels(ids: string[]) {
 	const builtIn = models.getProviders().filter((p) => !customIds.has(p.id));
 	const ordered = [...builtIn.filter((p) => !AGGREGATORS.has(p.id)), ...builtIn.filter((p) => AGGREGATORS.has(p.id))];
-	const out: Record<string, { contextWindow: number; images: boolean; match: string }> = {};
+	const out: Record<string, { contextWindow: number; images: boolean; reasoning: boolean; match: string }> = {};
 	const find = (id: string, want: string) => {
 		for (const p of ordered) {
 			const m = models.getModels(p.id).find((x) => x.id === id) ?? models.getModels(p.id).find((x) => normalizeModelId(x.id) === want);
-			if (m) return { contextWindow: m.contextWindow, images: m.input.includes("image"), match: `${p.id}/${m.id}` };
+			if (m) return { contextWindow: m.contextWindow, images: m.input.includes("image"), reasoning: !!m.reasoning, match: `${p.id}/${m.id}` };
 		}
 	};
 	for (const id of ids) {
@@ -154,6 +158,19 @@ function lookupModels(ids: string[]) {
 }
 
 const customIds = new Set<string>();
+
+/**
+ * Pi's thinking levels for a server that names its efforts: each level the server takes is sent as it is, the
+ * others aren't offered (null). Off is sent as "none" when the server has it; without it the model always thinks,
+ * so Off isn't offered. Unknown efforts: Pi's defaults (off to high; off sends no effort, the server's default).
+ */
+function thinkingLevels(efforts?: string[]) {
+	if (!efforts?.length) return undefined;
+	const has = new Set(efforts);
+	const map: Record<string, string | null> = { off: has.has("none") ? "none" : null };
+	for (const level of ["minimal", "low", "medium", "high", "xhigh", "max"]) map[level] = has.has(level) ? level : null;
+	return map;
+}
 
 function customProvider(c: CustomProviderConfig) {
 	return createProvider({
@@ -169,7 +186,8 @@ function customProvider(c: CustomProviderConfig) {
 			api: "openai-completions" as const,
 			provider: c.id,
 			baseUrl: c.baseUrl,
-			reasoning: false,
+			reasoning: !!m.reasoning,
+			thinkingLevelMap: thinkingLevels(m.efforts),
 			input: (m.images ?? c.images) ? (["text", "image"] as const) : (["text"] as const),
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 			contextWindow: m.contextWindow || DEFAULT_CONTEXT,

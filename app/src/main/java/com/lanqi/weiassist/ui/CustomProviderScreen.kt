@@ -184,7 +184,7 @@ fun CustomProviderScreen(vm: AppViewModel, editing: CustomProvider?, onClose: ()
     )
 }
 
-/** One chosen model: its context window (tokens), whether it reads images, and where those came from. */
+/** One chosen model: its context window (tokens), whether it reads images and thinks, and where those came from. */
 @Composable
 private fun ModelSettings(m: CustomModel, onChange: (CustomModel) -> Unit, onRemove: () -> Unit) {
     // The field's text, kept while typing (an empty field = unknown = 128K); refilled when the value comes
@@ -210,6 +210,11 @@ private fun ModelSettings(m: CustomModel, onChange: (CustomModel) -> Unit, onRem
                 )
                 Checkbox(m.images, { onChange(m.copy(images = it)) })
                 Text(stringResource(R.string.custom_model_images), style = MaterialTheme.typography.bodyMedium)
+            }
+            // Thinks: it takes a reasoning effort, so the model picker offers thinking levels for it.
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(m.reasoning, { onChange(m.copy(reasoning = it)) })
+                Text(stringResource(R.string.custom_model_reasoning), style = MaterialTheme.typography.bodyMedium)
             }
             val source = m.source
             Text(

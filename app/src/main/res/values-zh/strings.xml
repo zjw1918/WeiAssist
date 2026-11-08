@@ -93,6 +93,7 @@
     <string name="custom_src_server">来自服务器的模型列表</string>
     <string name="custom_model_remove">移除模型</string>
     <string name="custom_model_images">能看图片</string>
+    <string name="custom_model_reasoning">会思考（可设推理强度）</string>
     <string name="custom_context">上下文（tokens）</string>
     <string name="custom_chosen">已选模型</string>
     <string name="provider_not_connected">未连接，点一下添加</string>

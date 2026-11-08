@@ -207,13 +207,27 @@ object GatewayProvider {
 
     /** Add (or refresh) the gateway as a provider and use it. False: it serves no models yet. */
     suspend fun add(vm: com.lanqi.weiassist.AppViewModel): Boolean {
+        val p = fetch(vm) ?: return false
+        vm.saveCustomProvider(p, LOCAL_KEY)
+        return true
+    }
+
+    /**
+     * Bring the added gateway's models up to date (sign-ins added or removed in its console, what each model
+     * takes), keeping the provider in use as it is. Nothing when it isn't serving or nothing changed.
+     */
+    suspend fun refresh(vm: com.lanqi.weiassist.AppViewModel, saved: CustomProvider) {
+        val p = runCatching { fetch(vm) }.getOrNull() ?: return
+        if (p != saved) vm.saveCustomProvider(p, null)
+    }
+
+    private suspend fun fetch(vm: com.lanqi.weiassist.AppViewModel): CustomProvider? {
         val (base, models) = vm.fetchCustomModels("${GatewayStatus.LOCAL}/v1", LOCAL_KEY, null)
-        if (models.isEmpty()) return false
+        if (models.isEmpty()) return null
         // In the gateway's own order (the newest model first, which the app then picks), not by id.
         val order = withContext(Dispatchers.IO) { listedIds(base) }
         val sorted = models.sortedBy { m -> order.indexOf(m.id).let { if (it < 0) Int.MAX_VALUE else it } }
-        vm.saveCustomProvider(CustomProvider(ID, NAME, base, sorted), LOCAL_KEY)
-        return true
+        return CustomProvider(ID, NAME, base, sorted)
     }
 
     private fun listedIds(base: String): List<String> = runCatching {
