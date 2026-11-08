@@ -70,4 +70,19 @@ class CustomProviderTest {
         assertEquals(listOf(CustomModel("a", images = false), CustomModel("b", images = false)), p.models)
         assertEquals(p, CustomProvider.fromJson(p.toJson()))
     }
+
+    @Test fun `a model is asked in the format its server serves it in natively, Chat Completions otherwise`() {
+        val listed = CustomProvider.parseModelList("""{"data":[
+            {"id":"codex/gpt-x","native_endpoints":["/v1/responses"]},
+            {"id":"claude/claude-y","native_endpoints":["/v1/messages","/v1/chat/completions"]},
+            {"id":"deepseek/z","native_endpoints":["/v1/chat/completions","/v1/messages"]},
+            {"id":"gemini/w"}]}""").associateBy { it.id }
+        fun api(id: String) = CustomProvider.merge(listed.getValue(id), null).api
+        assertEquals(CustomModel.API_RESPONSES, api("codex/gpt-x"))
+        assertEquals(CustomModel.API_ANTHROPIC, api("claude/claude-y"))
+        assertEquals(null, api("deepseek/z"))
+        assertEquals(null, api("gemini/w"))
+        val m = CustomProvider.merge(listed.getValue("claude/claude-y"), null)
+        assertEquals(m, CustomModel.fromJson(m.toJson(), true))
+    }
 }

@@ -181,6 +181,25 @@ class DshEngine(
     /** The routes dsh last got (llm-pi-ai providers, as JSON), to send them only when they change. */
     @Volatile private var sentRoutes: String? = null
 
+    /** The app's routes as last asked (see routeOf). */
+    @Volatile private var lastRoutes = JSONArray()
+
+    /**
+     * The route [model] of [provider] is on. A route speaks one format, so a provider whose models differ in it comes
+     * as several: its own id, and "<id>--<api>" for the others (pi-host coreRoutes).
+     */
+    private fun routeOf(provider: String, model: String): String {
+        val list = lastRoutes
+        for (i in 0 until list.length()) {
+            val r = list.getJSONObject(i)
+            val id = r.getString("id")
+            if (id != provider && !id.startsWith("$provider--")) continue
+            val ms = r.optJSONArray("models") ?: continue
+            if ((0 until ms.length()).any { ms.getJSONObject(it).optString("id") == model }) return id
+        }
+        return provider
+    }
+
     /**
      * dsh's model routes: every provider the app can use, and in dev mode the mock server (standing in for the
      * session's model), through the key proxy (`<proxy>/<route>`, the proxy's token as the key); a route with
@@ -191,6 +210,7 @@ class DshEngine(
         val base = p.start()
         val out = JSONObject()
         val list = routes()
+        lastRoutes = list
         for (i in 0 until list.length()) {
             val r = list.getJSONObject(i)
             val direct = r.optString("direct").takeIf { it.isNotEmpty() && directKey != null }
@@ -219,7 +239,7 @@ class DshEngine(
             }
         }
         val m = config.model
-        val cfg = JSONObject().put("type", "configure").put("session", session).put("provider", m.provider)
+        val cfg = JSONObject().put("type", "configure").put("session", session).put("provider", routeOf(m.provider, m.model))
             .put("modelId", m.model).put("thinkingLevel", m.thinking)
         when (config.kind) {
             SessionKind.Phone -> cfg.put("tools", "phone")

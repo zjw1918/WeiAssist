@@ -189,4 +189,27 @@ class DshEngineTest {
         dsh!!.socket.close()
         e.destroy()
     }
+
+    @Test fun `a session goes on the route its model is on, when a provider comes as one route per format`() = runBlocking {
+        var dsh: FakeDsh? = null
+        val e = DshEngine(
+            launch = { en -> dsh = FakeDsh(en.getValue(DshEngine.ENV_PORT).toInt(), en.getValue(DshEngine.ENV_SECRET)); null },
+            proxy = proxy,
+            routes = {
+                fun route(id: String, api: String, model: String) = JSONObject().put("id", id).put("name", "Gateway").put("api", api)
+                    .put("direct", "http://127.0.0.1:3425/v1").put("models", JSONArray().put(JSONObject().put("id", model)))
+                JSONArray().put(route("weiassist-gateway", "openai-responses", "codex/gpt-x"))
+                    .put(route("weiassist-gateway--anthropic-messages", "anthropic-messages", "claude/claude-y"))
+            },
+            directKey = "local",
+            connectTimeoutMs = 5_000,
+        )
+        e.configure("s1", SessionConfig(ModelSelection("weiassist-gateway", "claude/claude-y", "high")))
+        assertEquals("routes", dsh!!.next().getString("type"))
+        assertEquals("weiassist-gateway--anthropic-messages", dsh!!.next().getString("provider"))
+        e.configure("s2", SessionConfig(ModelSelection("weiassist-gateway", "codex/gpt-x", "high")))
+        assertEquals("weiassist-gateway", dsh!!.next().getString("provider"))
+        dsh!!.socket.close()
+        e.destroy()
+    }
 }
