@@ -426,7 +426,7 @@ async function configure(cfg: Config) {
 		initialState: {
 			messages: history,
 			// The app's prompt (its prompts, the same for every AI core: Kotlin's Prompts); a bare one if it sent none.
-			systemPrompt: cfg.systemPrompt ?? `You are ${agentName}, a helpful assistant on the user's Android phone. Reply in the user's language.`,
+			systemPrompt: cfg.systemPrompt ?? `You are a helpful assistant on the user's Android phone, working in the ${agentName} app. Reply in the user's language.\n${agentName} is the app, not you: asked who or which model you are, answer as the AI model you really are.`,
 			model,
 			thinkingLevel: thinkingLevel as any,
 			// Exactly the tools the app chose for this session (phone, bash, send_file or the supervisor's).
