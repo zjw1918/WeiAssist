@@ -1,0 +1,134 @@
+package com.lanqi.weiassist.gateway
+
+import android.Manifest
+import android.app.Activity
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.Typeface
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.util.TypedValue
+import android.view.Gravity
+import android.view.View
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.Switch
+import android.widget.TextView
+import com.lanqi.weiassist.magpie.MagpieHost
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+
+/**
+ * The gateway's one screen: on or off, where this phone's apps and the network's devices reach it, and its console
+ * (providers, sign-ins, routing, usage, gateway keys), opened in the browser. Plain framework views keep this app to
+ * little more than magpie itself.
+ */
+class GatewayActivity : Activity() {
+    private val host by lazy { MagpieHost.get(this) }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var watching: Job? = null
+
+    private lateinit var status: TextView
+    private lateinit var toggle: Switch
+    private lateinit var addresses: TextView
+    private lateinit var console: Button
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        val pad = dp(20)
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(pad, pad, pad, pad)
+        }
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(8))
+        }
+        status = text("", 18f)
+        row.addView(status, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        toggle = Switch(this).apply {
+            setOnClickListener { if (isChecked) turnOn() else GatewayService.stop(this@GatewayActivity) }
+        }
+        row.addView(toggle)
+        column.addView(row)
+        column.addView(text(getString(R.string.why), 15f, muted = true))
+        addresses = text("", 14f).apply {
+            typeface = Typeface.MONOSPACE
+            setTextIsSelectable(true)
+            setPadding(0, dp(16), 0, dp(8))
+        }
+        column.addView(addresses)
+        console = Button(this).apply {
+            text = getString(R.string.open_console)
+            setOnClickListener {
+                runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(host.consoleUrl))) }
+            }
+        }
+        column.addView(console, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        // Many phones (realme, OPPO, Xiaomi, vivo…) don't let an app start by itself after a restart or an update
+        // until the user allows it (on the realme, OplusAppStartupManager refused MY_PACKAGE_REPLACED's start).
+        column.addView(text(getString(R.string.autostart_hint), 14f, muted = true).apply { setPadding(0, dp(24), 0, dp(4)) })
+        column.addView(Button(this).apply {
+            text = getString(R.string.autostart_settings)
+            setOnClickListener {
+                runCatching {
+                    startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", packageName, null)))
+                }
+            }
+        }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        setContentView(ScrollView(this).apply { addView(column) })
+    }
+
+    override fun onStart() {
+        super.onStart()
+        GatewayService.resume(this) // on, but its process ended since: serve again
+        watching = scope.launch { host.state.collect(::show) }
+    }
+
+    override fun onStop() {
+        watching?.cancel()
+        super.onStop()
+    }
+
+    private fun turnOn() {
+        // Android 13+: without this the notification is hidden, though the gateway still serves.
+        if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+        }
+        GatewayService.start(this)
+    }
+
+    private fun show(s: MagpieHost.State) {
+        toggle.isEnabled = s != MagpieHost.State.Unavailable
+        toggle.isChecked = s != MagpieHost.State.Off && s != MagpieHost.State.Unavailable
+        status.text = when (s) {
+            MagpieHost.State.Unavailable -> getString(R.string.status_unavailable)
+            MagpieHost.State.Off -> getString(R.string.status_off)
+            MagpieHost.State.Starting -> getString(R.string.status_starting)
+            MagpieHost.State.Running -> getString(R.string.status_running)
+            is MagpieHost.State.Failed -> getString(R.string.status_failed, s.message)
+        }
+        val running = s == MagpieHost.State.Running
+        addresses.visibility = if (running) View.VISIBLE else View.GONE
+        console.visibility = if (running) View.VISIBLE else View.GONE
+        if (running) {
+            val lan = host.lanBaseUrl()
+            addresses.text = getString(R.string.this_phone, host.localBaseUrl) + "\n" +
+                (if (lan != null) getString(R.string.network, lan) else getString(R.string.no_network))
+        }
+    }
+
+    private fun text(s: String, sp: Float, muted: Boolean = false) = TextView(this).apply {
+        text = s
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
+        if (muted) alpha = 0.7f
+    }
+
+    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+}

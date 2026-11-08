@@ -33,7 +33,6 @@
 
     <!-- Telegram (Gateway.kt): what the bot says in the chat, and the service notification while it listens. -->
     <string name="notif_listening">Listening on Telegram (@%1$s)</string>
-    <string name="notif_gateway">AI gateway on: serving this phone and your network</string>
     <string name="tg_token_malformed">That doesn\'t look like a bot token. It looks like 123456789:AA… (copy it from @BotFather).</string>
     <string name="tg_token_rejected">Telegram rejected the bot token. It may have been revoked: get a new one from @BotFather.</string>
     <string name="tg_unreachable">Couldn\'t reach Telegram: %1$s</string>

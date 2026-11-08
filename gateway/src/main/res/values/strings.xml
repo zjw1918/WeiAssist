@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">WeiAssist Gateway</string>
+    <string name="why">One API for every AI app and device: this phone serves your providers, subscriptions and routing (OpenAI, Anthropic and Gemini formats) to its own apps, WeiAssist included, and to the devices on its network. Other devices need a gateway key, made in the console.</string>
+    <string name="status_unavailable">Not in this build for this phone\'s processor</string>
+    <string name="status_off">Off</string>
+    <string name="status_starting">Starting…</string>
+    <string name="status_running">On</string>
+    <string name="status_failed">Stopped (%1$s). Starting again…</string>
+    <string name="this_phone">This phone: %1$s/v1</string>
+    <string name="network">Network: %1$s/v1</string>
+    <string name="no_network">Network: not on a local network</string>
+    <string name="open_console">Open console</string>
+    <string name="notif_channel">Gateway</string>
+    <string name="notif_serving">Serving this phone</string>
+    <string name="notif_serving_lan">Serving this phone and %1$s</string>
+    <string name="autostart_hint">To keep serving after the phone restarts or this app updates, allow it to auto-launch and run in the background: on many phones that is off until you turn it on in the app\'s settings (Battery, or Auto launch). Otherwise, open this app once to start it again.</string>
+    <string name="autostart_settings">App settings</string>
+</resources>
