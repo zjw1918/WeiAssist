@@ -15,6 +15,9 @@
     <string name="err_quota">API 账户余额不足：API 和 ChatGPT 订阅分开计费，请到 platform.openai.com 充值。</string>
     <string name="err_balance">%1$s 账户余额不足，请到它的 API 平台充值后再试。</string>
     <string name="err_key">密钥无效或已过期，请退出后重新登录。</string>
+    <string name="gateway_not_serving">网关没有开启。请先打开“网关”应用并开启它。</string>
+    <string name="gateway_no_models">网关还没有可用的模型。请先在它的控制台登录一个服务商。</string>
+    <string name="err_gateway_unreachable">网关没有响应：打开“网关”应用开启它，或在 AI 服务商页改用 WeiAssist 自己的服务商。</string>
     <string name="err_model">这个账号用不了模型 %1$s，在上面换一个试试。</string>
     <string name="first_hello">你好</string>
     <string name="confirm_title">小维助手要点「%1$s」</string>

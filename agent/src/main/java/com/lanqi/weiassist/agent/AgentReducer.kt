@@ -61,9 +61,9 @@ object AgentReducer {
         }
         "auth_prompt_closed" -> Result(s.withSignIn { if (prompt?.id == m.getString("id")) copy(prompt = null) else this })
         "login_done" -> {
-            // The provider just connected is the one new messages use.
+            // The provider just connected is the one new messages use (WeiAssist's own: signing in there chose it).
             val id = m.optString("provider").ifEmpty { s.providerId }
-            Result(pickModel(s.copy(providerId = id, screen = Screen.Connected, signIn = SignInState())), Effect.SignedIn)
+            Result(pickModel(s.copy(providerId = id, source = ProviderSource.WeiAssist, screen = Screen.Connected, signIn = SignInState())), Effect.SignedIn)
         }
         "login_failed" -> {
             val msg = m.optString("message")
@@ -76,22 +76,44 @@ object AgentReducer {
     }
 
     private fun onStatus(s: AgentState, m: JSONObject): AgentState {
-        val providers = parseProviders(m.getJSONArray("providers"))
-        // Keep the chosen provider while it is signed in; else move to one that is (e.g. after signing out of it).
-        val active = providers.firstOrNull { it.id == s.providerId && it.credential != null }
-            ?: providers.firstOrNull { it.credential != null }
+        val all = parseProviders(m.getJSONArray("providers"))
+        // The gateway is Pi's provider too, but never one of WeiAssist's own: it is the other source.
+        return settle(s.copy(providers = all.filter { it.id != GatewayLink.PROVIDER_ID }, gateway = all.firstOrNull { it.id == GatewayLink.PROVIDER_ID }))
+    }
+
+    /**
+     * The provider in use, the screen and the model, from the providers there are now. Gateway: the gateway, whose
+     * sign-ins are its own app's (no Welcome). WeiAssist: keep the chosen provider while it is signed in; else move to
+     * one that is (e.g. after signing out of it), or Welcome when none is.
+     */
+    private fun settle(s: AgentState): AgentState {
+        if (s.source == ProviderSource.Gateway) {
+            val screen = if (s.screen is Screen.SigningIn) s.screen else Screen.Connected
+            return pickModel(s.copy(providerId = GatewayLink.PROVIDER_ID, screen = screen))
+        }
+        val active = s.providers.firstOrNull { it.id == s.providerId && it.credential != null }
+            ?: s.providers.firstOrNull { it.credential != null }
         val screen = when {
             s.screen is Screen.SigningIn -> s.screen
             active != null -> Screen.Connected
             else -> Screen.Welcome
         }
-        return pickModel(s.copy(providers = providers, providerId = active?.id ?: s.providerId, screen = screen))
+        return pickModel(s.copy(providerId = active?.id ?: s.providerId.takeIf { it != GatewayLink.PROVIDER_ID } ?: DEFAULT_PROVIDER, screen = screen))
     }
 
-    /** Use another signed-in provider; [savedModel] is the model last used with it. */
+    /** Use another of WeiAssist's signed-in providers; [savedModel] is the model last used with it. */
     fun selectProvider(s: AgentState, id: String, savedModel: String?): AgentState {
-        if (s.providers.none { it.id == id && it.credential != null }) return s
+        if (s.source != ProviderSource.WeiAssist || s.providers.none { it.id == id && it.credential != null }) return s
         return pickModel(s.copy(providerId = id, modelId = savedModel ?: ""))
+    }
+
+    /**
+     * Take the providers from [source] from now on (the user's choice, never automatic), with the provider and model
+     * last used there ([savedProvider]: WeiAssist's; [savedModel]: the model used with it).
+     */
+    fun selectSource(s: AgentState, source: ProviderSource, savedProvider: String?, savedModel: String?): AgentState = when (source) {
+        ProviderSource.Gateway -> settle(s.copy(source = source, providerId = GatewayLink.PROVIDER_ID, modelId = savedModel ?: ""))
+        ProviderSource.WeiAssist -> settle(s.copy(source = source, providerId = savedProvider ?: DEFAULT_PROVIDER, modelId = savedModel ?: ""))
     }
 
     /**

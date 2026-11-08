@@ -34,6 +34,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lanqi.weiassist.AppViewModel
 import com.lanqi.weiassist.R
 import com.lanqi.weiassist.agent.AgentState
+import com.lanqi.weiassist.agent.ProviderSource
 
 /** The AI providers tab: which provider and account the assistant uses, and its model and thinking level. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,14 +47,7 @@ fun ProvidersTab(vm: AppViewModel, s: AgentState) {
     // The custom-provider form: "" = adding one, else the id being edited.
     var customForm by rememberSaveable { mutableStateOf<String?>(null) }
     val customs by vm.customProviders.collectAsStateWithLifecycle()
-    // The gateway, once added: its models as it serves them now, each time this tab opens.
-    val gateway = customs.firstOrNull { it.id == GatewayProvider.ID }
     val ctx = androidx.compose.ui.platform.LocalContext.current
-    androidx.compose.runtime.LaunchedEffect(gateway != null) {
-        if (gateway != null && kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { GatewayStatus.check(ctx) } == GatewayStatus.Serving) {
-            GatewayProvider.refresh(vm, gateway)
-        }
-    }
     customForm?.let { id ->
         // Home's scaffold leaves the insets to each tab (contentWindowInsets = 0): keep clear of the status bar.
         Column(Modifier.fillMaxSize().statusBarsPadding().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 32.dp)) {
@@ -68,6 +62,19 @@ fun ProvidersTab(vm: AppViewModel, s: AgentState) {
     ) { inner ->
         Column(Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
             val provider = s.provider
+            SectionHeader(stringResource(R.string.section_source))
+            ProviderSourcePicker(vm, s.source)
+            // The gateway's providers and sign-ins are its own: managed in its app.
+            if (s.source == ProviderSource.Gateway) {
+                SectionHeader(stringResource(R.string.section_provider))
+                Group {
+                    GroupRow(
+                        title = stringResource(R.string.source_gateway), icon = R.drawable.ic_sparkle,
+                        description = stringResource(R.string.gateway_manage, s.gateway?.models?.size ?: 0),
+                        onClick = { openGateway(ctx) },
+                    )
+                }
+            } else {
             SectionHeader(stringResource(R.string.section_provider))
             Group {
                 s.providers.forEachIndexed { i, p ->
@@ -102,11 +109,6 @@ fun ProvidersTab(vm: AppViewModel, s: AgentState) {
                         },
                     )
                 }
-                // Until it is added: then it is listed above, as a custom provider.
-                if (s.providers.none { it.id == GatewayProvider.ID }) {
-                    GroupDivider()
-                    GatewayProviderRow(vm)
-                }
                 GroupDivider()
                 GroupRow(
                     title = stringResource(R.string.custom_add_title), icon = R.drawable.ic_add,
@@ -121,6 +123,7 @@ fun ProvidersTab(vm: AppViewModel, s: AgentState) {
             s.signIn.error?.let {
                 Text(stringResource(R.string.last_error, it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 8.dp))
+            }
             }
 
             SectionHeader(stringResource(R.string.section_model))

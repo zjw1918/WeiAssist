@@ -40,7 +40,8 @@ class AgentController(context: Context) {
         launch = { env -> termux.launchDsh(env) },
         proxy = com.lanqi.weiassist.dsh.KeyProxy(::dshRoute, log = { android.util.Log.w("DshEngine", it) }),
         // The same providers, keys and sign-ins as Pi's (Pi keeps them): dsh has no settings of its own.
-        routes = { accounts.routes() },
+        routes = { dshRoutes() },
+        directKey = GatewayLink.LOCAL_KEY,
         log = { android.util.Log.d("DshEngine", it) },
     )
     /** The installed AI cores; a session runs on the one it was made with. New ones use the saved default. */
@@ -63,11 +64,14 @@ class AgentController(context: Context) {
     private val allowed = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val prefs = appContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
+    init { migrateGatewayProvider() }
+
     private val _state = MutableStateFlow(
         AgentState(
             providerId = prefs.getString("providerId", null) ?: AgentReducer.DEFAULT_PROVIDER,
             modelId = prefs.getString("modelId", null) ?: "",
             thinkingLevel = prefs.getString("thinkingLevel", null) ?: "medium",
+            source = ProviderSource.of(prefs.getString("providerSource", null)),
         ),
     )
     val state: StateFlow<AgentState> = _state.asStateFlow()
@@ -76,9 +80,36 @@ class AgentController(context: Context) {
     private val _customProviders = MutableStateFlow(CustomProvider.listFromJson(prefs.getString("customProviders", null)))
     val customProviders: StateFlow<List<CustomProvider>> = _customProviders.asStateFlow()
 
+    /** The gateway's models as last listed (kept, so Pi has them before the gateway answers again). */
+    private var gatewayModels: List<CustomModel> =
+        CustomProvider.listFromJson(prefs.getString("gatewayProvider", null)).firstOrNull()?.models.orEmpty()
+
     init {
         // Sent with Pi's init, so a custom provider in use is there before the first status.
-        accounts.customProviders = { CustomProvider.listToJson(_customProviders.value) }
+        accounts.customProviders = { piProviders() }
+    }
+
+    /**
+     * What Pi gets as its own providers beyond its catalog: the user's custom ones and, once it has listed models, the
+     * gateway (always there, so its key stays; WeiAssist's providers leave it out: see AgentReducer).
+     */
+    private fun piProviders() = CustomProvider.listToJson(
+        _customProviders.value + listOfNotNull(gatewayModels.takeIf { it.isNotEmpty() }?.let(GatewayLink::provider)),
+    )
+
+    /**
+     * Earlier builds added the gateway as a custom provider (custom-weiassist-gateway). It is a source of its own now:
+     * that one goes, its models move over, and if it was in use, the gateway is the source.
+     */
+    private fun migrateGatewayProvider() {
+        val old = "custom-weiassist-gateway"
+        val list = CustomProvider.listFromJson(prefs.getString("customProviders", null))
+        val gw = list.firstOrNull { it.id == old } ?: return
+        val e = prefs.edit().putString("customProviders", CustomProvider.listToJson(list - gw).toString())
+            .putString("gatewayProvider", CustomProvider.listToJson(listOf(GatewayLink.provider(gw.models))).toString())
+        prefs.getString("modelId.$old", null)?.let { e.putString("modelId.${GatewayLink.PROVIDER_ID}", it) }
+        if (prefs.getString("providerId", null) == old) e.putString("providerSource", ProviderSource.Gateway.id).putString("providerId", GatewayLink.PROVIDER_ID)
+        e.remove("modelId.$old").apply()
     }
 
     /** Dev builds: send model calls to the local mock server (tools/mock-openai.mjs). */
@@ -226,6 +257,8 @@ class AgentController(context: Context) {
             warmDsh()
             val ready = pi.start()
             _state.update { it.copy(piVersion = ready.optString("pi")) }
+            // The gateway's loopback key, in case Pi doesn't have it yet (migrated from an earlier build, or its store reset).
+            if (gatewayModels.isNotEmpty()) runCatching { accounts.setCustomProviders(piProviders(), GatewayLink.PROVIDER_ID, GatewayLink.LOCAL_KEY) }
         }
     }
 
@@ -373,7 +406,7 @@ class AgentController(context: Context) {
         val before = _state.value
         val (next, effect) = AgentReducer.reduce(before, m)
         _state.value = next
-        if (next.providerId != before.providerId || next.modelId != before.modelId || next.thinkingLevel != before.thinkingLevel) persistModel()
+        if (next.providerId != before.providerId || next.modelId != before.modelId || next.thinkingLevel != before.thinkingLevel || next.source != before.source) persistModel()
         when (effect) {
             is Effect.OpenBrowser -> _openInBrowser.tryEmit(effect.url)
             Effect.SignedIn -> scope.launch {
@@ -421,11 +454,11 @@ class AgentController(context: Context) {
         prefs.edit().putString("customProviders", json.toString()).apply()
         val k = key?.trim()?.ifEmpty { null }
         if (k != null) {
-            // Pi's next status has it signed in: the reducer keeps it as the provider in use.
-            _state.update { it.copy(providerId = p.id, modelId = prefs.getString("modelId.${p.id}", null) ?: "") }
+            // Pi's next status has it signed in: the reducer keeps it as the provider in use (one of WeiAssist's own).
+            _state.update { it.copy(providerId = p.id, modelId = prefs.getString("modelId.${p.id}", null) ?: "", source = ProviderSource.WeiAssist) }
             persistModel()
         }
-        scope.launch { accounts.setCustomProviders(json, p.id, k) }
+        scope.launch { accounts.setCustomProviders(piProviders(), p.id, k) }
     }
 
     /** Remove a custom provider and its saved key; if it was in use, Pi's next status moves to another. */
@@ -434,7 +467,44 @@ class AgentController(context: Context) {
         _customProviders.value = list
         val json = CustomProvider.listToJson(list)
         prefs.edit().putString("customProviders", json.toString()).remove("modelId.$id").apply()
-        scope.launch { accounts.setCustomProviders(json) }
+        scope.launch { accounts.setCustomProviders(piProviders()) }
+    }
+
+    // ---- where the providers come from ------------------------------------------------------------
+    /**
+     * List the gateway's models again (its sign-ins may have changed in its console) and give them to Pi. Throws when
+     * the gateway doesn't answer; false when it serves no models yet.
+     */
+    suspend fun refreshGateway(): Boolean {
+        val (_, listed) = fetchCustomModels(GatewayLink.BASE_URL, GatewayLink.LOCAL_KEY, null)
+        if (listed.isEmpty()) return false
+        // In the gateway's own order (the newest model first, which a first pick then takes), not by id.
+        val order = GatewayLink.listedIds()
+        val models = listed.sortedBy { m -> order.indexOf(m.id).let { if (it < 0) Int.MAX_VALUE else it } }
+        if (models != gatewayModels || _state.value.gateway == null) {
+            gatewayModels = models
+            prefs.edit().putString("gatewayProvider", CustomProvider.listToJson(listOf(GatewayLink.provider(models))).toString()).apply()
+            accounts.setCustomProviders(piProviders(), GatewayLink.PROVIDER_ID, GatewayLink.LOCAL_KEY)
+        }
+        return true
+    }
+
+    /**
+     * Take the providers from [source] from now on, for every engine. The gateway needs to be serving models; the
+     * problem to show if it isn't, else null. Sessions take it with their next message.
+     */
+    suspend fun selectSource(source: ProviderSource): String? {
+        if (source == _state.value.source) return null
+        if (source == ProviderSource.Gateway) {
+            val ok = runCatching { refreshGateway() }.getOrElse { return appContext.getString(R.string.gateway_not_serving) }
+            if (!ok) return appContext.getString(R.string.gateway_no_models)
+        }
+        if (_state.value.source == ProviderSource.WeiAssist) prefs.edit().putString("providerId.weiassist", _state.value.providerId).apply()
+        val savedProvider = prefs.getString("providerId.weiassist", null)
+        val modelFor = if (source == ProviderSource.Gateway) GatewayLink.PROVIDER_ID else savedProvider
+        _state.update { AgentReducer.selectSource(it, source, savedProvider, modelFor?.let { id -> prefs.getString("modelId.$id", null) }) }
+        persistModel()
+        return null
     }
 
     /**
@@ -487,7 +557,10 @@ class AgentController(context: Context) {
 
     private fun persistModel() = with(_state.value) {
         prefs.edit().putString("providerId", providerId).putString("modelId", modelId).putString("modelId.$providerId", modelId)
-            .putString("thinkingLevel", thinkingLevel).apply()
+            .putString("thinkingLevel", thinkingLevel).putString("providerSource", source.id)
+            // WeiAssist's own choice, to go back to from the gateway.
+            .apply { if (source == ProviderSource.WeiAssist) putString("providerId.weiassist", providerId) }
+            .apply()
     }
 
     // ---- sessions ---------------------------------------------------------------------------------
@@ -544,6 +617,22 @@ class AgentController(context: Context) {
     }
 
     /**
+     * dsh's model routes, from the source in use. WeiAssist: its providers, through the key proxy. Gateway: the gateway
+     * alone, reached directly ("direct": dsh calls it itself, with the loopback key; no key of WeiAssist's is involved).
+     */
+    private suspend fun dshRoutes(): org.json.JSONArray {
+        val gateway = _state.value.source == ProviderSource.Gateway
+        val all = accounts.routes()
+        return org.json.JSONArray().apply {
+            for (i in 0 until all.length()) {
+                val r = all.getJSONObject(i)
+                val isGateway = r.optString("id") == GatewayLink.PROVIDER_ID
+                if (isGateway == gateway) put(if (isGateway) r.put("direct", GatewayLink.BASE_URL) else r)
+            }
+        }
+    }
+
+    /**
      * Where a dsh model route really goes, with the key the app's key proxy puts in: Pi's current auth for that
      * provider (an API key, or a sign-in's token Pi refreshes), asked per request on the proxy's thread; in dev mode
      * the mock server.
@@ -566,6 +655,8 @@ class AgentController(context: Context) {
     // ---- helpers ----------------------------------------------------------------------------------
     /** Turn the provider's error text into something a user can act on; keep the original for the trace. */
     private fun friendly(msg: String): String = when {
+        _state.value.source == ProviderSource.Gateway && GatewayLink.unreachable(msg) ->
+            appContext.getString(R.string.err_gateway_unreachable) + "\n" + msg
         outOfCredit(msg) -> with(_state.value) {
             // OpenAI: people often expect a ChatGPT plan to cover the API, so say it doesn't.
             if (providerId == "openai") appContext.getString(R.string.err_quota)

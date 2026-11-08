@@ -158,7 +158,7 @@ fun MainActivity.App(vm: AppViewModel = viewModel()) {
             when (val screen = s.screen) {
                 Screen.Welcome ->
                     if (welcomeCustom) CustomProviderScreen(vm, null) { welcomeCustom = false }
-                    else WelcomeScreen(s.providers, s.piVersion, s.signIn.error, vm::signIn) { welcomeCustom = true }
+                    else WelcomeScreen(s.providers, s.piVersion, s.signIn.error, vm::signIn, { welcomeCustom = true }, { vm.selectSource(com.lanqi.weiassist.agent.ProviderSource.Gateway) })
                 is Screen.SigningIn -> {
                     // Sign-in is a state, not a navigation destination: Back cancels it like the Cancel button,
                     // returning to where it started, instead of closing the app.

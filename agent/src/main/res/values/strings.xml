@@ -15,6 +15,9 @@
     <string name="err_quota">Your API account is out of credit. API usage is billed separately from ChatGPT; add credit at platform.openai.com.</string>
     <string name="err_balance">Your %1$s account is out of credit. Add credit to its API account, then try again.</string>
     <string name="err_key">The key is invalid or has expired. Sign out and sign in again.</string>
+    <string name="gateway_not_serving">Gateway isn\'t on. Open the Gateway app and turn it on first.</string>
+    <string name="gateway_no_models">Gateway serves no models yet. Sign in to a provider in its console first.</string>
+    <string name="err_gateway_unreachable">Gateway isn\'t answering: open the Gateway app to turn it on, or switch to WeiAssist\'s own providers in the AI providers tab.</string>
     <string name="err_model">This account can\'t use the model %1$s. Pick another one above.</string>
     <string name="first_hello">Hello</string>
     <string name="confirm_title">WeiAssist wants to tap “%1$s”</string>

@@ -40,15 +40,20 @@ data class SignInState(
 data class AgentState(
     val screen: Screen = Screen.Starting,
     val piVersion: String? = null,
-    /** Every provider Pi offers here, with its sign-in (if any). */
+    /** Every provider Pi offers here, with its sign-in (if any): WeiAssist's own, the gateway left out. */
     val providers: List<ProviderInfo> = emptyList(),
-    /** The provider new messages use. */
+    /** The provider new messages use; with [source] Gateway, the gateway's ([GatewayLink.PROVIDER_ID]). */
     val providerId: String = AgentReducer.DEFAULT_PROVIDER,
     val signIn: SignInState = SignInState(),
     val modelId: String = "",
     val thinkingLevel: String = "medium",
+    /** Where the providers come from: WeiAssist's own, or the Gateway app (see [ProviderSource]). */
+    val source: ProviderSource = ProviderSource.WeiAssist,
+    /** The gateway as Pi has it (its models), once WeiAssist has listed them; null before. */
+    val gateway: ProviderInfo? = null,
 ) {
-    val provider: ProviderInfo? get() = providers.firstOrNull { it.id == providerId }
+    val provider: ProviderInfo? get() =
+        if (source == ProviderSource.Gateway) gateway else providers.firstOrNull { it.id == providerId }
     val model: ModelInfo? get() = provider?.models?.firstOrNull { it.id == modelId }
     val signingInWithBrowser: Boolean get() = (screen as? Screen.SigningIn)?.method?.type == "oauth"
 }

@@ -39,8 +39,6 @@ class AgentReducerTest {
         .put("methods", JSONArray().put(JSONObject().put("type", "api_key").put("name", "DeepSeek API key")))
         .put("models", JSONArray().put(model("deepseek-v4-pro", "high", "max")).put(model("deepseek-flash", "low", "high", "max")))
 
-    private fun statusOf(vararg providers: JSONObject) = msg("status", "providers" to JSONArray(providers.toList()))
-
     private fun reduce(s: AgentState, m: JSONObject) = AgentReducer.reduce(s, m)
 
     @Test fun `signing in to DeepSeek makes it the provider in use, with its default model`() {
@@ -150,5 +148,51 @@ class AgentReducerTest {
 
     @Test fun `a runtime restart is passed on to the sessions`() {
         assertEquals(Effect.RuntimeRestarted, reduce(base, msg("runtime_restarted")).effect)
+    }
+
+    private fun gateway() = JSONObject().put("id", GatewayLink.PROVIDER_ID).put("name", "Gateway").put("credential", "api_key").put("custom", true)
+        .put("methods", JSONArray().put(JSONObject().put("type", "api_key").put("name", "Gateway API key")))
+        .put("models", JSONArray().put(model("codex/gpt-6.1-terra", "low", "high", "max")).put(model("codex/gpt-6.1-sol", "low", "high")))
+
+    private fun statusOf(vararg providers: JSONObject) = msg("status", "providers" to JSONArray(providers.toList()))
+
+    @Test fun `the gateway is never one of WeiAssist's providers, nor picked when signed out of them`() {
+        val s = AgentReducer.reduce(base.copy(providerId = "deepseek"), statusOf(deepseek(null), gateway())).state
+        assertEquals(listOf("deepseek"), s.providers.map { it.id })
+        assertEquals(GatewayLink.PROVIDER_ID, s.gateway?.id)
+        assertEquals(Screen.Welcome, s.screen) // the gateway doesn't count as signed in to WeiAssist
+        assertEquals(ProviderSource.WeiAssist, s.source)
+        assertEquals(AgentReducer.selectProvider(s, GatewayLink.PROVIDER_ID, null), s)
+    }
+
+    @Test fun `with the gateway as the source, it is the provider, and WeiAssist's choice comes back after`() {
+        val signedIn = AgentReducer.reduce(base.copy(providerId = "deepseek"), statusOf(deepseek("api_key"), gateway())).state
+        assertEquals("deepseek-flash", signedIn.modelId)
+        val gw = AgentReducer.selectSource(signedIn, ProviderSource.Gateway, "deepseek", null)
+        assertEquals(GatewayLink.PROVIDER_ID, gw.providerId)
+        assertEquals("codex/gpt-6.1-terra", gw.modelId) // the gateway's first: its newest
+        assertEquals("Gateway", gw.provider?.name)
+        // Pi's next status keeps it so; WeiAssist's providers can't be chosen meanwhile.
+        val again = AgentReducer.reduce(gw, statusOf(deepseek("api_key"), gateway())).state
+        assertEquals(GatewayLink.PROVIDER_ID, again.providerId)
+        assertEquals(again, AgentReducer.selectProvider(again, "deepseek", null))
+        val back = AgentReducer.selectSource(again, ProviderSource.WeiAssist, "deepseek", "deepseek-v4-pro")
+        assertEquals("deepseek" to "deepseek-v4-pro", back.providerId to back.modelId)
+    }
+
+    @Test fun `the gateway as the source needs no sign-in to WeiAssist, even before Pi lists it`() {
+        val gw = AgentReducer.selectSource(base.copy(screen = Screen.Welcome), ProviderSource.Gateway, null, "codex/gpt-6.1-sol")
+        assertEquals(Screen.Connected, gw.screen)
+        assertEquals("codex/gpt-6.1-sol", gw.modelId)
+        val listed = AgentReducer.reduce(gw, statusOf(deepseek(null), gateway())).state
+        assertEquals(Screen.Connected, listed.screen)
+        assertEquals("codex/gpt-6.1-sol", listed.modelId)
+    }
+
+    @Test fun `signing in to one of WeiAssist's providers makes WeiAssist the source again`() {
+        val gw = AgentReducer.selectSource(base, ProviderSource.Gateway, null, null)
+        val s = AgentReducer.reduce(gw, msg("login_done", "provider" to "deepseek")).state
+        assertEquals(ProviderSource.WeiAssist, s.source)
+        assertEquals("deepseek", s.providerId)
     }
 }

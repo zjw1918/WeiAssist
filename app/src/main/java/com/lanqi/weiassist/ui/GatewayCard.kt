@@ -3,11 +3,13 @@ package com.lanqi.weiassist.ui
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.text.selection.SelectionContainer
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -17,6 +19,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -27,15 +30,14 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import com.lanqi.weiassist.R
-import com.lanqi.weiassist.agent.CustomProvider
+import com.lanqi.weiassist.agent.GatewayLink
+import com.lanqi.weiassist.agent.ProviderSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.net.HttpURLConnection
 import java.net.Inet4Address
 import java.net.NetworkInterface
-import java.net.URL
 
 /**
  * The AI gateway in Settings. It is a separate app, WeiAssist Gateway (magpie: providers, subscriptions, routing and
@@ -103,28 +105,17 @@ enum class GatewayStatus {
     Checking, NotInstalled, Off, Serving;
 
     companion object {
-        const val PACKAGE = "com.lanqi.weiassist.gateway"
-        const val PORT = 3425
-        const val LOCAL = "http://127.0.0.1:$PORT"
-        const val DOWNLOAD = "https://github.com/zjw1918/WeiAssist/releases/latest"
+        const val PACKAGE = GatewayLink.PACKAGE
+        const val PORT = GatewayLink.PORT
+        const val LOCAL = GatewayLink.ORIGIN
+        const val DOWNLOAD = GatewayLink.DOWNLOAD
 
         /** Installed (it is in the manifest's queries), and whether it answers on loopback, where it needs no key. */
-        fun check(ctx: Context): GatewayStatus {
-            val installed = runCatching { ctx.packageManager.getPackageInfo(PACKAGE, 0) }.isSuccess
-            if (!installed) return NotInstalled
-            return if (answers()) Serving else Off
+        fun check(ctx: Context): GatewayStatus = when (GatewayLink.status(ctx)) {
+            GatewayLink.Status.NotInstalled -> NotInstalled
+            GatewayLink.Status.Off -> Off
+            GatewayLink.Status.Serving -> Serving
         }
-
-        private fun answers(): Boolean = runCatching {
-            val c = URL("$LOCAL/v1/models").openConnection() as HttpURLConnection
-            try {
-                c.connectTimeout = 1_000
-                c.readTimeout = 2_000
-                c.responseCode in 200..299
-            } finally {
-                c.disconnect()
-            }
-        }.getOrDefault(false)
     }
 }
 
@@ -137,21 +128,12 @@ private fun lanAddress(): String? = runCatching {
         .firstOrNull { it is Inet4Address && it.isSiteLocalAddress }?.hostAddress
 }.getOrNull()
 
-/**
- * WeiAssist Gateway as one of the assistant's providers (Providers tab): every model the gateway serves (the
- * user's subscriptions and providers, routed and translated by magpie) through one OpenAI-compatible connection
- * on this phone. Added as a custom provider with a fixed id, so it is edited, refreshed and removed like one.
- * Shown until it is added; tapping it adds it and makes it the provider in use, or opens the gateway (or its
- * download) when it isn't serving.
- */
+/** The gateway's status, checked every few seconds while the screen is in front (it is turned on and off in its own app). */
 @Composable
-fun GatewayProviderRow(vm: com.lanqi.weiassist.AppViewModel) {
+fun rememberGatewayStatus(): GatewayStatus {
     val ctx = LocalContext.current
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
-    var gw by remember { mutableStateOf(GatewayStatus.Checking) }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var gw by remember { mutableStateOf(GatewayStatus.Checking) }
     LaunchedEffect(lifecycle) {
         lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
             while (true) {
@@ -160,85 +142,73 @@ fun GatewayProviderRow(vm: com.lanqi.weiassist.AppViewModel) {
             }
         }
     }
-    val failed = error?.let { stringResource(R.string.gateway_provider_failed, it) }
-    val empty = stringResource(R.string.gateway_provider_empty)
-    GroupRow(
-        title = GatewayProvider.NAME, icon = R.drawable.ic_sparkle,
-        description = failed ?: stringResource(
-            when (gw) {
-                GatewayStatus.NotInstalled -> R.string.gateway_provider_get
-                GatewayStatus.Off -> R.string.gateway_provider_off
-                else -> R.string.gateway_provider_row
-            },
-        ),
-        descriptionColor = if (failed != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
-        onClick = {
-            when (gw) {
-                GatewayStatus.NotInstalled ->
-                    runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(GatewayStatus.DOWNLOAD)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                GatewayStatus.Off -> ctx.packageManager.getLaunchIntentForPackage(GatewayStatus.PACKAGE)?.let {
-                    runCatching { ctx.startActivity(it.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                }
-                GatewayStatus.Serving -> if (!busy) {
-                    busy = true
-                    error = null
-                    scope.launch {
-                        error = runCatching { GatewayProvider.add(vm) }.fold({ ok -> if (ok) null else empty }, { it.message ?: it.javaClass.simpleName })
-                        busy = false
-                    }
-                }
-                GatewayStatus.Checking -> Unit
-            }
-        },
-        trailing = if (busy) { { androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) } } else null,
-    )
+    return gw
 }
 
-object GatewayProvider {
-    /** custom- like every custom provider, so Pi host and the app treat it as one. */
-    const val ID = "custom-weiassist-gateway"
-    const val NAME = "WeiAssist Gateway"
+/** Open the Gateway app, or its download page when it isn't installed. */
+fun openGateway(ctx: Context) {
+    val launch = ctx.packageManager.getLaunchIntentForPackage(GatewayStatus.PACKAGE)
+        ?: Intent(Intent.ACTION_VIEW, Uri.parse(GatewayStatus.DOWNLOAD))
+    runCatching { ctx.startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
+}
 
-    /**
-     * The gateway is loopback-only from here, where it asks for no key; Pi saves a provider as signed in only
-     * with a key, so it gets this one. Devices on the network need a real gateway key instead.
-     */
-    private const val LOCAL_KEY = "local"
-
-    /** Add (or refresh) the gateway as a provider and use it. False: it serves no models yet. */
-    suspend fun add(vm: com.lanqi.weiassist.AppViewModel): Boolean {
-        val p = fetch(vm) ?: return false
-        vm.saveCustomProvider(p, LOCAL_KEY)
-        return true
-    }
-
-    /**
-     * Bring the added gateway's models up to date (sign-ins added or removed in its console, what each model
-     * takes), keeping the provider in use as it is. Nothing when it isn't serving or nothing changed.
-     */
-    suspend fun refresh(vm: com.lanqi.weiassist.AppViewModel, saved: CustomProvider) {
-        val p = runCatching { fetch(vm) }.getOrNull() ?: return
-        if (p != saved) vm.saveCustomProvider(p, null)
-    }
-
-    private suspend fun fetch(vm: com.lanqi.weiassist.AppViewModel): CustomProvider? {
-        val (base, models) = vm.fetchCustomModels("${GatewayStatus.LOCAL}/v1", LOCAL_KEY, null)
-        if (models.isEmpty()) return null
-        // In the gateway's own order (the newest model first, which the app then picks), not by id.
-        val order = withContext(Dispatchers.IO) { listedIds(base) }
-        val sorted = models.sortedBy { m -> order.indexOf(m.id).let { if (it < 0) Int.MAX_VALUE else it } }
-        return CustomProvider(ID, NAME, base, sorted)
-    }
-
-    private fun listedIds(base: String): List<String> = runCatching {
-        val c = URL("$base/models").openConnection() as HttpURLConnection
-        try {
-            c.connectTimeout = 2_000
-            c.readTimeout = 5_000
-            val data = org.json.JSONObject(c.inputStream.bufferedReader().use { it.readText() }).getJSONArray("data")
-            (0 until data.length()).map { data.getJSONObject(it).optString("id") }
-        } finally {
-            c.disconnect()
+/**
+ * Where the assistant's AI providers come from (top of the Providers tab): WeiAssist's own, or the Gateway app, which
+ * then carries every engine's requests. Only the user switches; the gateway must be serving models to be chosen.
+ */
+@Composable
+fun ProviderSourcePicker(vm: com.lanqi.weiassist.AppViewModel, source: ProviderSource) {
+    val ctx = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val gw = rememberGatewayStatus()
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val check: @Composable (Boolean) -> Unit = { on ->
+        if (on) androidx.compose.foundation.layout.Box(
+            Modifier.size(28.dp).background(MaterialTheme.colorScheme.primaryContainer, CircleShape), contentAlignment = Alignment.Center,
+        ) {
+            AppIcon(R.drawable.ic_check_circle, stringResource(R.string.provider_in_use), Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
         }
-    }.getOrDefault(emptyList())
+    }
+    Group {
+        GroupRow(
+            title = stringResource(R.string.source_weiassist), icon = R.drawable.ic_sparkle,
+            description = stringResource(R.string.source_weiassist_desc),
+            onClick = if (source == ProviderSource.WeiAssist || busy) null else { { error = null; scope.launch { vm.selectSource(ProviderSource.WeiAssist) } } },
+            trailing = { check(source == ProviderSource.WeiAssist) },
+        )
+        GroupDivider()
+        val on = source == ProviderSource.Gateway
+        GroupRow(
+            title = stringResource(R.string.source_gateway), icon = R.drawable.ic_sparkle,
+            description = error ?: stringResource(
+                when {
+                    gw == GatewayStatus.NotInstalled -> R.string.source_gateway_get
+                    gw == GatewayStatus.Off -> if (on) R.string.source_gateway_stopped else R.string.source_gateway_off
+                    else -> R.string.source_gateway_desc
+                },
+            ),
+            descriptionColor = if (error != null || on && gw == GatewayStatus.Off) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+            onClick = {
+                when {
+                    gw == GatewayStatus.NotInstalled || gw == GatewayStatus.Off || on -> openGateway(ctx)
+                    gw == GatewayStatus.Serving && !busy -> {
+                        busy = true
+                        error = null
+                        scope.launch {
+                            error = runCatching { vm.selectSource(ProviderSource.Gateway) }.getOrElse { it.message ?: it.javaClass.simpleName }
+                            busy = false
+                        }
+                    }
+                    else -> Unit
+                }
+            },
+            trailing = {
+                if (busy) androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else check(on)
+            },
+        )
+    }
+    // In use: its models as it serves them now (sign-ins added or removed in its console), each time this tab opens.
+    val refresh = source == ProviderSource.Gateway && gw == GatewayStatus.Serving
+    LaunchedEffect(refresh) { if (refresh) runCatching { vm.refreshGateway() } }
 }
