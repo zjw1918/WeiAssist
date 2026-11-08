@@ -51,6 +51,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -868,9 +869,13 @@ private fun StatTile(value: String, label: String, modifier: Modifier) {
 @Composable
 private fun StatRow(label: String, value: String, sub: Boolean = false) {
     val c = MaterialTheme.colorScheme
+    // The label keeps its width; a long value (a custom provider's model, provider/model) wraps on the right.
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = if (sub) c.outline else c.onSurfaceVariant, modifier = Modifier.weight(1f))
-        Text(value, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp), color = if (sub) c.outline else c.onSurface)
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = if (sub) c.outline else c.onSurfaceVariant, maxLines = 1)
+        Text(
+            value, style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 13.sp, textAlign = TextAlign.End),
+            color = if (sub) c.outline else c.onSurface, modifier = Modifier.weight(1f).padding(start = 16.dp),
+        )
     }
 }
 
