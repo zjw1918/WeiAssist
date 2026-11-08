@@ -26,7 +26,7 @@
 
 从 [Releases](https://github.com/zjw1918/WeiAssist/releases/latest) 下载 APK 并打开。Android 询问时，允许浏览器或文件管理器安装应用。
 
-可选：**WeiAssist 网关**（同一版本中的 `WeiAssist-Gateway-<版本>.apk`）让手机成为 AI 网关，服务本机应用和局域网设备：你的服务商、订阅和路由，统一成一个兼容 OpenAI、Anthropic 和 Gemini 的 API。它运行 [magpie](https://github.com/yetone/magpie)。只用助手的话不必安装。
+可选：**网关**（同一版本中的 `Gateway-<版本>.apk`）让手机成为 AI 网关，服务本机应用和局域网设备：你的服务商、订阅和路由，统一成一个兼容 OpenAI、Anthropic 和 Gemini 的 API。它运行 [magpie](https://github.com/yetone/magpie)。只用助手的话不必安装。
 
 ## 快速开始
 
