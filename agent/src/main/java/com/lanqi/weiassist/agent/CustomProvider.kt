@@ -120,7 +120,8 @@ data class CustomProvider(
         /**
          * What one /models entry says beyond its id. Context window: vLLM max_model_len; OpenRouter, Together,
          * Fireworks context_length; Groq context_window; LM Studio max_context_length; llama.cpp meta.n_ctx_train.
-         * Images: OpenRouter-style architecture.input_modalities (or a top-level input_modalities).
+         * Images: OpenRouter-style architecture.input_modalities (or a top-level input_modalities); magpie's
+     * modalities.input.
          */
         private fun describe(id: String, o: JSONObject): ServerModel {
             val ctx = listOf(
@@ -129,6 +130,7 @@ data class CustomProvider(
                 o.optJSONObject("meta")?.optInt("n_ctx_train") ?: 0,
             ).firstOrNull { it > 0 } ?: 0
             val modalities = o.optJSONObject("architecture")?.optJSONArray("input_modalities") ?: o.optJSONArray("input_modalities")
+                ?: o.optJSONObject("modalities")?.optJSONArray("input")
             val images = modalities?.let { m -> (0 until m.length()).any { m.optString(it) == "image" } }
             return ServerModel(id, ctx, images)
         }

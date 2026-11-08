@@ -164,6 +164,11 @@
     <string name="gateway_no_network">Network: not on a local network</string>
     <string name="gateway_get">Get WeiAssist Gateway</string>
     <string name="gateway_open">Open WeiAssist Gateway</string>
+    <string name="gateway_provider_row">Your subscriptions and providers in WeiAssist Gateway, through one connection on this phone.</string>
+    <string name="gateway_provider_get">Not installed. Tap to download WeiAssist Gateway.</string>
+    <string name="gateway_provider_off">Turn the gateway on first. Tap to open it.</string>
+    <string name="gateway_provider_empty">The gateway has no models yet. Add a provider or sign in in its console.</string>
+    <string name="gateway_provider_failed">Couldn\'t reach the gateway: %1$s</string>
     <string name="shell_title">Shell backend (virtual displays)</string>
     <string name="shell_why">Lets each phone task run in its own virtual display, so several can work at once and you can watch them. Set up once with Wireless debugging (Developer options).</string>
     <string name="shell_unsupported">Needs Android 11 or later (Wireless debugging).</string>

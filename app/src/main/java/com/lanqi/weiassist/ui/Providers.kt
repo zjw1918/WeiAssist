@@ -94,6 +94,11 @@ fun ProvidersTab(vm: AppViewModel, s: AgentState) {
                         },
                     )
                 }
+                // Until it is added: then it is listed above, as a custom provider.
+                if (s.providers.none { it.id == GatewayProvider.ID }) {
+                    GroupDivider()
+                    GatewayProviderRow(vm)
+                }
                 GroupDivider()
                 GroupRow(
                     title = stringResource(R.string.custom_add_title), icon = R.drawable.ic_add,

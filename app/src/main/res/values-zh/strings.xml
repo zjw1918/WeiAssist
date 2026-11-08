@@ -161,6 +161,11 @@
     <string name="gateway_no_network">局域网：未连接局域网</string>
     <string name="gateway_get">获取 WeiAssist 网关</string>
     <string name="gateway_open">打开 WeiAssist 网关</string>
+    <string name="gateway_provider_row">通过本机的一个连接，使用 WeiAssist 网关里的订阅和服务商。</string>
+    <string name="gateway_provider_get">未安装。点按下载 WeiAssist 网关。</string>
+    <string name="gateway_provider_off">请先打开网关。点按前往。</string>
+    <string name="gateway_provider_empty">网关里还没有模型。请先在其控制台添加服务商或登录。</string>
+    <string name="gateway_provider_failed">无法连接网关：%1$s</string>
     <string name="shell_title">Shell 后台（虚拟显示器）</string>
     <string name="shell_why">让每个手机任务在自己的虚拟显示器里运行，多个任务可以同时进行，你也能看到它们在做什么。只需用「无线调试」（开发者选项）设置一次。</string>
     <string name="shell_unsupported">需要 Android 11 或更高版本（无线调试）。</string>
