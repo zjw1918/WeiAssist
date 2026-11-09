@@ -83,6 +83,7 @@
     <string name="custom_model_id">Model id</string>
     <string name="custom_model_add">Add</string>
     <string name="custom_save">Save and use</string>
+    <string name="custom_save_failed">Couldn\'t save this provider: %1$s</string>
     <string name="custom_delete">Delete</string>
     <string name="custom_delete_title">Delete %1$s?</string>
     <string name="custom_delete_text">Removes this provider and its saved key from the phone.</string>

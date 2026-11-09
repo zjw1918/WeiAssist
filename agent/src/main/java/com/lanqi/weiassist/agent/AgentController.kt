@@ -10,6 +10,7 @@ import com.lanqi.weiassist.core.ToolHost
 import com.lanqi.weiassist.pi.PiEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -444,10 +445,13 @@ class AgentController(context: Context) {
     // ---- custom providers --------------------------------------------------------------------------
     /**
      * Add or update a custom provider. A new [key] is saved with it and makes it the provider in use;
-     * without one, an existing provider keeps its saved key.
+     * without one, an existing provider keeps its saved key. If Pi can't take it nothing changes, so that no provider
+     * is left without its key; the problem to show is returned, else null. Runs on the controller's scope: when it
+     * works the app may leave the form that is waiting (signed in now), and that mustn't undo it.
      */
-    fun saveCustomProvider(p: CustomProvider, key: String?) {
+    suspend fun saveCustomProvider(p: CustomProvider, key: String?): String? = scope.async {
         val old = _customProviders.value
+        val before = _state.value
         val list = if (old.any { it.id == p.id }) old.map { if (it.id == p.id) p else it } else old + p
         _customProviders.value = list
         val json = CustomProvider.listToJson(list)
@@ -458,8 +462,16 @@ class AgentController(context: Context) {
             _state.update { it.copy(providerId = p.id, modelId = prefs.getString("modelId.${p.id}", null) ?: "", source = ProviderSource.WeiAssist) }
             persistModel()
         }
-        scope.launch { accounts.setCustomProviders(piProviders(), p.id, k) }
-    }
+        val failure = runCatching { accounts.setCustomProviders(piProviders(), p.id, k) }.exceptionOrNull() ?: return@async null
+        _customProviders.value = old
+        prefs.edit().putString("customProviders", CustomProvider.listToJson(old).toString()).apply()
+        if (k != null) {
+            _state.update { it.copy(providerId = before.providerId, modelId = before.modelId, source = before.source) }
+            persistModel()
+        }
+        runCatching { accounts.setCustomProviders(piProviders()) }
+        failure.message ?: failure.javaClass.simpleName
+    }.await()
 
     /** Remove a custom provider and its saved key; if it was in use, Pi's next status moves to another. */
     fun deleteCustomProvider(id: String) {
@@ -467,7 +479,7 @@ class AgentController(context: Context) {
         _customProviders.value = list
         val json = CustomProvider.listToJson(list)
         prefs.edit().putString("customProviders", json.toString()).remove("modelId.$id").apply()
-        scope.launch { accounts.setCustomProviders(piProviders()) }
+        scope.launch { runCatching { accounts.setCustomProviders(piProviders()) } }
     }
 
     // ---- where the providers come from ------------------------------------------------------------

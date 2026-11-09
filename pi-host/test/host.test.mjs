@@ -116,7 +116,7 @@ test("a custom OpenAI-compatible provider: offered, keyed, used for chat, and re
 	assert.ok(p.models.every((m) => m.input.includes("image")));
 
 	// The app saves the key with the provider (no separate sign-in step).
-	host.call("setCustomProviders", { providers: [custom], provider: "custom-mock", key: "sk-mine" });
+	host.call("query", { id: "c", fn: "setCustomProviders", args: { providers: [custom], provider: "custom-mock", key: "sk-mine" } });
 	await host.waitFor("status", (s) => s.providers.find((x) => x.id === "custom-mock")?.credential === "api_key");
 	assert.deepEqual(JSON.parse(host.state.credentials)["custom-mock"], { type: "api_key", key: "sk-mine" });
 
@@ -138,7 +138,7 @@ test("a custom OpenAI-compatible provider: offered, keyed, used for chat, and re
 	assert.ok(!body.messages.some((m) => m.role === "developer"), "system role, not developer");
 
 	// Removing it drops the provider and its key.
-	host.call("setCustomProviders", { providers: [] });
+	host.call("query", { id: "c", fn: "setCustomProviders", args: { providers: [] } });
 	await host.waitFor("status", (s) => !s.providers.some((x) => x.id === "custom-mock"));
 	assert.equal(JSON.parse(host.state.credentials)["custom-mock"], undefined);
 });
@@ -893,7 +893,7 @@ test("the key proxy gets a provider's current key and endpoint; unknown provider
 
 test("a custom provider is a route with its endpoint's quirks, and its key and base URL reach the proxy", async () => {
 	const host = await startHost({ credentials: apiKeyCredentials, customProviders: [{ id: "custom-x", name: "X", baseUrl: "http://10.0.0.2:8000/v1", models: [{ id: "qwen-9", contextWindow: 32768, images: false }], images: false }] });
-	host.call("setCustomProviders", { providers: [{ id: "custom-x", name: "X", baseUrl: "http://10.0.0.2:8000/v1", models: [{ id: "qwen-9", contextWindow: 32768, images: false }], images: false }], provider: "custom-x", key: "sk-x" });
+	host.call("query", { id: "c", fn: "setCustomProviders", args: { providers: [{ id: "custom-x", name: "X", baseUrl: "http://10.0.0.2:8000/v1", models: [{ id: "qwen-9", contextWindow: 32768, images: false }], images: false }], provider: "custom-x", key: "sk-x" } });
 	await host.waitFor("status", (m) => m.providers.some((p) => p.id === "custom-x" && p.credential));
 	const route = (await query(host, "coreRoutes")).find((r) => r.id === "custom-x");
 	assert.equal(route.api, "openai-completions");
@@ -902,4 +902,30 @@ test("a custom provider is a route with its endpoint's quirks, and its key and b
 	assert.equal(route.models[0].reasoningEfforts, false, "a custom model that doesn't think says so");
 	const auth = await query(host, "providerAuth", { provider: "custom-x" });
 	assert.deepEqual([auth.apiKey, auth.baseUrl], ["sk-x", "http://10.0.0.2:8000/v1"]);
+});
+
+test("on an old WebView (no throwIfAborted, AbortSignal.any or .timeout) a custom provider's key is still saved", async () => {
+	const proto = Object.getOwnPropertyDescriptor(AbortSignal.prototype, "throwIfAborted");
+	const any = Object.getOwnPropertyDescriptor(AbortSignal, "any");
+	const timeout = Object.getOwnPropertyDescriptor(AbortSignal, "timeout");
+	delete AbortSignal.prototype.throwIfAborted;
+	delete AbortSignal.any;
+	delete AbortSignal.timeout;
+	try {
+		const custom = { id: "custom-old", name: "Old", baseUrl: mock.url, models: [{ id: "m", images: false }] };
+		const host = await startHost({ customProviders: [custom] });
+		host.call("query", { id: "c", fn: "setCustomProviders", args: { providers: [custom], provider: custom.id, key: "sk-old" } });
+		const reply = await host.waitFor("query_result", (m) => m.id === "c");
+		assert.equal(reply.ok, true);
+		assert.deepEqual(JSON.parse(host.state.credentials)[custom.id], { type: "api_key", key: "sk-old" });
+
+		const c = new AbortController();
+		const both = AbortSignal.any([c.signal, new AbortController().signal]);
+		c.abort(new Error("stop"));
+		assert.throws(() => both.throwIfAborted(), /stop/);
+	} finally {
+		Object.defineProperty(AbortSignal.prototype, "throwIfAborted", proto);
+		Object.defineProperty(AbortSignal, "any", any);
+		Object.defineProperty(AbortSignal, "timeout", timeout);
+	}
 });

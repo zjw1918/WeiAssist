@@ -73,6 +73,8 @@ fun CustomProviderScreen(vm: AppViewModel, editing: CustomProvider?, onClose: ()
     var fetching by remember { mutableStateOf(false) }
     var fetchError by remember { mutableStateOf<String?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
+    var saving by remember { mutableStateOf(false) }
+    var saveError by remember { mutableStateOf<String?>(null) }
 
     val state by vm.state.collectAsStateWithLifecycle()
     val hasKey = editing != null && state.providers.any { it.id == editing.id && it.credential != null }
@@ -158,11 +160,20 @@ fun CustomProviderScreen(vm: AppViewModel, editing: CustomProvider?, onClose: ()
         }
         if (ollama) Text(stringResource(R.string.custom_ollama_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
 
-        Button(enabled = canSave, onClick = {
-            val p = CustomProvider(editing?.id ?: CustomProvider.newId(), name.trim(), CustomProvider.normalizeBaseUrl(url), selected)
-            vm.saveCustomProvider(p, key)
-            onClose()
-        }) { Text(stringResource(R.string.custom_save)) }
+        saveError?.let { Text(stringResource(R.string.custom_save_failed, it), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium) }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Button(enabled = canSave && !saving, onClick = {
+                val p = CustomProvider(editing?.id ?: CustomProvider.newId(), name.trim(), CustomProvider.normalizeBaseUrl(url), selected)
+                saving = true; saveError = null
+                // The form closes only once the provider and its key are really saved.
+                scope.launch {
+                    val problem = vm.saveCustomProvider(p, key)
+                    saving = false
+                    if (problem == null) onClose() else saveError = problem
+                }
+            }) { Text(stringResource(R.string.custom_save)) }
+            if (saving) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TextButton(onClick = onClose) { Text(stringResource(R.string.cancel)) }
             if (editing != null) TextButton(onClick = { confirmDelete = true }) {

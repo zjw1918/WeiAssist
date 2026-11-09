@@ -211,7 +211,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     val customProviders: StateFlow<List<com.lanqi.weiassist.agent.CustomProvider>> = controller
         .flatMapLatest { it?.customProviders ?: flowOf(emptyList()) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-    fun saveCustomProvider(p: com.lanqi.weiassist.agent.CustomProvider, key: String?) = withAgent { saveCustomProvider(p, key) }
+    /** The problem to show if it couldn't be saved, else null. */
+    suspend fun saveCustomProvider(p: com.lanqi.weiassist.agent.CustomProvider, key: String?): String? = controller.value?.saveCustomProvider(p, key)
     fun deleteCustomProvider(id: String) = withAgent { deleteCustomProvider(id) }
     suspend fun fetchCustomModels(baseUrl: String, key: String?, savedFor: String?) =
         controller.value?.fetchCustomModels(baseUrl, key, savedFor) ?: error("not ready")
