@@ -157,7 +157,7 @@ class AgentController(context: Context) {
     }
 
     /** Commands in the background; the service stays up for them. */
-    val backgroundJobs = BackgroundJobs(android.util.AtomicFile(java.io.File(appContext.filesDir, "background-jobs.json")))
+    val backgroundJobs = BackgroundJobs()
     private var collecting: kotlinx.coroutines.Job? = null
 
     /** Commands nobody waits for any more (see [BackgroundJobs]): collect each result from Termux until none is left. */
@@ -291,8 +291,8 @@ class AgentController(context: Context) {
         scope.launch(Dispatchers.IO) { Attachments.clearStaging(appContext) }
         scope.launch {
             sessions.load()
-            backgroundJobs.load() // commands left in the background when the app last ended
-            collectOrphans()
+            // The app ended without being able to clean up (killed, or closed while idle): closing it ends everything.
+            launch { termux.stopAllJobs() }
             loaded.complete(Unit)
             launch { gateway.start() }
             warmDsh()
@@ -640,6 +640,18 @@ class AgentController(context: Context) {
     fun stopAll() {
         phone.cancelWaits()
         sessions.stopAll()
+    }
+
+    /** The user closed the app: every session and background task ends. Files and conversations are kept. */
+    fun closeApp() {
+        stopAll()
+        // Their cores first: a command killed in the background must not come back as a result that wakes the model.
+        val waiting = backgroundJobs.jobs.value.map { it.session }.distinct()
+        waiting.forEach(backgroundJobs::removeSession)
+        scope.launch {
+            waiting.forEach { id -> runCatching { sessions.abandon(id) } }
+            termux.stopAllJobs()
+        }
     }
 
     /** Debug builds only: simulate the cores' runtimes dying (Pi's WebView renderer), to test recovery on a device. */

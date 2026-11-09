@@ -418,6 +418,9 @@ class SessionManager(
         endScreen(id) // kept a while if the user is on its page: they may correct the task and go on
     }
 
+    /** Tell session [id]'s core to end what it still has going, also when the session itself is idle. */
+    suspend fun abandon(id: String) { coreOf(id)?.abort(id) }
+
     fun stopAll() = live.values.map { it.value }.filter { it.busy }.forEach { stop(it.id) }
 
     /** Hold the session before its next action (what it is doing now finishes). */
