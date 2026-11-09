@@ -34,6 +34,10 @@ import com.lanqi.weiassist.agent.Screen
 import com.lanqi.weiassist.ui.ApiKeySignIn
 import com.lanqi.weiassist.ui.AppTheme
 import com.lanqi.weiassist.ui.CustomProviderScreen
+import com.lanqi.weiassist.ui.ScanQrButton
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.statusBarsPadding
 import com.lanqi.weiassist.ui.DeviceCodeSignIn
 import com.lanqi.weiassist.ui.HomeScreen
 import com.lanqi.weiassist.ui.Tab
@@ -143,7 +147,12 @@ fun MainActivity.App(vm: AppViewModel = viewModel()) {
         HomeScreen(vm, s, homeTab) { homeTab = it }
         return
     }
-    Scaffold { inner ->
+    Scaffold(
+        // Every sign-in page: API keys and sign-in links are often handed over as QR codes.
+        topBar = {
+            if (s.screen != Screen.Starting) Row(Modifier.fillMaxWidth().statusBarsPadding(), horizontalArrangement = Arrangement.End) { ScanQrButton() }
+        },
+    ) { inner ->
         if (s.screen == Screen.Starting) {
             Column(Modifier.fillMaxSize().padding(inner), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                 CircularProgressIndicator()

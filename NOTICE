@@ -20,6 +20,8 @@ The shell backend (module :shell) bundles native code:
   and The OpenSSL Project
 - Conscrypt (org.conscrypt:conscrypt-android) — Apache License 2.0,
   Copyright The Android Open Source Project
+- ZXing (com.google.zxing:core), for the QR scanner — Apache License 2.0,
+  Copyright ZXing authors
 
 Its adb pairing and connection protocol follows the Android Open Source Project's
 adb (packages/modules/adb), Apache License 2.0.

@@ -58,7 +58,7 @@ fun ProvidersTab(vm: AppViewModel, s: AgentState) {
     Scaffold(
         modifier = Modifier.nestedScroll(bar.nestedScrollConnection),
         contentWindowInsets = WindowInsets(0),
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.tab_providers)) }, scrollBehavior = bar) },
+        topBar = { TopAppBar(title = { Text(stringResource(R.string.tab_providers)) }, actions = { ScanQrButton() }, scrollBehavior = bar) },
     ) { inner ->
         Column(Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
             val provider = s.provider
