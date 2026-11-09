@@ -272,6 +272,7 @@
     <!-- Messages typed while a session works (Pi's steering) -->
     <string name="steer_hint">Add to the task (read after this step)</string>
     <string name="steer_queued">Waiting for the current step</string>
+    <string name="steer_now">Read now</string>
     <string name="steer_not_delivered">Not delivered: the task stopped first</string>
     <string name="attach">Attach</string>
     <string name="attach_photos">Photos</string>

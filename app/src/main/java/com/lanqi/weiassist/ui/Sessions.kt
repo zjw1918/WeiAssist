@@ -588,7 +588,7 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
                 val onFileLink = fileLinks
                 // Keyed by session too: state kept per row stays with its session.
                 items(body, key = { "${session.id}:${it.key}" }, contentType = { it.contentType }) { e ->
-                    CompositionLocalProvider(LocalFileLinks provides onFileLink) { ChatEntryView(e, session, onProcess, onStats) }
+                    CompositionLocalProvider(LocalFileLinks provides onFileLink) { ChatEntryView(e, session, onProcess, onStats, if (vm.canHurry(session.id)) ({ vm.hurry(session.id) }) else null) }
                 }
                 if (liveFooter != null) {
                     items(streamBlocks.size, key = { "${session.id}:${liveFooter.key}:s$it" }, contentType = { streamBlocks[it].javaClass }) { i ->
@@ -667,7 +667,7 @@ private fun ScreenPreview(vm: AppViewModel, s: SessionSummary) {
 
 /** The user's message: a bubble on the right, with its attachments and, while steering, whether it was delivered. */
 @Composable
-fun UserMessage(entry: ChatItem, modifier: Modifier = Modifier) {
+fun UserMessage(entry: ChatItem, modifier: Modifier = Modifier, onHurry: (() -> Unit)? = null) {
     val item = entry as? ChatItem.User ?: return
     val c = MaterialTheme.colorScheme
     Column(modifier.fillMaxWidth().padding(start = 48.dp), horizontalAlignment = Alignment.End) {
@@ -687,6 +687,7 @@ fun UserMessage(entry: ChatItem, modifier: Modifier = Modifier) {
             style = MaterialTheme.typography.labelSmall, color = if (item.delivery == Delivery.Queued) c.onSurfaceVariant else c.error,
             modifier = Modifier.padding(top = 4.dp, end = 6.dp),
         )
+        if (item.delivery == Delivery.Queued && onHurry != null) TextButton(onClick = onHurry) { Text(stringResource(R.string.steer_now)) }
     }
 }
 

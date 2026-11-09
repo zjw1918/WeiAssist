@@ -296,6 +296,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun stop(id: String) = withAgent { stop(id) }
+    fun hurry(id: String) { controller.value?.sessions?.hurry(id) }
+    fun canHurry(id: String) = controller.value?.sessions?.canHurry(id) == true
     fun pause(id: String) = withAgent { sessions.pause(id) }
     fun resume(id: String) = withAgent { sessions.resume(id) }
     fun continueTask(id: String) { val c = controller.value ?: return; viewModelScope.launch { c.sessions.continueTask(id) } }

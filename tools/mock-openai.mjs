@@ -46,6 +46,12 @@ export const SCRIPTS = {
 		{ tool: "bash", args: { command: "curl -s 'wttr.in/Hangzhou?format=3'", timeout: 30 } },
 		{ text: "Hangzhou: rain." },
 	],
+	// Two commands in a row: for a first one that goes on in the background while the second runs.
+	bash_twice: [
+		{ tool: "bash", args: { command: "sleep 500", timeout: 600 } },
+		{ tool: "bash", args: { command: "echo second" } },
+		{ text: "both done" },
+	],
 	// The supervisor: start a chat session, wait for it, pass something on, read it back.
 	supervise: [
 		{ tool: "list_sessions", args: {} },

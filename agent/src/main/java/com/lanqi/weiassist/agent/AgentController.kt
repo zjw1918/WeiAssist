@@ -228,6 +228,8 @@ class AgentController(context: Context) {
         }
         // The user stopped the run while a call worked: end what it started (a bash command in Termux).
         tools.register("tool_cancel") { m -> router.cancel(m.getString("session"), m.optString("call")); null }
+        // The user wants to be read now: where a running command has got to, for the model.
+        tools.register("tool_peek") { m -> router.peek(m.getString("session"), m.optString("call"))?.let { org.json.JSONObject().put("text", it) } }
         // The agent asks the user something (DeepSeek Harness: ask_user_question, a plan to review, an approval): in
         // the session's chat and, for a conversation from Telegram, in that chat; the first answer counts.
         tools.register("ask_user") { m ->
@@ -307,6 +309,7 @@ class AgentController(context: Context) {
             phone = phoneTools::call,
             bash = termux::run,
             bashKill = termux::kill,
+            bashPeek = termux::peek,
             sendFile = ::sendFile,
             supervisor = commands::handle,
         )

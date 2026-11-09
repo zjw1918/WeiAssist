@@ -269,6 +269,7 @@
     <!-- 会话工作时发的消息（Pi 的 steering） -->
     <string name="steer_hint">补充说明（当前这一步做完后读到）</string>
     <string name="steer_queued">等当前这一步做完</string>
+    <string name="steer_now">立即读取</string>
     <string name="steer_not_delivered">未送达：任务已先停止</string>
     <string name="attach">添加附件</string>
     <string name="attach_photos">照片</string>

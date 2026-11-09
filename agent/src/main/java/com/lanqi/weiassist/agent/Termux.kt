@@ -132,8 +132,10 @@ class Termux(context: Context) {
             d="${'$'}{HOME}/sessions/${'$'}{2}"; mkdir -p "${'$'}{d}/.tmux" && cd "${'$'}{d}" || exit 97
             export TMUX_TMPDIR="${'$'}{d}/.tmux"
             p="${'$'}{d}/.bash-${'$'}{3}.pid"
-            timeout -k 5 "${'$'}{4}" bash -c "${'$'}{1}" < /dev/null & echo ${'$'}! > "${'$'}{p}"
+            o="${'$'}{d}/.bash-${'$'}{3}.out"; e="${'$'}{d}/.bash-${'$'}{3}.err"
+            timeout -k 5 "${'$'}{4}" bash -c "${'$'}{1}" < /dev/null > "${'$'}{o}" 2> "${'$'}{e}" & echo ${'$'}! > "${'$'}{p}"
             wait ${'$'}!; c=${'$'}?; rm -f "${'$'}{p}"
+            cat "${'$'}{o}"; cat "${'$'}{e}" >&2; rm -f "${'$'}{o}" "${'$'}{e}"
             sync_lock > /dev/null 2>&1
             exit ${'$'}{c}
         """.trimIndent()
@@ -161,6 +163,25 @@ class Termux(context: Context) {
             if (errOut.isNotEmpty()) append("\n--- stderr ---\n").append(clip(errOut, length(r, "stderr_original_length") ?: errOut.length))
             if (out.isEmpty() && errOut.isEmpty()) append(" (no output)")
         }
+    }
+
+    /**
+     * What the model gets in place of the result of a [run] that goes on in the background: its output so far, and
+     * how to look at it and stop it. Null if it has ended, or Termux didn't answer (the model then waits for the result).
+     */
+    suspend fun peek(session: String, call: String, timeoutSec: Int): String? {
+        if (setupProblem() != null) return null
+        val script = """
+            d="${'$'}{HOME}/sessions/${'$'}{1}"; p="${'$'}{d}/.bash-${'$'}{2}.pid"
+            [ -f "${'$'}{p}" ] || exit 3
+            echo "${'$'}(cat "${'$'}{p}") ${'$'}(( ${'$'}(date +%s) - ${'$'}(stat -c %Y "${'$'}{p}") ))"
+            tail -c $PEEK_BYTES "${'$'}{d}/.bash-${'$'}{2}.out" 2> /dev/null
+            tail -c $PEEK_BYTES "${'$'}{d}/.bash-${'$'}{2}.err" 2> /dev/null >&2
+            exit 0
+        """.trimIndent()
+        val r = execute(arrayOf("-c", script, "bash", safe(session), safe(call)), PEEK_SEC) ?: return null
+        if (r.getInt("err", RESULT_OK) != RESULT_OK || r.getInt("exitCode", -1) != 0) return null
+        return standIn(r.getString("stdout").orEmpty(), r.getString("stderr").orEmpty(), safe(session), safe(call), timeoutSec)
     }
 
     /** Stop a running [run] (the user pressed Stop). */
@@ -502,6 +523,27 @@ class Termux(context: Context) {
 
         /** Ids go into a path: letters, digits, - and _ only. */
         private fun safe(s: String) = s.replace(Regex("[^A-Za-z0-9_-]"), "_")
+
+        private const val PEEK_BYTES = 3000
+        private const val PEEK_SEC = 20L
+
+        /** [peek]'s text for the model, from what its script printed ("pid seconds", then the end of the output). Pure, for tests. */
+        internal fun standIn(out: String, err: String, session: String, call: String, timeoutSec: Int): String? {
+            val head = out.substringBefore('\n').trim().split(' ')
+            val pid = head.getOrNull(0)?.toIntOrNull() ?: return null
+            val age = head.getOrNull(1)?.toIntOrNull() ?: return null
+            val output = if ('\n' in out) out.substringAfter('\n') else ""
+            val log = "~/sessions/$session/.bash-$call"
+            return buildString {
+                append("Still running after ${age}s. The user asked for your attention, so it moved to the background and keeps going; it is killed at its ${timeoutSec}s timeout.\n")
+                append("pid $pid. Full output so far: $log.out and $log.err (bash can read them).\n")
+                append("To stop it: kill -TERM $pid. Its real result will reach you when it ends.\n")
+                append("Programs often buffer output written to a file, so empty output doesn't mean it is stuck: check ps and the files it works on before killing it.")
+                if (output.isNotEmpty()) append("\n--- end of stdout ---\n").append(output)
+                if (err.isNotEmpty()) append("\n--- end of stderr ---\n").append(err)
+                if (output.isEmpty() && err.isEmpty()) append("\n(no output yet)")
+            }
+        }
 
         /** Long output keeps its start and its end (errors and results are usually at the end). */
         internal fun clip(s: String, originalLength: Int): String {

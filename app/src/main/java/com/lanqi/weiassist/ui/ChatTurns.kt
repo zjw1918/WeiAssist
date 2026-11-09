@@ -252,13 +252,13 @@ fun chatEntries(blocks: List<ChatBlock>): List<ChatEntry> {
 
 /** One row on the page. Only the live turn's rows read [session]; the others skip while it streams. */
 @Composable
-fun ChatEntryView(e: ChatEntry, session: SessionState, onProcess: (String) -> Unit, onStats: (String) -> Unit) {
+fun ChatEntryView(e: ChatEntry, session: SessionState, onProcess: (String) -> Unit, onStats: (String) -> Unit, onHurry: (() -> Unit)? = null) {
     val m = Modifier.padding(top = e.gap)
     when (e) {
         is ChatEntry.Message -> when (e.item) {
             is ChatItem.Trigger -> TriggerCard(e.item, m)
             is ChatItem.Command -> CommandMessage(e.item, m)
-            else -> UserMessage(e.item, m)
+            else -> UserMessage(e.item, m, onHurry)
         }
         is ChatEntry.Header -> TurnHeader(e.turn, session, onProcess, m)
         is ChatEntry.LiveSteps -> LiveProcess(e.turn, session, m)

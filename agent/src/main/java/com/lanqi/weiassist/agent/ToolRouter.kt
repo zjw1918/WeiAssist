@@ -17,11 +17,12 @@ class ToolRouter(
     private val phone: suspend (session: String, tool: String, args: JSONObject) -> String,
     private val bash: suspend (session: String, call: String, command: String, timeoutSec: Int) -> String,
     private val bashKill: suspend (session: String, call: String) -> Unit,
+    private val bashPeek: suspend (session: String, call: String, timeoutSec: Int) -> String?,
     private val sendFile: suspend (session: String, path: String, caption: String) -> Pair<Boolean, String>,
     private val supervisor: suspend (caller: String, action: String, args: JSONObject) -> String,
 ) {
-    /** Bash commands running now, as "session/call": only these have anything to cancel. */
-    private val runningBash = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    /** Bash commands running now, as "session/call", with their timeouts: only these have anything to cancel. */
+    private val runningBash = java.util.concurrent.ConcurrentHashMap<String, Int>()
 
     suspend fun call(session: String, call: String, name: String, args: JSONObject): ToolResult {
         val s = summary(session) ?: return ToolResult("This session no longer exists.", isError = true)
@@ -37,8 +38,9 @@ class ToolRouter(
             ToolCatalog.BASH ->
                 if (!gate(session)) ToolResult("stopped by the user")
                 else {
-                    runningBash += "$session/$call"
-                    try { ToolResult(bash(session, call, args.getString("command"), bashTimeout(args))) } finally { runningBash -= "$session/$call" }
+                    val timeout = bashTimeout(args)
+                    runningBash["$session/$call"] = timeout
+                    try { ToolResult(bash(session, call, args.getString("command"), timeout)) } finally { runningBash -= "$session/$call" }
                 }
             ToolCatalog.SEND_FILE -> {
                 val (ok, text) = if (!gate(session)) false to "Stopped by the user." else sendFile(session, args.getString("path"), args.optString("caption"))
@@ -51,8 +53,12 @@ class ToolRouter(
 
     /** The user stopped the run while call [call] worked: end what it started (a bash command in Termux). */
     suspend fun cancel(session: String, call: String) {
-        if ("$session/$call" in runningBash) bashKill(session, call)
+        if (runningBash.containsKey("$session/$call")) bashKill(session, call)
     }
+
+    /** How call [call] is doing, for the model while it goes on in the background; null if it has ended. */
+    suspend fun peek(session: String, call: String): String? =
+        runningBash["$session/$call"]?.let { bashPeek(session, call, it) }
 
     companion object {
         const val BASH_TIMEOUT = 120

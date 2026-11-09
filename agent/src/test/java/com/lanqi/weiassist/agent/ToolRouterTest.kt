@@ -56,6 +56,7 @@ class ToolRouterTest {
             phone = { _, tool, args -> phone += tool to args; phoneAnswer },
             bash = { _, call, command, timeout -> bash += Triple(call, command, timeout); bashDone?.await() ?: "exit code 0" },
             bashKill = { _, call -> kills += call },
+            bashPeek = { _, call, timeout -> "$call within $timeout" },
             sendFile = { _, path, caption -> sendOk to (if (sendOk) "sent $path ($caption)" else "No such file") },
             supervisor = { _, action, args -> supervisor += action to args; "ok $action" },
         )
@@ -133,5 +134,17 @@ class ToolRouterTest {
         assertEquals("New", f.supervisor[3].second.getString("title"))
         // Every supervisor tool in the catalog has an action.
         ToolCatalog.entries.filter { it.set == "supervisor" }.forEach { ToolRouter.supervisorCall(it.spec.name, JSONObject()) }
+    }
+
+    @Test fun `only a running command can be peeked, with its timeout`() = runBlocking {
+        val f = Fakes(session(termux = true))
+        f.bashDone = CompletableDeferred()
+        assertEquals(null, f.router.peek("s", "c9"))
+        val running = async { f.router.call("s", "c9", "bash", args("command" to "sleep 500", "timeout" to 300)) }
+        while (f.bash.isEmpty()) yield()
+        assertEquals("c9 within 300", f.router.peek("s", "c9"))
+        f.bashDone!!.complete("exit code 0")
+        running.await()
+        assertEquals(null, f.router.peek("s", "c9"))
     }
 }

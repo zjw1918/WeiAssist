@@ -41,7 +41,7 @@ import { registerBunOAuthFlows } from "@earendil-works/pi-ai/bun-oauth";
 import { bridge, bridgeCall, settle } from "./bridge.ts";
 import { fetchEvents, nativeFetch } from "./native-fetch.ts";
 import { pruneOldScreens, pruneScreens } from "./phone-tools.ts";
-import { catalogTools, type ToolSpec } from "./catalog-tools.ts";
+import { cancelDetachedJobs, catalogTools, detachJobs, type LateResult, type ToolSpec } from "./catalog-tools.ts";
 import { compact, estimateTokens, needsCompaction } from "./compact.ts";
 import { dispatch } from "./shims/http.ts";
 
@@ -348,9 +348,13 @@ interface Session {
 	agent: Agent;
 	phone: boolean;
 	running: boolean;
+	/** The run was started by a background command's result, not by the app: a message may overtake it. */
+	selfStarted?: boolean;
 }
 
 const sessions = new Map<string, Session>();
+/** Sessions whose user asked to be read now (hurry): tool calls not started yet wait until the model has read it. */
+const hurried = new Set<string>();
 
 const need = (id: string) => {
 	const s = sessions.get(id);
@@ -403,6 +407,7 @@ function forward(session: string, event: AgentEvent) {
 			break;
 		}
 		case "turn_end":
+			hurried.delete(session); // the model reads what the user wrote next
 			send({ type: "turn_end" });
 			saveTranscript(session);
 			break;
@@ -435,6 +440,7 @@ function saveTranscript(id: string) {
  * It answers null to go on, or why the call is blocked (the supervisor's limits are there too).
  */
 const beforeToolCall = (s: Session) => async (ctx: BeforeToolCallContext) => {
+	if (hurried.has(s.id)) return { block: true, reason: "Not run: the user just sent you a message. Read it first; call this again if it is still needed." };
 	const verdict = await bridgeCall("before_tool", { session: s.id, call: ctx.toolCall.id, tool: ctx.toolCall.name, args: ctx.args });
 	if (verdict?.block) return { block: true, terminate: verdict.terminate !== false, reason: String(verdict.reason ?? "Blocked by the app.") };
 	return undefined;
@@ -464,7 +470,7 @@ async function configure(cfg: Config) {
 			model,
 			thinkingLevel: thinkingLevel as any,
 			// Exactly the tools the app chose for this session (phone, bash, send_file or the supervisor's).
-			tools: catalogTools(cfg.session, cfg.toolSpecs ?? []),
+			tools: catalogTools(cfg.session, cfg.toolSpecs ?? [], (r) => deliverLate(cfg.session, r)),
 		},
 		// Forwarded to providers for routing and prompt caching (OpenCode requires it as x-opencode-session).
 		sessionId: cfg.session,
@@ -509,12 +515,19 @@ const typedText = (content: any) =>
 
 async function prompt(id: string, text: string, attached?: Block[]) {
 	const s = need(id);
+	// A background command's result started a run just before this message came: the message joins it.
+	if (s.running && s.selfStarted) { s.agent.steer(userMessage(s, text, attached)); return; }
 	if (s.running) throw new Error("this session is already working");
+	await run(s, () => (attached?.length ? s.agent.prompt(userMessage(s, text, attached)) : s.agent.prompt(text)));
+}
+
+/** One run of the session's agent: [start] gives it its first message, then it goes on until nothing is left to do. */
+async function run(s: Session, start: () => Promise<void>) {
+	const id = s.id;
 	s.running = true;
 	try {
 		if (needsCompaction(s.agent.state.messages, s.agent.state.model.contextWindow)) await compactSession(s);
-		if (attached?.length) await s.agent.prompt(userMessage(s, text, attached));
-		else await s.agent.prompt(text);
+		await start();
 		// Pi takes steered messages after each turn, also the last one; one that came in as the run was
 		// ending is still queued: go on with it, so nothing the user typed is left behind.
 		while (s.agent.hasQueuedMessages()) await s.agent.continue();
@@ -525,6 +538,8 @@ async function prompt(id: string, text: string, attached?: Block[]) {
 		}
 	} finally {
 		s.running = false;
+		s.selfStarted = false;
+		hurried.delete(id);
 		saveTranscript(id);
 		bridge({ type: "idle", session: id });
 	}
@@ -569,10 +584,38 @@ function steer(id: string, text: string, attached?: Block[]) {
 	s.agent.steer(userMessage(s, text, attached));
 }
 
-/** Stop: drop what the user queued too, so the run doesn't go on with it. */
+/**
+ * The user wants what they queued read now, not after the current step: commands still running go on in the
+ * background, and tool calls the model is only now asking for wait until it has read the message.
+ */
+function hurry(id: string) {
+	const s = sessions.get(id);
+	if (!s?.running || !s.agent.hasQueuedMessages()) return;
+	hurried.add(id);
+	detachJobs(id);
+}
+
+/**
+ * A command that went on in the background has ended: the model is told at its next step, or, if it has stopped
+ * working, this starts a new run (Kotlin sees a run the core started by itself).
+ */
+function deliverLate(id: string, r: LateResult) {
+	const s = sessions.get(id);
+	if (!s) return;
+	bridge({ type: "trigger", session: id, source: "tool-jobs", text: r.text.split("\n", 1)[0] });
+	const text = `<background-result tool="${r.tool}">\nAn automatic notice, not from the user: this command, which you left running in the background, has ended.\nCommand: ${r.command.slice(0, 500)}\n${r.isError ? "It failed.\n" : ""}${r.text}\n</background-result>`;
+	const message = { role: "user", content: [{ type: "text", text }], timestamp: Date.now() } as AgentMessage;
+	if (s.running) { s.agent.steer(message); return; }
+	s.selfStarted = true;
+	guard("late", () => run(s, () => s.agent.prompt(message)), id);
+}
+
+/** Stop: drop what the user queued too, so the run doesn't go on with it, and end what went on in the background. */
 function abort(id: string) {
 	const s = sessions.get(id);
 	if (!s) return;
+	hurried.delete(id);
+	cancelDetachedJobs(id);
 	s.agent.clearAllQueues();
 	s.agent.abort();
 }
@@ -580,6 +623,8 @@ function abort(id: string) {
 function dispose(id: string) {
 	const s = sessions.get(id);
 	if (!s) return;
+	cancelDetachedJobs(id);
+	hurried.delete(id);
 	s.agent.abort();
 	sessions.delete(id);
 }
@@ -712,6 +757,7 @@ const queries: Record<string, (a: any) => Promise<unknown>> = {
 	configure: (json: string) => { const a = arg(json); guard("configure", () => configure(a), a.session); },
 	prompt: (json: string) => { const a = arg(json); guard("prompt", () => prompt(a.session, a.text, a.content), a.session); },
 	steer: (json: string) => { const a = arg(json); guard("steer", async () => steer(a.session, a.text, a.content), a.session); },
+	hurry: (json: string) => hurry(arg(json).session),
 	abort: (json: string) => abort(arg(json).session),
 	dispose: (json: string) => dispose(arg(json).session),
 	/** Sessions alive in this runtime (after a renderer restart this is empty: Kotlin reconfigures). */

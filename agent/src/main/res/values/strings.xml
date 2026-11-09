@@ -41,10 +41,11 @@
     <string name="tg_unreachable">Couldn\'t reach Telegram: %1$s</string>
     <string name="tg_cmd_new">Start a new conversation</string>
     <string name="tg_cmd_stop">Stop the current task</string>
+    <string name="tg_cmd_now">Be read now, even during a long command</string>
     <string name="tg_cmd_status">What I\'m doing now</string>
     <string name="tg_paired">Paired! This chat is now connected to %1$s on your phone.</string>
     <string name="tg_hello">Hi, this is %1$s on your phone.</string>
-    <string name="tg_help">Send me a message and I\'ll work on it on your phone. %1$s\n\n/new – start a new conversation\n/stop – stop the current task\n/status – what I\'m doing now\n/screen – see the screen I\'m working on</string>
+    <string name="tg_help">Send me a message and I\'ll work on it on your phone. %1$s\n\n/new – start a new conversation\n/stop – stop the current task\n/now – be read now, even during a long command: /now your message\n/status – what I\'m doing now\n/screen – see the screen I\'m working on</string>
     <string name="tg_new">New conversation started.</string>
     <string name="tg_stopped">Stopped.</string>
     <string name="tg_nothing_running">Nothing is running.</string>
