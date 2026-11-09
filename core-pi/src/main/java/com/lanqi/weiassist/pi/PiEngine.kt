@@ -15,6 +15,7 @@ import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import com.lanqi.weiassist.core.AgentCore
 import com.lanqi.weiassist.core.CoreAccounts
+import com.lanqi.weiassist.core.CoreCapabilities
 import com.lanqi.weiassist.core.CoreInfo
 import com.lanqi.weiassist.core.ProviderAuth
 import com.lanqi.weiassist.core.SecureStore
@@ -47,7 +48,7 @@ import java.util.concurrent.ConcurrentHashMap
  * The app's first [AgentCore], and its [CoreAccounts]: Pi keeps the sign-ins and the model catalog.
  */
 class PiEngine(context: Context, private val agentName: String) : AgentCore, CoreAccounts {
-    override val info = CoreInfo(ID, "Pi")
+    override val info = CoreInfo(ID, "Pi", CoreCapabilities(hurry = true))
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val _events = MutableSharedFlow<JSONObject>(extraBufferCapacity = 256)
@@ -271,6 +272,7 @@ class PiEngine(context: Context, private val agentName: String) : AgentCore, Cor
     override suspend fun prompt(session: String, input: UserInput) = call("prompt", input.json(session))
     /** Pi reads it after the current turn (Agent.steer). */
     override suspend fun steer(session: String, input: UserInput) = call("steer", input.json(session))
+    override suspend fun hurry(session: String) = call("hurry", JSONObject().put("session", session))
     override suspend fun abort(session: String) = call("abort", JSONObject().put("session", session))
     override suspend fun dispose(session: String) = call("dispose", JSONObject().put("session", session))
 

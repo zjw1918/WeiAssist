@@ -209,6 +209,7 @@ class Gateway(context: Context, private val sessions: SessionManager, private va
                 b.setCommands(listOf(
                     "new" to app.getString(R.string.tg_cmd_new),
                     "stop" to app.getString(R.string.tg_cmd_stop),
+                    "now" to app.getString(R.string.tg_cmd_now),
                     "status" to app.getString(R.string.tg_cmd_status),
                     "screen" to app.getString(R.string.tg_cmd_screen),
                 ))
@@ -244,6 +245,13 @@ class Gateway(context: Context, private val sessions: SessionManager, private va
             return
         }
         val c = ChatCommands.parse(m.text, s.bot)
+        // "/now words": the words, read without waiting for a long command. "/now" alone: what was already sent.
+        val now = c?.name == "now"
+        if (now && c?.args.isNullOrBlank() && m.files.isEmpty()) {
+            val id = bindings[m.chat.key]?.takeIf { sessions.summary(it)?.status?.active == true }
+            if (id != null) sessions.hurry(id) else reply(b, m.chat, app.getString(R.string.tg_nothing_running))
+            return
+        }
         when (c?.name) {
             "start", "help" -> reply(b, m.chat, app.getString(R.string.tg_hello, app.getString(R.string.agent_name)) + "\n\n" + help())
             "new" -> {
@@ -268,10 +276,10 @@ class Gateway(context: Context, private val sessions: SessionManager, private va
                 if (note != null) reply(b, m.chat, note)
                 val (files, where) = receive(b, m, id)
                 // Another command (the session's core's: /plan, /goal…), without the "@bot" Telegram may add to it.
-                val typed = if (c != null) "/${c.name}" + if (c.args.isNotEmpty()) " ${c.args}" else "" else words
+                val typed = if (now) c?.args.orEmpty() else if (c != null) "/${c.name}" + if (c.args.isNotEmpty()) " ${c.args}" else "" else words
                 val text = listOf(typed, where).filter { it.isNotBlank() }.joinToString("\n\n")
                 if (text.isBlank() && files.isEmpty()) return // nothing usable came (the chat was told why)
-                if (!sessions.send(id, text, files)) { reply(b, m.chat, app.getString(R.string.tg_not_sent)); return }
+                if (!sessions.send(id, text, files, now)) { reply(b, m.chat, app.getString(R.string.tg_not_sent)); return }
                 if (replies[id]?.isActive != true) replies[id] = scope.launch { mirror(b, id, m.chat) }
             }
         }

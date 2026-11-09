@@ -832,6 +832,109 @@ test("a message sent while a session works reaches the model after the current t
 	assert.equal(host.messages.filter((m) => m.type === "idle" && m.session === "st").length, 1, "one run, one idle");
 });
 
+test("hurry: a stuck command goes on in the background, the model reads the message now, the real result comes later", async () => {
+	let finish;
+	const host = await startHost({
+		credentials: apiKeyCredentials,
+		hostCalls: { bash: () => new Promise((r) => { finish = r; }), tool_peek: () => ({ text: "Still running after 4m; pid 12" }) },
+	});
+	await configure(host, "dt", { bash: true });
+	host.call("prompt", { session: "dt", text: "run it [[script:bash]]" });
+	await until(() => finish);
+	const before = mock.requests.length;
+	host.call("steer", { session: "dt", text: "why is it stuck?" });
+	host.call("hurry", { session: "dt" });
+	await host.waitFor("idle", (m) => m.session === "dt"); // without the command ending
+	const asked = mock.requests.slice(before).map((r) => r.body).join("\n");
+	assert.match(asked, /Still running after 4m/);
+	assert.match(asked, /why is it stuck\?/);
+	assert.equal(host.toolCalls.length, 1, "the command was not run again");
+
+	host.clear();
+	const later = mock.requests.length;
+	finish("exit code 7");
+	const card = await host.waitFor("trigger", (m) => m.session === "dt");
+	assert.equal(card.source, "tool-jobs");
+	assert.equal(card.text, "exit code 7");
+	await host.waitFor("agent_start", (m) => m.session === "dt");
+	await host.waitFor("idle", (m) => m.session === "dt");
+	assert.match(mock.requests.slice(later).map((r) => r.body).join("\n"), /background-result[\s\S]*exit code 7/);
+});
+
+test("hurry: a command that ended meanwhile just gives its result", async () => {
+	let finish;
+	const host = await startHost({
+		credentials: apiKeyCredentials,
+		hostCalls: { bash: () => new Promise((r) => { finish = r; }), tool_peek: () => { finish("exit code 0"); return null; } },
+	});
+	await configure(host, "dn", { bash: true });
+	host.call("prompt", { session: "dn", text: "run it [[script:bash]]" });
+	await until(() => finish);
+	host.call("steer", { session: "dn", text: "how is it going?" });
+	host.call("hurry", { session: "dn" });
+	await host.waitFor("idle", (m) => m.session === "dn");
+	assert.equal(host.messages.some((m) => m.type === "trigger"), false);
+	const end = await host.waitFor("tool_end", (m) => m.session === "dn");
+	assert.equal(end.output, "exit code 0");
+});
+
+test("hurry: without a queued message, nothing goes to the background", async () => {
+	let finish;
+	const host = await startHost({
+		credentials: apiKeyCredentials,
+		hostCalls: { bash: () => new Promise((r) => { finish = r; }), tool_peek: () => { throw new Error("should not ask"); } },
+	});
+	await configure(host, "dq", { bash: true });
+	host.call("prompt", { session: "dq", text: "run it [[script:bash]]" });
+	await until(() => finish);
+	host.call("hurry", { session: "dq" });
+	await new Promise((r) => setTimeout(r, 30));
+	assert.equal(host.messages.some((m) => m.type === "tool_end"), false);
+	finish("exit code 0");
+	await host.waitFor("idle", (m) => m.session === "dq");
+});
+
+test("hurry: a tool the model asks for while the message waits is not run", async () => {
+	const host = await startHost({ credentials: apiKeyCredentials, hostCalls: { bash: () => "exit code 0" } });
+	await configure(host, "db", { bash: true });
+	const before = host.fetches.length;
+	host.call("prompt", { session: "db", text: "run it [[script:bash]]" });
+	await until(() => host.fetches.length > before); // the model is answering
+	host.call("steer", { session: "db", text: "wait, not that" });
+	host.call("hurry", { session: "db" });
+	await host.waitFor("idle", (m) => m.session === "db");
+	assert.equal(host.toolCalls.length, 0);
+	const end = await host.waitFor("tool_end", (m) => m.session === "db");
+	assert.equal(end.isError, true);
+	assert.match(end.output, /Not run: the user just sent you a message/);
+});
+
+test("Stop ends a command in the background, and its result is not delivered", async () => {
+	const finishes = [];
+	const killed = [];
+	const host = await startHost({
+		credentials: apiKeyCredentials,
+		hostCalls: {
+			bash: () => new Promise((r) => finishes.push(r)),
+			tool_peek: () => ({ text: "Still running" }),
+			bash_kill: (m) => { killed.push(m.call); },
+		},
+	});
+	await configure(host, "ds", { bash: true });
+	host.call("prompt", { session: "ds", text: "run it [[script:bash_twice]]" });
+	await until(() => finishes.length === 1);
+	host.call("steer", { session: "ds", text: "look at it" });
+	host.call("hurry", { session: "ds" });
+	await until(() => finishes.length === 2); // the first is in the background, the second works
+	host.call("abort", { session: "ds" });
+	await until(() => killed.length === 2);
+	finishes[1]("killed (stopped)");
+	await host.waitFor("idle", (m) => m.session === "ds");
+	finishes[0]("killed (stopped)");
+	await new Promise((r) => setTimeout(r, 30));
+	assert.equal(host.messages.some((m) => m.type === "trigger"), false);
+});
+
 test("a message steered after the run ended comes back as steer_late, for Kotlin to send", async () => {
 	const host = await startHost({ credentials: apiKeyCredentials });
 	await configure(host, "late");

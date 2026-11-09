@@ -22,4 +22,20 @@ class TermuxInspectionTest {
         val i = Termux.parseInspection("bash=5.3.3\ntmux=1\n")
         assertFalse(i.curl); assertNull(i.network)
     }
+
+    @Test fun `a running command's stand-in says where it is and how to stop it`() {
+        val t = Termux.standIn("123 252\ndownloading 40%\n", "warning\n", "s1", "c1", 600)!!
+        assertTrue(t, "Still running after 252s" in t)
+        assertTrue(t, "600s timeout" in t)
+        assertTrue(t, "kill -TERM 123" in t)
+        assertTrue(t, "~/sessions/s1/.bash-c1.out" in t)
+        assertTrue(t, "downloading 40%" in t)
+        assertTrue(t, "warning" in t)
+    }
+
+    @Test fun `a stand-in without output says so, and a broken report gives none`() {
+        assertTrue("(no output yet)" in Termux.standIn("123 5\n", "", "s", "c", 120)!!)
+        assertEquals(null, Termux.standIn("", "", "s", "c", 120))
+        assertEquals(null, Termux.standIn("not numbers\n", "", "s", "c", 120))
+    }
 }

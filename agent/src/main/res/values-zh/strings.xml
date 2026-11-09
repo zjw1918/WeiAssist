@@ -40,10 +40,11 @@
     <string name="tg_unreachable">连不上 Telegram：%1$s</string>
     <string name="tg_cmd_new">开始新对话</string>
     <string name="tg_cmd_stop">停止当前任务</string>
+    <string name="tg_cmd_now">立即读取，即使长命令正在运行</string>
     <string name="tg_cmd_status">我现在在做什么</string>
     <string name="tg_paired">配对成功！这个聊天已连接到你手机上的%1$s。</string>
     <string name="tg_hello">你好，我是你手机上的%1$s。</string>
-    <string name="tg_help">给我发消息，我会在你的手机上处理。%1$s\n\n/new – 开始新对话\n/stop – 停止当前任务\n/status – 我现在在做什么\n/screen – 看看我正在操作的屏幕</string>
+    <string name="tg_help">给我发消息，我会在你的手机上处理。%1$s\n\n/new – 开始新对话\n/stop – 停止当前任务\n/now – 立即读取，即使长命令正在运行：/now 你的消息\n/status – 我现在在做什么\n/screen – 看看我正在操作的屏幕</string>
     <string name="tg_new">已开始新对话。</string>
     <string name="tg_stopped">已停止。</string>
     <string name="tg_nothing_running">现在没有在运行的任务。</string>

@@ -33,6 +33,7 @@ import org.json.JSONObject
  * - `tool` {session, call, name, args}: runs it and answers a [ToolResult] as JSON. `call` is the core's id for
  *   this call.
  * - `tool_cancel` {session, call} when the user stops the run while the call works (e.g. a bash command).
+ * - `tool_peek` {session, call}, for [hurry]: null if the call has ended, else { text }, what the model gets for now.
  */
 interface AgentCore {
     val info: CoreInfo
@@ -49,6 +50,11 @@ interface AgentCore {
     suspend fun prompt(session: String, input: UserInput)
     /** A message for a session that is working: read after the current step. */
     suspend fun steer(session: String, input: UserInput)
+    /**
+     * The user wants what they steered read now: a long command stops holding up the step and goes on in the
+     * background. Its result comes when it ends. Only for a core with [CoreCapabilities.hurry].
+     */
+    suspend fun hurry(session: String) {}
     /**
      * The user's slash command for session [session] (`/name input`, as typed), run by the core itself and never
      * sent to the model as a message: its outcome is a `command_result` event; work it starts (a message it sends
@@ -95,6 +101,8 @@ data class CoreCapabilities(
     val images: Boolean = true,
     /** Runs the user's slash commands ([AgentCore.command]); it lists them in `configured`. */
     val commands: Boolean = false,
+    /** [AgentCore.hurry] works. */
+    val hurry: Boolean = false,
 )
 
 /** A slash command a core offers: `/[name] [hint]`, with what it does. */

@@ -179,9 +179,10 @@ class SessionManager(
 
     /**
      * The user's message to a session: start (or queue) a task. While the session works, the message
-     * steers it instead (its core reads it after the current step). False if the session is unknown.
+     * steers it instead (its core reads it after the current step; [urgent]: without waiting for a long command, see
+     * [hurry]). False if the session is unknown.
      */
-    suspend fun send(id: String, text: String, attachments: List<Attachment> = emptyList()): Boolean {
+    suspend fun send(id: String, text: String, attachments: List<Attachment> = emptyList(), urgent: Boolean = false): Boolean {
         if (text.isBlank() && attachments.isEmpty()) return false
         val flow = loadLive(id) ?: return false
         // A slash command, for a core that runs them: the core runs it, the model never reads it as a message.
@@ -195,6 +196,7 @@ class SessionManager(
             else {
                 update(id) { SessionReducer.steered(it, text.trim(), now, files) }
                 coreOf(id)?.steer(id, UserInput(text.trim(), Attachments.content(files)))
+                if (urgent) coreOf(id)?.hurry(id)
             }
             return true
         }
@@ -210,6 +212,15 @@ class SessionManager(
         if (canRun) start(id) else queue.addLast(id)
         return true
     }
+
+    /** Have what the user steered read now: a long command goes on in the background instead of holding it up. */
+    fun hurry(id: String) {
+        if (id !in prompted) return
+        coreOf(id)?.let { c -> scope.launch { c.hurry(id) } }
+    }
+
+    /** Session [id]'s core can [hurry]. */
+    fun canHurry(id: String) = coreOf(id)?.info?.capabilities?.hurry == true
 
     /** [text] is a slash command (`/name …`) and session [id]'s core runs slash commands. */
     fun isCommand(id: String, text: String): Boolean =
