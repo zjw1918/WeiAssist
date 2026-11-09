@@ -145,8 +145,44 @@ class AgentController(context: Context) {
         sessions.onEnded = { id, deleted, files ->
             gateway.cancelTransfers(id)
             if (deleted) { phoneTools.forget(id); creates.remove(id) }
+            backgroundJobs.removeSession(id)
             scope.launch { termux.cleanUp(id, deleted, files) }
         }
+    }
+
+    private fun runtimeRestarted(core: String) {
+        sessions.onRuntimeRestarted(core)
+        backgroundJobs.orphanAll()
+        collectOrphans()
+    }
+
+    /** Commands in the background; the service stays up for them. */
+    val backgroundJobs = BackgroundJobs(android.util.AtomicFile(java.io.File(appContext.filesDir, "background-jobs.json")))
+    private var collecting: kotlinx.coroutines.Job? = null
+
+    /** Commands nobody waits for any more (see [BackgroundJobs]): collect each result from Termux until none is left. */
+    private fun collectOrphans() {
+        if (collecting?.isActive == true) return
+        collecting = scope.launch {
+            while (backgroundJobs.orphaned().isNotEmpty()) {
+                backgroundJobs.orphaned().forEach { collectOrphan(it) }
+                kotlinx.coroutines.delay(COLLECT_EVERY_MS)
+            }
+        }
+    }
+
+    private suspend fun collectOrphan(j: BackgroundJob) {
+        if (sessions.summary(j.session) == null) { backgroundJobs.remove(j.session, j.call); return }
+        val overdue = System.currentTimeMillis() > j.startedAt + (j.timeoutSec + COLLECT_GRACE_SEC) * 1000L
+        val text = when (val r = termux.collect(j.session, j.call, j.timeoutSec)) {
+            is Termux.Collected.Done -> r.text
+            Termux.Collected.Lost -> appContext.getString(R.string.background_lost)
+            Termux.Collected.Running -> return
+            null -> if (overdue) appContext.getString(R.string.background_lost) else return
+        }
+        // Delivering restores the conversation; the core's trigger then removes the job and its files.
+        runCatching { sessions.deliverBackgroundResult(j.session, j.call, j.command, text) }
+            .onFailure { android.util.Log.w("AgentController", "background result for ${j.session} not delivered", it) }
     }
 
     /**
@@ -255,6 +291,8 @@ class AgentController(context: Context) {
         scope.launch(Dispatchers.IO) { Attachments.clearStaging(appContext) }
         scope.launch {
             sessions.load()
+            backgroundJobs.load() // commands left in the background when the app last ended
+            collectOrphans()
             loaded.complete(Unit)
             launch { gateway.start() }
             warmDsh()
@@ -310,6 +348,7 @@ class AgentController(context: Context) {
             bash = termux::run,
             bashKill = termux::kill,
             bashPeek = termux::peek,
+            bashDetached = { s, c, command, timeout -> backgroundJobs.add(BackgroundJob(s, c, command, timeout, System.currentTimeMillis())) },
             sendFile = ::sendFile,
             supervisor = commands::handle,
         )
@@ -399,12 +438,18 @@ class AgentController(context: Context) {
         if (session.isNotEmpty()) {
             // A new run: whether it has left 小维助手 yet starts over (see PhoneActions.runStarted).
             if (m.optString("type") == "agent_start") phone.runStarted(session)
+            // A background command's result reached the model: nothing to keep or collect any more.
+            if (m.optString("type") == "trigger" && m.optString("source") == "tool-jobs" && m.has("call")) {
+                val call = m.getString("call")
+                backgroundJobs.remove(session, call)
+                scope.launch { termux.forget(session, call) }
+            }
             sessions.onCoreEvent(e.core, session, m)
             return
         }
         // App-wide events: account ones only from the accounts core; any core may restart.
         if (e.core != pi.info.id) {
-            if (m.optString("type") == "runtime_restarted") sessions.onRuntimeRestarted(e.core)
+            if (m.optString("type") == "runtime_restarted") runtimeRestarted(e.core)
             return
         }
         val before = _state.value
@@ -417,7 +462,7 @@ class AgentController(context: Context) {
                 loaded.await()
                 sessions.send(sessions.create(phone = false), appContext.getString(R.string.first_hello))
             }
-            Effect.RuntimeRestarted -> sessions.onRuntimeRestarted(e.core)
+            Effect.RuntimeRestarted -> runtimeRestarted(e.core)
             null -> Unit
         }
     }
@@ -689,6 +734,9 @@ class AgentController(context: Context) {
         "insufficient_quota" in msg || "credit balance is too low" in msg || "429" in msg && "quota" in msg
 
     private companion object {
+        const val COLLECT_EVERY_MS = 15_000L
+        /** Past its timeout by this much with Termux silent: its result counts as lost. */
+        const val COLLECT_GRACE_SEC = 300
         /** The largest file send_file or a file link copies out of Termux (as Telegram's limit). */
         const val MAX_FILE = 50L * 1024 * 1024
         /** A question also asked in a chat goes unanswered this long: not allowed (the task doesn't hold its screen for ever). */

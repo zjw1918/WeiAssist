@@ -273,6 +273,8 @@ class PiEngine(context: Context, private val agentName: String) : AgentCore, Cor
     /** Pi reads it after the current turn (Agent.steer). */
     override suspend fun steer(session: String, input: UserInput) = call("steer", input.json(session))
     override suspend fun hurry(session: String) = call("hurry", JSONObject().put("session", session))
+    override suspend fun backgroundResult(session: String, call: String, command: String, text: String) =
+        call("late", JSONObject().put("session", session).put("call", call).put("command", command).put("text", text))
     override suspend fun abort(session: String) = call("abort", JSONObject().put("session", session))
     override suspend fun dispose(session: String) = call("dispose", JSONObject().put("session", session))
 

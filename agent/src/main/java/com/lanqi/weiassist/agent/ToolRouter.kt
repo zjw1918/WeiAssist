@@ -18,11 +18,14 @@ class ToolRouter(
     private val bash: suspend (session: String, call: String, command: String, timeoutSec: Int) -> String,
     private val bashKill: suspend (session: String, call: String) -> Unit,
     private val bashPeek: suspend (session: String, call: String, timeoutSec: Int) -> String?,
+    private val bashDetached: (session: String, call: String, command: String, timeoutSec: Int) -> Unit,
     private val sendFile: suspend (session: String, path: String, caption: String) -> Pair<Boolean, String>,
     private val supervisor: suspend (caller: String, action: String, args: JSONObject) -> String,
 ) {
-    /** Bash commands running now, as "session/call", with their timeouts: only these have anything to cancel. */
-    private val runningBash = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    private data class Running(val command: String, val timeoutSec: Int)
+
+    /** Bash commands running now, as "session/call": only these have anything to cancel. */
+    private val runningBash = java.util.concurrent.ConcurrentHashMap<String, Running>()
 
     suspend fun call(session: String, call: String, name: String, args: JSONObject): ToolResult {
         val s = summary(session) ?: return ToolResult("This session no longer exists.", isError = true)
@@ -39,8 +42,9 @@ class ToolRouter(
                 if (!gate(session)) ToolResult("stopped by the user")
                 else {
                     val timeout = bashTimeout(args)
-                    runningBash["$session/$call"] = timeout
-                    try { ToolResult(bash(session, call, args.getString("command"), timeout)) } finally { runningBash -= "$session/$call" }
+                    val command = args.getString("command")
+                    runningBash["$session/$call"] = Running(command, timeout)
+                    try { ToolResult(bash(session, call, command, timeout)) } finally { runningBash -= "$session/$call" }
                 }
             ToolCatalog.SEND_FILE -> {
                 val (ok, text) = if (!gate(session)) false to "Stopped by the user." else sendFile(session, args.getString("path"), args.optString("caption"))
@@ -58,7 +62,7 @@ class ToolRouter(
 
     /** How call [call] is doing, for the model while it goes on in the background; null if it has ended. */
     suspend fun peek(session: String, call: String): String? =
-        runningBash["$session/$call"]?.let { bashPeek(session, call, it) }
+        runningBash["$session/$call"]?.let { r -> bashPeek(session, call, r.timeoutSec)?.also { bashDetached(session, call, r.command, r.timeoutSec) } }
 
     companion object {
         const val BASH_TIMEOUT = 120

@@ -134,8 +134,12 @@ class Termux(context: Context) {
             p="${'$'}{d}/.bash-${'$'}{3}.pid"
             o="${'$'}{d}/.bash-${'$'}{3}.out"; e="${'$'}{d}/.bash-${'$'}{3}.err"
             timeout -k 5 "${'$'}{4}" bash -c "${'$'}{1}" < /dev/null > "${'$'}{o}" 2> "${'$'}{e}" & echo ${'$'}! > "${'$'}{p}"
-            wait ${'$'}!; c=${'$'}?; rm -f "${'$'}{p}"
-            cat "${'$'}{o}"; cat "${'$'}{e}" >&2; rm -f "${'$'}{o}" "${'$'}{e}"
+            wait ${'$'}!; c=${'$'}?
+            k="${'$'}{d}/.bash-${'$'}{3}.kept"
+            [ -f "${'$'}{k}" ] && echo "${'$'}{c}" > "${'$'}{d}/.bash-${'$'}{3}.code"
+            rm -f "${'$'}{p}"
+            cat "${'$'}{o}"; cat "${'$'}{e}" >&2
+            [ -f "${'$'}{k}" ] || rm -f "${'$'}{o}" "${'$'}{e}"
             sync_lock > /dev/null 2>&1
             exit ${'$'}{c}
         """.trimIndent()
@@ -150,19 +154,47 @@ class Termux(context: Context) {
             "open Termux once, and allow it to run in the background (autostart, no battery restrictions)."
         val err = r.getInt("err", RESULT_OK)
         if (err != RESULT_OK) return "Termux could not run the command: ${r.getString("errmsg").orEmpty()}\n$SETUP"
-        val code = r.getInt("exitCode", -1)
-        val out = r.getString("stdout").orEmpty()
-        val errOut = r.getString("stderr").orEmpty()
-        return buildString {
-            append(when (code) {
-                124 -> "timed out after ${timeoutSec}s (killed)"
-                143 -> "killed (stopped)"
-                else -> "exit code $code"
-            })
-            if (out.isNotEmpty()) append("\n--- stdout ---\n").append(clip(out, length(r, "stdout_original_length") ?: out.length))
-            if (errOut.isNotEmpty()) append("\n--- stderr ---\n").append(clip(errOut, length(r, "stderr_original_length") ?: errOut.length))
-            if (out.isEmpty() && errOut.isEmpty()) append(" (no output)")
+        return outcome(r.getInt("exitCode", -1), r.getString("stdout").orEmpty(), r.getString("stderr").orEmpty(), timeoutSec, length(r, "stdout_original_length"), length(r, "stderr_original_length"))
+    }
+
+    /** Where a command in the background is, when the core that waited for it is gone. */
+    sealed interface Collected {
+        data object Running : Collected
+        data object Lost : Collected
+        data class Done(val text: String) : Collected
+    }
+
+    /** See [Collected]. Null if Termux didn't answer. The files stay until [forget]: the result is safe until it was delivered. */
+    suspend fun collect(session: String, call: String, timeoutSec: Int): Collected? {
+        if (setupProblem() != null) return null
+        val script = """
+            x="${'$'}{HOME}/sessions/${'$'}{1}/.bash-${'$'}{2}"
+            if [ ! -f "${'$'}{x}.code" ]; then
+              [ -f "${'$'}{x}.pid" ] && kill -0 "${'$'}(cat "${'$'}{x}.pid")" 2> /dev/null && exit 10
+              sleep 3
+              [ -f "${'$'}{x}.code" ] || exit 11
+            fi
+            cat "${'$'}{x}.code"; cat "${'$'}{x}.out" 2> /dev/null; cat "${'$'}{x}.err" 2> /dev/null >&2
+            exit 0
+        """.trimIndent()
+        val r = execute(arrayOf("-c", script, "bash", safe(session), safe(call)), PEEK_SEC) ?: return null
+        if (r.getInt("err", RESULT_OK) != RESULT_OK) return null
+        return when (r.getInt("exitCode", -1)) {
+            10 -> Collected.Running
+            11 -> Collected.Lost
+            0 -> {
+                val out = r.getString("stdout").orEmpty()
+                val code = out.substringBefore('\n').trim().toIntOrNull() ?: return Collected.Lost
+                Collected.Done(outcome(code, if ('\n' in out) out.substringAfter('\n') else "", r.getString("stderr").orEmpty(), timeoutSec, null, null))
+            }
+            else -> null
         }
+    }
+
+    /** A command in the background is over and its result delivered: remove what [run] kept of it. */
+    suspend fun forget(session: String, call: String) {
+        if (setupProblem() != null) return
+        execute(arrayOf("-c", "rm -f \"\$HOME/sessions/$1/.bash-$2\".out \"\$HOME/sessions/$1/.bash-$2\".err \"\$HOME/sessions/$1/.bash-$2\".kept \"\$HOME/sessions/$1/.bash-$2\".code", "bash", safe(session), safe(call)), PEEK_SEC)
     }
 
     /**
@@ -174,6 +206,7 @@ class Termux(context: Context) {
         val script = """
             d="${'$'}{HOME}/sessions/${'$'}{1}"; p="${'$'}{d}/.bash-${'$'}{2}.pid"
             [ -f "${'$'}{p}" ] || exit 3
+            touch "${'$'}{d}/.bash-${'$'}{2}.kept"
             echo "${'$'}(cat "${'$'}{p}") ${'$'}(( ${'$'}(date +%s) - ${'$'}(stat -c %Y "${'$'}{p}") ))"
             tail -c $PEEK_BYTES "${'$'}{d}/.bash-${'$'}{2}.out" 2> /dev/null
             tail -c $PEEK_BYTES "${'$'}{d}/.bash-${'$'}{2}.err" 2> /dev/null >&2
@@ -187,7 +220,7 @@ class Termux(context: Context) {
     /** Stop a running [run] (the user pressed Stop). */
     suspend fun kill(session: String, call: String) {
         if (setupProblem() != null) return
-        execute(arrayOf("-c", "f=\"\$HOME/sessions/$1/.bash-$2.pid\"; [ -f \"\$f\" ] && kill -TERM \"\$(cat \"\$f\")\"", "bash", safe(session), safe(call)), 20)
+        execute(arrayOf("-c", "rm -f \"\$HOME/sessions/$1/.bash-$2.kept\"; f=\"\$HOME/sessions/$1/.bash-$2.pid\"; [ -f \"\$f\" ] && kill -TERM \"\$(cat \"\$f\")\"", "bash", safe(session), safe(call)), 20)
     }
 
     /**
@@ -208,6 +241,7 @@ class Termux(context: Context) {
             d="${'$'}{HOME}/sessions/${'$'}{1}"
             if [ -d "${'$'}{d}" ]; then
               TMUX_TMPDIR="${'$'}{d}/.tmux" tmux kill-server 2> /dev/null
+              rm -f "${'$'}{d}"/.bash-*.kept
               for p in "${'$'}{d}"/.bash-*.pid; do [ -f "${'$'}{p}" ] && kill -TERM "${'$'}(cat "${'$'}{p}")" 2> /dev/null; done
               [ "${'$'}{2}" = 1 ] && rm -rf -- "${'$'}{d}"
             fi
@@ -523,6 +557,18 @@ class Termux(context: Context) {
 
         /** Ids go into a path: letters, digits, - and _ only. */
         private fun safe(s: String) = s.replace(Regex("[^A-Za-z0-9_-]"), "_")
+
+        /** What the model reads when a command has ended. Pure, for tests. */
+        internal fun outcome(code: Int, out: String, err: String, timeoutSec: Int, outLength: Int?, errLength: Int?) = buildString {
+            append(when (code) {
+                124 -> "timed out after ${timeoutSec}s (killed)"
+                143 -> "killed (stopped)"
+                else -> "exit code $code"
+            })
+            if (out.isNotEmpty()) append("\n--- stdout ---\n").append(clip(out, outLength ?: out.length))
+            if (err.isNotEmpty()) append("\n--- stderr ---\n").append(clip(err, errLength ?: err.length))
+            if (out.isEmpty() && err.isEmpty()) append(" (no output)")
+        }
 
         private const val PEEK_BYTES = 3000
         private const val PEEK_SEC = 20L

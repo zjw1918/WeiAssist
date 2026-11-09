@@ -38,4 +38,9 @@ class TermuxInspectionTest {
         assertEquals(null, Termux.standIn("", "", "s", "c", 120))
         assertEquals(null, Termux.standIn("not numbers\n", "", "s", "c", 120))
     }
+
+    @Test fun `a finished command reads the same however its result was collected`() {
+        assertEquals("exit code 2\n--- stderr ---\nboom", Termux.outcome(2, "", "boom", 120, null, null))
+        assertEquals("timed out after 60s (killed) (no output)", Termux.outcome(124, "", "", 60, null, null))
+    }
 }

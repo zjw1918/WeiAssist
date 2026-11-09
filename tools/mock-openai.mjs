@@ -290,7 +290,9 @@ function handle(req, res, { requests, log, delayMs }) {
 		const id = `resp_mock_${Date.now()}`;
 		const msg = { id: "msg_mock", type: "message", role: "assistant", status: "in_progress", content: [] };
 		const part = { type: "output_text", text: "", annotations: [] };
-		const { prompt, cached } = promptUsage(parsed, body);
+		const usageAsked = body.match(/\[\[usage:(\d+)\]\]/)?.[1]; // [[usage:N]]: the provider reports N input tokens
+		const { prompt: counted, cached } = promptUsage(parsed, body);
+		const prompt = usageAsked ? Number(usageAsked) : counted;
 		const usage = { input_tokens: prompt, output_tokens: 9, total_tokens: prompt + 9, input_tokens_details: { cached_tokens: cached }, output_tokens_details: { reasoning_tokens: 0 } };
 		const base = { id, object: "response", model, created_at: Math.floor(Date.now() / 1000) };
 		const done = { ...msg, status: "completed", content: [{ ...part, text: turn?.text ?? MOCK_REPLY }] };

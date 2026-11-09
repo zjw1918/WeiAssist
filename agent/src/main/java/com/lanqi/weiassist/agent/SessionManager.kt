@@ -219,6 +219,14 @@ class SessionManager(
         coreOf(id)?.let { c -> scope.launch { c.hurry(id) } }
     }
 
+    /** A background command's result, when the core's own wait for it was lost: the conversation is restored if needed. */
+    suspend fun deliverBackgroundResult(id: String, call: String, command: String, text: String) {
+        val s = loadLive(id)?.value ?: return
+        val core = coreOf(id) ?: return
+        configure(id, s, core)
+        core.backgroundResult(id, call, command, text)
+    }
+
     /** Session [id]'s core can [hurry]. */
     fun canHurry(id: String) = coreOf(id)?.info?.capabilities?.hurry == true
 

@@ -39,6 +39,7 @@
     <string name="tg_token_rejected">Telegram 拒绝了这个机器人令牌，可能已被撤销：请在 @BotFather 获取新的。</string>
     <string name="tg_unreachable">连不上 Telegram：%1$s</string>
     <string name="tg_cmd_new">开始新对话</string>
+    <string name="background_lost">这条命令的结果已丢失（运行时 Termux 或应用停止了）。依赖它之前，请先检查它是否完成了工作。</string>
     <string name="tg_cmd_stop">停止当前任务</string>
     <string name="tg_cmd_now">立即读取，即使长命令正在运行</string>
     <string name="tg_cmd_status">我现在在做什么</string>

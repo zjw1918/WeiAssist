@@ -49,6 +49,7 @@ class ToolRouterTest {
         val supervisor = mutableListOf<Pair<String, JSONObject>>()
         var phoneAnswer = "did it"
         var bashDone: CompletableDeferred<String>? = null
+        val detached = mutableListOf<Triple<String, String, Int>>()
         var sendOk = true
         val router = ToolRouter(
             summary = { if (it == summary.id) summary else null },
@@ -57,6 +58,7 @@ class ToolRouterTest {
             bash = { _, call, command, timeout -> bash += Triple(call, command, timeout); bashDone?.await() ?: "exit code 0" },
             bashKill = { _, call -> kills += call },
             bashPeek = { _, call, timeout -> "$call within $timeout" },
+            bashDetached = { _, call, command, timeout -> detached += Triple(call, command, timeout) },
             sendFile = { _, path, caption -> sendOk to (if (sendOk) "sent $path ($caption)" else "No such file") },
             supervisor = { _, action, args -> supervisor += action to args; "ok $action" },
         )
@@ -143,6 +145,7 @@ class ToolRouterTest {
         val running = async { f.router.call("s", "c9", "bash", args("command" to "sleep 500", "timeout" to 300)) }
         while (f.bash.isEmpty()) yield()
         assertEquals("c9 within 300", f.router.peek("s", "c9"))
+        assertEquals(listOf(Triple("c9", "sleep 500", 300)), f.detached)
         f.bashDone!!.complete("exit code 0")
         running.await()
         assertEquals(null, f.router.peek("s", "c9"))
