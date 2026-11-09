@@ -10,6 +10,8 @@ import { pathToFileURL } from "node:url";
 
 export const MOCK_REPLY = "你好！我是假的 OpenAI（本地模拟服务器）。";
 
+const overflowsFired = new Map();
+
 /**
  * Scripted tool use for tests: a user message containing [[script:NAME]] gets these turns in order,
  * one per model request (counted by the tool results already in the conversation).
@@ -270,6 +272,14 @@ function handle(req, res, { requests, log, delayMs }) {
 		// [[overflow]]: answer as OpenAI does when the input is over the context window, until the
 		// conversation has been compacted (a summary request itself is answered normally).
 		const summarising = body.includes("You compact a conversation");
+		// [[overflow-after:N:T:ID]]: the same error, the first T times a request carries at least N tool results.
+		const after = !summarising && body.match(/\[\[overflow-after:(\d+):(\d+):(\w+)\]\]/);
+		if (after && (body.match(/function_call_output/g)?.length ?? 0) >= Number(after[1]) && (overflowsFired.get(after[3]) ?? 0) < Number(after[2])) {
+			overflowsFired.set(after[3], (overflowsFired.get(after[3]) ?? 0) + 1);
+			res.writeHead(400, { ...cors, "content-type": "application/json" });
+			res.end(JSON.stringify({ error: { message: "Your input exceeds the context window of this model. Please adjust your input and try again.", type: "invalid_request_error", code: "context_length_exceeded" } }));
+			return;
+		}
 		if (body.includes("[[overflow]]") && !summarising && !body.includes("[Summary of the earlier conversation")) {
 			res.writeHead(400, { ...cors, "content-type": "application/json" });
 			res.end(JSON.stringify({ error: { message: "Your input exceeds the context window of this model. Please adjust your input and try again.", type: "invalid_request_error", code: "context_length_exceeded" } }));

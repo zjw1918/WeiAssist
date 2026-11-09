@@ -353,6 +353,8 @@ interface Session {
 }
 
 const sessions = new Map<string, Session>();
+/** Compactions in a row that may fail to make room before the run gives up. */
+const MAX_COMPACT_RETRIES = 2;
 /** Sessions whose user asked to be read now (hurry): tool calls not started yet wait until the model has read it. */
 const hurried = new Set<string>();
 
@@ -528,13 +530,19 @@ async function run(s: Session, start: () => Promise<void>) {
 	try {
 		if (needsCompaction(s.agent.state.messages, s.agent.state.model.contextWindow)) await compactSession(s);
 		await start();
-		// Pi takes steered messages after each turn, also the last one; one that came in as the run was
-		// ending is still queued: go on with it, so nothing the user typed is left behind.
-		while (s.agent.hasQueuedMessages()) await s.agent.continue();
-		// The conversation outgrew the model after all (a long task, an estimate off): compact once, go on.
-		if (overflowed(s) && (await compactSession(s, true))) {
-			await s.agent.continue();
+		// A long task outgrows the model again and again: compact and go on each time, unless compacting doesn't help.
+		let compactedAt = -1;
+		let retries = 0;
+		for (;;) {
+			// Pi takes steered messages after each turn, also the last one; one that came in as the run was
+			// ending is still queued: go on with it, so nothing the user typed is left behind.
 			while (s.agent.hasQueuedMessages()) await s.agent.continue();
+			if (!overflowed(s)) break;
+			// Only the failed reply since the last compaction: no step fitted.
+			retries = s.agent.state.messages.length <= compactedAt + 1 ? retries + 1 : 0;
+			if (retries >= MAX_COMPACT_RETRIES || !(await compactSession(s, true))) break;
+			compactedAt = s.agent.state.messages.length;
+			await s.agent.continue();
 		}
 	} finally {
 		s.running = false;
