@@ -937,11 +937,12 @@ test("hurry: a stuck command goes on in the background, the model reads the mess
 	const later = mock.requests.length;
 	finish("exit code 7");
 	const card = await host.waitFor("trigger", (m) => m.session === "dt");
-	assert.equal(card.source, "tool-jobs");
-	assert.equal(card.text, "exit code 7");
+	assert.equal(card.source, "background-command");
+	assert.match(card.text, /exit code 7$/);
 	await host.waitFor("agent_start", (m) => m.session === "dt");
 	await host.waitFor("idle", (m) => m.session === "dt");
 	assert.match(mock.requests.slice(later).map((r) => r.body).join("\n"), /background-result[\s\S]*exit code 7/);
+	assert.match(mock.requests[later].body, /A user message can arrive while you are working/);
 });
 
 test("hurry: a command that ended meanwhile just gives its result", async () => {

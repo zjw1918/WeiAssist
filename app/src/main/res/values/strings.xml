@@ -387,6 +387,9 @@
     <string name="trigger_agent">Message from a subagent</string>
     <string name="trigger_team">Message from the team</string>
     <string name="trigger_job">Background job update</string>
+    <string name="trigger_background_command">Background command finished</string>
+    <string name="background_running">Running in the background</string>
+    <string name="background_no_output">No output yet</string>
     <string name="trigger_other">Woken by an update</string>
     <string name="tool_web_fetch">Fetch a page</string>
     <string name="tool_web_search">Search the web</string>

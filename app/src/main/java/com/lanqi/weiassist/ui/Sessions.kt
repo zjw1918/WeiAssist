@@ -5,6 +5,9 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.layout.Arrangement
@@ -614,6 +617,8 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
                 val commands by vm.coreCommands.collectAsStateWithLifecycle()
                 if (asking == null) CommandSuggestions(vm.reply, commands[s.core].orEmpty(), { vm.reply = it }, Modifier.padding(bottom = 8.dp))
                 DictationBar(vm.dictation, DictationTarget.Reply)
+                val jobs by vm.backgroundJobs.collectAsStateWithLifecycle()
+                jobs.filter { it.session == s.id }.forEach { BackgroundJobCard(it, vm, Modifier.padding(bottom = 8.dp)) }
                 // While it works, a message steers it: the model reads it after its current step.
                 Composer(
                     vm.reply, { vm.reply = it },
@@ -629,6 +634,40 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
     if (s != null && rename) RenameDialog(s.title, onDismiss = { rename = false }) { vm.rename(s.id, it) }
     if (s != null && delete) DeleteDialog(remember { vm.hasTermuxFiles(listOf(s.id)) }, onDismiss = { delete = false }) { vm.delete(s.id, it) }
 }
+
+/** A command going on in the background: how long, and on a tap the end of its output, kept fresh. */
+@Composable
+private fun BackgroundJobCard(job: com.lanqi.weiassist.agent.BackgroundJob, vm: AppViewModel, modifier: Modifier = Modifier) {
+    val c = MaterialTheme.colorScheme
+    var open by rememberSaveable(job.call) { mutableStateOf(false) }
+    val now by androidx.compose.runtime.produceState(System.currentTimeMillis(), job.call) {
+        while (true) { kotlinx.coroutines.delay(1000); value = System.currentTimeMillis() }
+    }
+    val output by androidx.compose.runtime.produceState<String?>(null, job.call, open) {
+        while (open) { vm.backgroundOutput(job.session, job.call)?.let { value = it }; kotlinx.coroutines.delay(BACKGROUND_OUTPUT_MS) }
+    }
+    Column(
+        modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.surfaceContainer)
+            .clickable { open = !open }.padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AppIcon(R.drawable.ic_terminal, stringResource(R.string.background_running), Modifier.size(16.dp), tint = c.onSurfaceVariant)
+            Spacer(Modifier.width(10.dp))
+            Text(job.command.lineSequence().first(), style = MaterialTheme.typography.bodyMedium, color = c.onSurfaceVariant,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+            Spacer(Modifier.width(10.dp))
+            Text(DateUtils.formatElapsedTime(((now - job.startedAt) / 1000).coerceAtLeast(0)), style = MaterialTheme.typography.labelSmall, color = c.onSurfaceVariant)
+        }
+        if (open) Text(
+            output?.trim()?.ifEmpty { null } ?: stringResource(R.string.background_no_output),
+            style = androidx.compose.ui.text.TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 12.sp, lineHeight = 17.sp),
+            color = c.onSurfaceVariant,
+            modifier = Modifier.padding(start = 26.dp, top = 8.dp).heightIn(max = 200.dp).verticalScroll(rememberScrollState()),
+        )
+    }
+}
+
+private const val BACKGROUND_OUTPUT_MS = 5000L
 
 /** The session's controls with words, above its message box. */
 @Composable

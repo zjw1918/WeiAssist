@@ -53,6 +53,15 @@ class ChatFilesTest {
         assertEquals(emptyList<ChatItem>(), (chatBlocks(done.dropLast(1), busy = true).last() as ChatBlock.Turn).answer)
     }
 
+    @Test fun `a background command's end is a row of its own, and dsh's notices stay in the steps`() {
+        val ended = ChatItem.Trigger("background-command", "ping\n\ndone")
+        val blocks = chatBlocks(listOf(ChatItem.User("go"), ended, ChatItem.Assistant("It finished.")), busy = false)
+        assertEquals(listOf("Message", "Message", "Turn"), blocks.map { it.javaClass.simpleName })
+        assertEquals(ended, (blocks[1] as ChatBlock.Message).item)
+        val dsh = ChatItem.Trigger("tool-jobs", "job")
+        assertEquals(listOf("Message", "Turn"), chatBlocks(listOf(ChatItem.User("go"), dsh), busy = false).map { it.javaClass.simpleName })
+    }
+
     @Test fun `a message sent while subagents work splits the run but leaves them working, on the page`() {
         val rust = ChatItem.Subagent("c1", "Rust review")
         val zig = ChatItem.Subagent("c2", "Zig review", outcome = "done")

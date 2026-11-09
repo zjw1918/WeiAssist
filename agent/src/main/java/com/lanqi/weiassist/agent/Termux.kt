@@ -196,6 +196,19 @@ class Termux(context: Context) {
         return standIn(r.getString("stdout").orEmpty(), r.getString("stderr").orEmpty(), safe(session), safe(call), timeoutSec)
     }
 
+    /** The end of what call [call] has printed so far, for the user to watch. Unlike [peek], it changes nothing. */
+    suspend fun tail(session: String, call: String): String? {
+        if (setupProblem() != null) return null
+        val script = """
+            d="${'$'}{HOME}/sessions/${'$'}{1}"
+            tail -c $PEEK_BYTES "${'$'}{d}/.bash-${'$'}{2}.out" 2> /dev/null
+            tail -c $PEEK_BYTES "${'$'}{d}/.bash-${'$'}{2}.err" 2> /dev/null
+            exit 0
+        """.trimIndent()
+        val r = execute(arrayOf("-c", script, "bash", safe(session), safe(call)), PEEK_SEC) ?: return null
+        return r.getString("stdout").takeIf { r.getInt("err", RESULT_OK) == RESULT_OK }
+    }
+
     /** Stop a running [run] (the user pressed Stop). */
     suspend fun kill(session: String, call: String) {
         if (setupProblem() != null) return

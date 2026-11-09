@@ -439,7 +439,7 @@ class AgentController(context: Context) {
             // A new run: whether it has left 小维助手 yet starts over (see PhoneActions.runStarted).
             if (m.optString("type") == "agent_start") phone.runStarted(session)
             // A background command's result reached the model: nothing to keep or collect any more.
-            if (m.optString("type") == "trigger" && m.optString("source") == "tool-jobs" && m.has("call")) {
+            if (m.optString("type") == "trigger" && m.optString("source") == "background-command" && m.has("call")) {
                 val call = m.getString("call")
                 backgroundJobs.remove(session, call)
                 scope.launch { termux.forget(session, call) }
@@ -641,6 +641,9 @@ class AgentController(context: Context) {
         phone.cancelWaits()
         sessions.stopAll()
     }
+
+    /** The end of what background command [call] has printed so far; null if Termux has no answer. */
+    suspend fun backgroundOutput(session: String, call: String): String? = termux.tail(session, call)
 
     /** The user closed the app: every session and background task ends. Files and conversations are kept. */
     fun closeApp() {

@@ -60,6 +60,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     /** Each AI core's slash commands, by core id (suggested as the user types `/`). */
+    /** Commands going on in the background, of every session. */
+    val backgroundJobs = controller
+        .flatMapLatest { it?.backgroundJobs?.jobs ?: flowOf(emptyList()) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    suspend fun backgroundOutput(session: String, call: String) = controller.value?.backgroundOutput(session, call)
+
     val coreCommands = controller
         .flatMapLatest { it?.sessions?.commands ?: flowOf(emptyMap()) }
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())

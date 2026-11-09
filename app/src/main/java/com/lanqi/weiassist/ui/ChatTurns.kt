@@ -175,6 +175,11 @@ fun chatBlocks(items: List<ChatItem>, busy: Boolean): List<ChatBlock> {
                 close(null, false)
                 out += ChatBlock.Message("m:$i", item)
             }
+            // The user's own command came back: a row of its own, not folded away with the steps.
+            is ChatItem.Trigger if item.source == "background-command" -> {
+                close(null, false)
+                out += ChatBlock.Message("m:$i", item)
+            }
             is ChatItem.Stats -> { if (start < 0) start = i; close(item.run, false) }
             else -> { if (start < 0) start = i; turn += item }
         }
@@ -892,6 +897,7 @@ private fun TriggerCard(item: ChatItem.Trigger, modifier: Modifier = Modifier, l
         "agent-message" -> R.drawable.ic_forum to R.string.trigger_agent
         "team-message" -> R.drawable.ic_forum to R.string.trigger_team
         "tool-jobs" -> R.drawable.ic_terminal to R.string.trigger_job
+        "background-command" -> R.drawable.ic_terminal to R.string.trigger_background_command
         else -> R.drawable.ic_sparkle to R.string.trigger_other
     }
     Column(

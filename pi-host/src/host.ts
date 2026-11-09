@@ -472,7 +472,7 @@ async function configure(cfg: Config) {
 		initialState: {
 			messages: history,
 			// The app's prompt (its prompts, the same for every AI core: Kotlin's Prompts); a bare one if it sent none.
-			systemPrompt: cfg.systemPrompt ?? `You are a helpful assistant on the user's Android phone, working in the ${agentName} app. Reply in the user's language.\n${agentName} is the app, not you: asked who or which model you are, answer as the AI model you really are.`,
+			systemPrompt: (cfg.systemPrompt ?? `You are a helpful assistant on the user's Android phone, working in the ${agentName} app. Reply in the user's language.\n${agentName} is the app, not you: asked who or which model you are, answer as the AI model you really are.`) + `\n\n${MID_TASK_NOTE}`,
 			model,
 			thinkingLevel: thinkingLevel as any,
 			// Exactly the tools the app chose for this session (phone, bash, send_file or the supervisor's).
@@ -618,6 +618,12 @@ function hurry(id: string) {
 	detachJobs(id);
 }
 
+/** The card for a command that went on in the background and has ended. */
+const BACKGROUND_COMMAND = "background-command";
+
+/** Pi only: the user can write while it works (Agent.steer) and wants to know the message landed. */
+const MID_TASK_NOTE = "A user message can arrive while you are working, after a tool result. When one does, begin your next reply with one short sentence, in the user's language, saying what you will change because of it, or why nothing changes. Then carry on with the work. Don't do this for automatic notices such as <background-result>.";
+
 /**
  * A command that went on in the background has ended: the model is told at its next step, or, if it has stopped
  * working, this starts a new run (Kotlin sees a run the core started by itself).
@@ -625,7 +631,7 @@ function hurry(id: string) {
 function deliverLate(id: string, r: LateResult) {
 	const s = sessions.get(id);
 	if (!s) return;
-	bridge({ type: "trigger", session: id, source: "tool-jobs", call: r.call, text: r.text.split("\n", 1)[0] });
+	bridge({ type: "trigger", session: id, source: BACKGROUND_COMMAND, call: r.call, text: `${r.command.slice(0, 500)}\n\n${r.text.split("\n", 1)[0]}` });
 	const text = `<background-result tool="${r.tool}">\nAn automatic notice, not from the user: this command, which you left running in the background, has ended.\nCommand: ${r.command.slice(0, 500)}\n${r.isError ? "It failed.\n" : ""}${r.text}\n</background-result>`;
 	const message = { role: "user", content: [{ type: "text", text }], timestamp: Date.now() } as AgentMessage;
 	if (s.running) { s.agent.steer(message); return; }
