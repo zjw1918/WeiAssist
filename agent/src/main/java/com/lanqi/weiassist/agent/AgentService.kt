@@ -124,6 +124,12 @@ class AgentService : Service() {
         }
     }
 
+    /** The user swiped the app away: everything it was doing ends. */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        controller.closeApp()
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> controller.stopAll()

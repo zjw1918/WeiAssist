@@ -254,6 +254,21 @@ class Termux(context: Context) {
         if (deleted) markUsed(session, false)
     }
 
+    /** The app was closed: end every session's tmux jobs and running commands. Their files stay. */
+    suspend fun stopAllJobs() {
+        if (prefs.getStringSet("used", emptySet()).isNullOrEmpty() || setupProblem() != null) return
+        val script = PRELUDE + """
+            for d in "${'$'}{HOME}"/sessions/*/; do
+              TMUX_TMPDIR="${'$'}{d}.tmux" tmux kill-server 2> /dev/null
+              rm -f "${'$'}{d}".bash-*.kept "${'$'}{d}".bash-*.code
+              for p in "${'$'}{d}".bash-*.pid; do [ -f "${'$'}{p}" ] && kill -TERM "${'$'}(cat "${'$'}{p}")" 2> /dev/null; done
+            done
+            sync_lock > /dev/null 2>&1
+            exit 0
+        """.trimIndent()
+        execute(arrayOf("-c", script), 30)
+    }
+
     /**
      * Copy [path] (relative to session [session]'s folder, or absolute) out of Termux into [dest], at most [maxBytes]:
      * Termux's curl uploads it to a one-shot endpoint in this app ([LoopbackTransfer]). Returns null when it
