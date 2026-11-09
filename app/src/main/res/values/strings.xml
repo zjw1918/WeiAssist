@@ -155,6 +155,20 @@
     </plurals>
     <string name="delete_many_text">Their messages are removed from this phone. Running tasks are stopped first.</string>
     <string name="reply_hint">Message</string>
+    <string name="voice_title">Voice input</string>
+    <string name="voice_why">Speech to text on your own computer, using the voice server in WeiAssist\'s tools folder. It has no password, so use it only on a network you trust.</string>
+    <string name="voice_off">Off</string>
+    <string name="voice_ready">Connected</string>
+    <string name="voice_loading">Connected, the server is still loading its model</string>
+    <string name="voice_other">Something answered, but it isn\'t a voice server</string>
+    <string name="voice_unreachable">Can\'t reach the server. Check that it is running and that this phone is on the same network.</string>
+    <string name="voice_invalid">That doesn\'t look like an address</string>
+    <string name="voice_address">Server address</string>
+    <string name="voice_save_test">Save and test</string>
+    <string name="voice_language">Language you speak</string>
+    <string name="voice_language_auto">Auto</string>
+    <string name="voice_language_zh">中文</string>
+    <string name="voice_language_en">English</string>
     <string name="gateway_title">AI gateway</string>
     <string name="gateway_why">An optional app, WeiAssist Gateway: one API for every AI app and device. It serves your providers, subscriptions and routing (OpenAI, Anthropic and Gemini formats) to this phone and the devices on its network.</string>
     <string name="gateway_checking">Checking…</string>

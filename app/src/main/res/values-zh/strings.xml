@@ -152,6 +152,20 @@
     </plurals>
     <string name="delete_many_text">对话内容会从手机上删除。正在执行的任务会先停止。</string>
     <string name="reply_hint">消息</string>
+    <string name="voice_title">语音输入</string>
+    <string name="voice_why">在你自己的电脑上把语音转成文字，使用 WeiAssist tools 文件夹里的语音服务器。它没有密码，请只在你信任的网络中使用。</string>
+    <string name="voice_off">未开启</string>
+    <string name="voice_ready">已连接</string>
+    <string name="voice_loading">已连接，服务器还在加载模型</string>
+    <string name="voice_other">有服务响应，但它不是语音服务器</string>
+    <string name="voice_unreachable">连不上服务器。请确认它正在运行，并且手机在同一网络中。</string>
+    <string name="voice_invalid">这看起来不是一个地址</string>
+    <string name="voice_address">服务器地址</string>
+    <string name="voice_save_test">保存并测试</string>
+    <string name="voice_language">你说的语言</string>
+    <string name="voice_language_auto">自动</string>
+    <string name="voice_language_zh">中文</string>
+    <string name="voice_language_en">English</string>
     <string name="gateway_title">AI 网关</string>
     <string name="gateway_why">可选应用「WeiAssist 网关」：一个 API 服务所有 AI 应用和设备，把你的服务商、订阅和路由（OpenAI、Anthropic、Gemini 格式）提供给本机和同一局域网的设备。</string>
     <string name="gateway_checking">正在检查…</string>

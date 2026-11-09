@@ -39,6 +39,7 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalCoroutinesApi::class)
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    val voice = com.lanqi.weiassist.agent.VoiceSettings(app)
     private val controller = MutableStateFlow<AgentController?>(null)
     private val connection: ServiceConnection = AgentService.bind(app) { controller.value = it }
 
