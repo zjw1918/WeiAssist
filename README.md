@@ -98,13 +98,13 @@ other providers by itself.
 ### Subagents
 
 <p align="center">
-  <a href="docs/images/subagents-demo.mp4"><img src="docs/images/subagents-demo.gif" width="320"
-    alt="A DeepSeek Harness session asked to compare Rust, Go and Zig with three subagents: each subagent works in its own live card with its time, steps and current step while the header counts how many are done; once all three are done the orchestrator's comparison table is the answer, and the Thinking and steps sheet shows each subagent's card with its report and its own work"></a>
+  <img src="docs/images/subagents-demo.gif" width="320"
+    alt="A DeepSeek Harness session asked to compare Rust, Go and Zig with three subagents: each subagent works in its own live card with its time, steps and current step while the header counts how many are done; once all three are done the orchestrator's comparison table is the answer, and the Thinking and steps sheet shows each subagent's card with its report and its own work">
 </p>
 
 With DeepSeek Harness, a task can run several subagents at once. Each one gets its own live card showing its
 reasoning, steps, time and report. The answer comes once all of them are done: the orchestrator's summary, with the
-rest of its work a tap away. [Watch the video](docs/images/subagents-demo.mp4) (sped up).
+rest of its work a tap away.
 
 ### Talk to it from Telegram
 
@@ -116,6 +116,14 @@ rest of its work a tap away. [Watch the video](docs/images/subagents-demo.mp4) (
 Create a bot with [BotFather](https://t.me/BotFather), paste its token in **Settings → Telegram** and pair your account. Each chat is a
 conversation; it streams answers, takes photos and files, and asks you (✅ / ❌) before anything risky. No server
 needed. Details: [docs/TELEGRAM.md](docs/TELEGRAM.md).
+
+<p align="center">
+  <img src="docs/images/telegram-voice-demo.gif" width="480"
+    alt="Telegram on a Mac and the phone side by side: a voice message asks for the battery level; the bot shows what it heard, works in Settings on the phone, and answers that the battery is at 100%">
+</p>
+
+It understands voice messages too, if you run the [voice server](tools/voice-server) on your own Apple Silicon Mac
+and set its address under **Settings → Voice input**. The same server powers the mic in the app.
 
 ## What it can do
 

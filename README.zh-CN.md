@@ -73,11 +73,11 @@
 ### 子智能体
 
 <p align="center">
-  <a href="docs/images/subagents-demo.mp4"><img src="docs/images/subagents-demo.gif" width="320"
-    alt="DeepSeek Harness 会话用三个子智能体对比 Rust、Go 和 Zig：每个子智能体在自己的实时卡片里工作，显示用时、步数和当前步骤，顶部统计已完成的数量；三个都完成后，主智能体的对比表就是答案；“思考内容”里有每个子智能体的卡片、报告和它自己的工作过程"></a>
+  <img src="docs/images/subagents-demo.gif" width="320"
+    alt="DeepSeek Harness 会话用三个子智能体对比 Rust、Go 和 Zig：每个子智能体在自己的实时卡片里工作，显示用时、步数和当前步骤，顶部统计已完成的数量；三个都完成后，主智能体的对比表就是答案；“思考内容”里有每个子智能体的卡片、报告和它自己的工作过程">
 </p>
 
-用 DeepSeek Harness 时，一个任务可以同时运行多个子智能体。每个子智能体都有自己的实时卡片，显示它的思考、步骤、用时和报告。全部完成后才给出答案：主智能体的汇总，其余过程点开即可查看。[观看视频](docs/images/subagents-demo.mp4)（已加速）。
+用 DeepSeek Harness 时，一个任务可以同时运行多个子智能体。每个子智能体都有自己的实时卡片，显示它的思考、步骤、用时和报告。全部完成后才给出答案：主智能体的汇总，其余过程点开即可查看。
 
 ### 用 Telegram 找它
 
@@ -86,6 +86,12 @@
 </p>
 
 用 [BotFather](https://t.me/BotFather) 创建一个机器人，把它的 token 粘贴到 **设置 → Telegram**，再配对你的账号。每个聊天就是一个对话：回答实时显示，能收发照片和文件，有风险的操作前会先问你（✅ / ❌）。不需要服务器。详见 [docs/TELEGRAM.md](docs/TELEGRAM.md)。
+
+<p align="center">
+  <img src="docs/images/telegram-voice-demo.gif" width="480" alt="Mac 上的 Telegram 和手机并排：发一条语音询问电量；机器人显示它听到的内容，在手机的设置里操作，并回答电量为 100%">
+</p>
+
+它也能听懂语音消息：在你自己的 Apple Silicon Mac 上运行[语音服务器](tools/voice-server)，然后在 **设置 → 语音输入** 中填写地址即可。应用里的麦克风用的也是这台服务器。
 
 ## 它能做什么
 
