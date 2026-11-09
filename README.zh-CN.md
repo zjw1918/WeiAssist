@@ -22,7 +22,7 @@
 
 **新功能：把手机变成 AI 网关。** 装上可选的“网关”应用，手机就会运行 [magpie](https://github.com/yetone/magpie)：用你的订阅和密钥登录一次，所有引擎、手机上的其他应用和局域网里的设备都能通过同一个 API 使用它们。[详见下文](#ai-网关magpie)。
 
-[下载](https://github.com/zjw1918/WeiAssist/releases/latest) · [Termux 设置](docs/TERMUX.md) · [Telegram](docs/TELEGRAM.md) · [AI 网关](#ai-网关magpie) · [架构](docs/ARCHITECTURE.md) · [进度](docs/PROGRESS.md) · [路线图](docs/ROADMAP.md)（文档为英文）
+[下载](https://github.com/zjw1918/WeiAssist/releases/latest) · [Termux 设置](docs/TERMUX.md) · [Telegram](docs/TELEGRAM.md) · [AI 网关](#ai-网关magpie) · [语音输入](#语音输入) · [架构](docs/ARCHITECTURE.md) · [进度](docs/PROGRESS.md) · [路线图](docs/ROADMAP.md)（文档为英文）
 
 ## 安装
 
@@ -68,6 +68,28 @@
 
 不装网关，小维助手照常可用。选用网关时如果它停了，助手会告诉你，不会自己换成其他服务商。
 
+## 语音输入
+
+用说话代替打字，在应用里和 Telegram 语音消息中都可以。语音由你自己的 Apple Silicon Mac 上的一个小服务器用 MLX Whisper 转成文字，不使用手机自带的语音识别。
+
+1. 在 Mac 上安装工具并启动服务器。第一次运行会下载模型（约 1.6 GB）。
+
+   ```sh
+   brew install uv ffmpeg
+   git clone https://github.com/zjw1918/WeiAssist.git
+   cd WeiAssist/tools/voice-server
+   ./server.py
+   ```
+
+   如果 macOS 询问是否允许传入连接，请选择允许。
+2. 在小维助手中打开 **设置 → 语音输入**，填入 Mac 的 IP 地址（可在“系统设置 → 网络”中查看），例如 `192.168.1.20`。点 **保存并测试**，应显示 **已连接**。
+3. 选择你说的语言。选错的话，转出来的文字会是乱的。
+4. 点输入框里的麦克风，说话，然后点 **完成**。文字会留在输入框里，由你检查后发送。在 Telegram 中直接发语音消息：机器人会显示它听到的内容，并立刻照做。
+
+手机必须能连到 Mac，通常是在同一个 Wi-Fi 下。模型下载完成后，在该文件夹运行 `./install-launchd.sh`，服务器就会在每次登录时自动启动（`--uninstall` 可移除）。
+
+服务器**没有密码**：同一网络中的任何人都能使用，请只在你信任的网络中运行。音频在每次请求后删除，转写内容不写入日志。更多说明：[tools/voice-server](tools/voice-server)（英文）。
+
 ## 演示
 
 ### 子智能体
@@ -91,7 +113,7 @@
   <img src="docs/images/telegram-voice-demo.gif" width="480" alt="Mac 上的 Telegram 和手机并排：发一条语音询问电量；机器人显示它听到的内容，在手机的设置里操作，并回答电量为 100%">
 </p>
 
-它也能听懂语音消息：在你自己的 Apple Silicon Mac 上运行[语音服务器](tools/voice-server)，然后在 **设置 → 语音输入** 中填写地址即可。应用里的麦克风用的也是这台服务器。
+它也能听懂语音消息：在你自己的 Apple Silicon Mac 上运行语音服务器即可，详见[语音输入](#语音输入)。应用里的麦克风用的也是这台服务器。
 
 ## 它能做什么
 

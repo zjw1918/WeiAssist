@@ -29,7 +29,7 @@ servers of ours in between: the app talks to your provider directly, and your ke
 on the phone and every device on your network can use them through one API. [More below](#ai-gateway-magpie).
 
 [Download](https://github.com/zjw1918/WeiAssist/releases/latest) · [Termux setup](docs/TERMUX.md) ·
-[Telegram](docs/TELEGRAM.md) · [AI gateway](#ai-gateway-magpie) · [Architecture](docs/ARCHITECTURE.md) · [Progress](docs/PROGRESS.md) ·
+[Telegram](docs/TELEGRAM.md) · [AI gateway](#ai-gateway-magpie) · [Voice input](#voice-input) · [Architecture](docs/ARCHITECTURE.md) · [Progress](docs/PROGRESS.md) ·
 [Roadmap](docs/ROADMAP.md)
 
 ## Install
@@ -93,6 +93,33 @@ To set it up:
 WeiAssist works without it. If the gateway stops while it is chosen, the assistant says so and doesn't switch to
 other providers by itself.
 
+## Voice input
+
+Speak instead of typing, in the app and in Telegram voice messages. Speech is transcribed by a small server on your
+own Apple Silicon Mac, using MLX Whisper; the phone's speech recognizer isn't used.
+
+1. On the Mac, install the tools and start the server. The first run downloads the model (about 1.6 GB).
+
+   ```sh
+   brew install uv ffmpeg
+   git clone https://github.com/zjw1918/WeiAssist.git
+   cd WeiAssist/tools/voice-server
+   ./server.py
+   ```
+
+   If macOS asks whether to allow incoming connections, allow them.
+2. In WeiAssist, open **Settings → Voice input** and enter the Mac's IP address (System Settings → Network shows it),
+   for example `192.168.1.20`. Tap **Save and test**; it should say **Connected**.
+3. Choose the language you speak. If it is set wrong, speech comes out as nonsense.
+4. Tap the mic in a message box, speak, and tap **Done**. The text waits in the box for you to check and send. In
+   Telegram, send a voice message: the bot shows what it heard and acts on it right away.
+
+The phone must be able to reach the Mac, normally on the same Wi-Fi. To start the server at every login, once the
+model has downloaded, run `./install-launchd.sh` in that folder (`--uninstall` removes it).
+
+The server has **no password**: anyone on your network can use it, so run it only on a network you trust. Audio is
+deleted after each request and transcripts aren't logged. More: [tools/voice-server](tools/voice-server).
+
 ## Demos
 
 ### Subagents
@@ -122,8 +149,8 @@ needed. Details: [docs/TELEGRAM.md](docs/TELEGRAM.md).
     alt="Telegram on a Mac and the phone side by side: a voice message asks for the battery level; the bot shows what it heard, works in Settings on the phone, and answers that the battery is at 100%">
 </p>
 
-It understands voice messages too, if you run the [voice server](tools/voice-server) on your own Apple Silicon Mac
-and set its address under **Settings → Voice input**. The same server powers the mic in the app.
+It understands voice messages too, if you run the voice server on your own Apple Silicon Mac: see
+[Voice input](#voice-input). The same server powers the mic in the app.
 
 ## What it can do
 
