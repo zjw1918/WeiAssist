@@ -111,20 +111,20 @@ object VoiceServer {
     }
 
     /** The multipart body of a transcription request: an upload of known length, which the server requires. */
-    fun transcriptionBody(boundary: String, audio: ByteArray, language: VoiceLanguage): ByteArray =
+    fun transcriptionBody(boundary: String, audio: ByteArray, language: VoiceLanguage, name: String = "clip.m4a", mime: String = "audio/mp4"): ByteArray =
         ByteArrayOutputStream(audio.size + 512).apply {
             write(
                 ("--$boundary\r\nContent-Disposition: form-data; name=\"language\"\r\n\r\n${language.id}\r\n" +
-                    "--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"clip.m4a\"\r\nContent-Type: audio/mp4\r\n\r\n").toByteArray(),
+                    "--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"$name\"\r\nContent-Type: $mime\r\n\r\n").toByteArray(),
             )
             write(audio)
             write("\r\n--$boundary--\r\n".toByteArray())
         }.toByteArray()
 
-    suspend fun transcribe(url: String, clip: File, language: VoiceLanguage): Transcript = withContext(Dispatchers.IO) {
+    suspend fun transcribe(url: String, clip: File, language: VoiceLanguage, name: String = "clip.m4a", mime: String = "audio/mp4"): Transcript = withContext(Dispatchers.IO) {
         runCatching {
             val boundary = "weiassist-${UUID.randomUUID()}"
-            val body = transcriptionBody(boundary, clip.readBytes(), language)
+            val body = transcriptionBody(boundary, clip.readBytes(), language, name, mime)
             val c = URL("$url/v1/audio/transcriptions").openConnection() as HttpURLConnection
             try {
                 c.connectTimeout = 5_000

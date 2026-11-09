@@ -46,8 +46,15 @@ class TelegramBotTest {
         assertTrue(m.private)
         assertFalse(m.unsupported)
         assertFalse(TelegramBot.parseUpdate(update(1, "hi", "group"))!!.private)
-        val voice = JSONObject(update(2, "").toString()).also { it.getJSONObject("message").remove("text"); it.getJSONObject("message").put("voice", JSONObject()) }
-        assertTrue(TelegramBot.parseUpdate(voice)!!.unsupported)
+        val sticker = JSONObject(update(2, "").toString()).also { it.getJSONObject("message").remove("text"); it.getJSONObject("message").put("sticker", JSONObject()) }
+        assertTrue(TelegramBot.parseUpdate(sticker)!!.unsupported)
+        val note = JSONObject(update(2, "").toString()).also {
+            it.getJSONObject("message").remove("text")
+            it.getJSONObject("message").put("voice", JSONObject().put("file_id", "F").put("mime_type", "audio/ogg").put("file_size", 900))
+        }
+        val spoken = TelegramBot.parseUpdate(note)!!
+        assertFalse(spoken.unsupported)
+        assertEquals(RemoteFile("F", "voice.ogg", "audio/ogg", 900), spoken.voice)
         assertNull(TelegramBot.parseUpdate(JSONObject().put("update_id", 3).put("edited_message", JSONObject())))
     }
 

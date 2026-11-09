@@ -294,8 +294,11 @@ class TelegramBot(
             val chat = m.optJSONObject("chat") ?: return null
             val text = m.optString("text").ifEmpty { m.optString("caption") }
             val files = files(m)
-            val other = listOf("voice", "audio", "video", "video_note", "sticker", "animation", "location", "contact").any { m.has(it) }
-            if (text.isEmpty() && files.isEmpty() && !other) return null
+            val voice = m.optJSONObject("voice")?.let { v ->
+                RemoteFile(v.getString("file_id"), "voice.ogg", v.optString("mime_type").ifEmpty { "audio/ogg" }, v.optLong("file_size", -1))
+            }
+            val other = listOf("audio", "video", "video_note", "sticker", "animation", "location", "contact").any { m.has(it) }
+            if (text.isEmpty() && files.isEmpty() && voice == null && !other) return null
             val name = listOf(from.optString("first_name"), from.optString("last_name")).filter { it.isNotBlank() }.joinToString(" ")
                 .ifBlank { from.optString("username") }
             return Inbound(
@@ -305,6 +308,7 @@ class TelegramBot(
                 private = chat.optString("type") == "private",
                 unsupported = other,
                 files = files,
+                voice = voice,
             )
         }
 

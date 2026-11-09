@@ -48,7 +48,14 @@
     <string name="tg_new">New conversation started.</string>
     <string name="tg_stopped">Stopped.</string>
     <string name="tg_nothing_running">Nothing is running.</string>
-    <string name="tg_text_only">I can read text, photos and files here; not voice messages, videos or stickers yet.</string>
+    <string name="tg_text_only">I can read text, voice messages, photos and files here; not videos or stickers yet.</string>
+    <string name="tg_voice_heard">🎤 %1$s</string>
+    <string name="tg_voice_off">To understand voice messages I need a voice server. Set one in WeiAssist, under Settings → Voice input.</string>
+    <string name="tg_voice_long">That voice message is too long for me. Please keep it under about 20 minutes.</string>
+    <string name="tg_voice_no_speech">I didn\'t hear any speech in that voice message.</string>
+    <string name="tg_voice_unreachable">I can\'t reach your voice server, so I didn\'t get that voice message. Check that it is running and that the phone is on its network, then send it again.</string>
+    <string name="tg_voice_loading">Your voice server is still loading its model. Send that voice message again in a moment.</string>
+    <string name="tg_voice_rejected">Your voice server refused that voice message: %1$s</string>
     <string name="tg_not_sent">Couldn\'t pass that on. Try again.</string>
     <string name="tg_status_none">No conversation yet. Send me a message to start one.</string>
     <string name="tg_state_running">working</string>
