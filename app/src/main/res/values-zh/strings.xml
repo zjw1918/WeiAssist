@@ -382,6 +382,9 @@
     <string name="trigger_agent">子智能体发来消息</string>
     <string name="trigger_team">团队消息</string>
     <string name="trigger_job">后台任务状态更新</string>
+    <string name="trigger_background_command">后台命令已结束</string>
+    <string name="background_running">正在后台运行</string>
+    <string name="background_no_output">暂无输出</string>
     <string name="trigger_other">收到状态更新</string>
     <string name="tool_web_fetch">抓取网页</string>
     <string name="tool_web_search">搜索网页</string>

@@ -33,7 +33,7 @@ import org.json.JSONObject
  * - `tool` {session, call, name, args}: runs it and answers a [ToolResult] as JSON. `call` is the core's id for
  *   this call.
  * - `tool_cancel` {session, call} when the user stops the run while the call works (e.g. a bash command).
- * - `trigger` with source `tool-jobs` and {call} tells the app that a background command's result reached the model.
+ * - `trigger` with source `background-command` and {call} tells the app that a background command's result reached the model.
  * - `tool_peek` {session, call}, for [hurry]: null if the call has ended, else { text }, what the model gets for now.
  */
 interface AgentCore {
