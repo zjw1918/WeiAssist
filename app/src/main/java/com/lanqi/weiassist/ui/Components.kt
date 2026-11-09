@@ -174,7 +174,8 @@ fun Composer(
             trailingIcon = if (value.isEmpty() && extra == null) null else {
                 {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (value.isNotEmpty()) ClearButton { onValueChange("") } else extra?.invoke()
+                        if (value.isNotEmpty()) ClearButton { onValueChange("") }
+                        extra?.invoke()
                     }
                 }
             },

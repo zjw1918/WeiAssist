@@ -40,6 +40,14 @@ import kotlinx.coroutines.launch
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("settings", Context.MODE_PRIVATE)
     val voice = com.lanqi.weiassist.agent.VoiceSettings(app)
+    val dictation = com.lanqi.weiassist.ui.Dictation(app, voice, viewModelScope) { target, text ->
+        val add = com.lanqi.weiassist.agent.VoiceServer::append
+        when (target) {
+            com.lanqi.weiassist.ui.DictationTarget.NewSession -> input = add(input, text)
+            com.lanqi.weiassist.ui.DictationTarget.Reply -> reply = add(reply, text)
+            com.lanqi.weiassist.ui.DictationTarget.Supervisor -> supervisorInput = add(supervisorInput, text)
+        }
+    }
     private val controller = MutableStateFlow<AgentController?>(null)
     private val connection: ServiceConnection = AgentService.bind(app) { controller.value = it }
 
@@ -316,7 +324,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     // A running task keeps the service started (foreground); unbinding only drops this screen's link.
-    override fun onCleared() = getApplication<Application>().unbindService(connection)
+    override fun onCleared() {
+        dictation.cancel()
+        getApplication<Application>().unbindService(connection)
+    }
 
     companion object {
         /** tools/mock-openai.mjs on the computer, reached through `adb reverse tcp:8787 tcp:8787`. */

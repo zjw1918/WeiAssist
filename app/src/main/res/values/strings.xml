@@ -155,6 +155,16 @@
     </plurals>
     <string name="delete_many_text">Their messages are removed from this phone. Running tasks are stopped first.</string>
     <string name="reply_hint">Message</string>
+    <string name="voice_done">Done</string>
+    <string name="voice_transcribing">Transcribing…</string>
+    <string name="voice_retry">Retry</string>
+    <string name="voice_discard">Discard</string>
+    <string name="voice_dismiss">Dismiss</string>
+    <string name="voice_problem_permission">Voice input needs the microphone. Allow it in the app\'s system settings.</string>
+    <string name="voice_problem_microphone">The microphone can\'t be used right now. Another app may be using it.</string>
+    <string name="voice_problem_short">That was too short. Tap the mic, speak, then tap Done.</string>
+    <string name="voice_problem_no_speech">No speech was heard.</string>
+    <string name="voice_problem_rejected">The server refused the recording: %1$s</string>
     <string name="voice_title">Voice input</string>
     <string name="voice_why">Speech to text on your own computer, using the voice server in WeiAssist\'s tools folder. It has no password, so use it only on a network you trust.</string>
     <string name="voice_off">Off</string>

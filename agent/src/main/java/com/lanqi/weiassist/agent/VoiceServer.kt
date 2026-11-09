@@ -6,10 +6,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 import java.util.Locale
+import java.util.UUID
 
 /** The language speech is transcribed in; [id] is the value the server's `language` field takes. */
 enum class VoiceLanguage(val id: String) {
@@ -90,6 +93,65 @@ object VoiceServer {
             else -> Health.Other
         }
     }
+
+    sealed interface Transcript {
+        data class Text(val text: String) : Transcript
+        data object Unreachable : Transcript
+        data object Loading : Transcript
+        data class Rejected(val message: String) : Transcript
+    }
+
+    fun parseTranscript(code: Int, body: String): Transcript {
+        val json = runCatching { JSONObject(body) }.getOrNull()
+        return when {
+            code in 200..299 && json?.has("text") == true -> Transcript.Text(json.optString("text").trim())
+            code == 503 -> Transcript.Loading
+            else -> Transcript.Rejected(json?.optJSONObject("error")?.optString("message")?.takeIf { it.isNotEmpty() } ?: "HTTP $code")
+        }
+    }
+
+    /** The multipart body of a transcription request: an upload of known length, which the server requires. */
+    fun transcriptionBody(boundary: String, audio: ByteArray, language: VoiceLanguage): ByteArray =
+        ByteArrayOutputStream(audio.size + 512).apply {
+            write(
+                ("--$boundary\r\nContent-Disposition: form-data; name=\"language\"\r\n\r\n${language.id}\r\n" +
+                    "--$boundary\r\nContent-Disposition: form-data; name=\"file\"; filename=\"clip.m4a\"\r\nContent-Type: audio/mp4\r\n\r\n").toByteArray(),
+            )
+            write(audio)
+            write("\r\n--$boundary--\r\n".toByteArray())
+        }.toByteArray()
+
+    suspend fun transcribe(url: String, clip: File, language: VoiceLanguage): Transcript = withContext(Dispatchers.IO) {
+        runCatching {
+            val boundary = "weiassist-${UUID.randomUUID()}"
+            val body = transcriptionBody(boundary, clip.readBytes(), language)
+            val c = URL("$url/v1/audio/transcriptions").openConnection() as HttpURLConnection
+            try {
+                c.connectTimeout = 5_000
+                // The server queues requests, so this one may wait for others.
+                c.readTimeout = 120_000
+                c.requestMethod = "POST"
+                c.doOutput = true
+                c.setFixedLengthStreamingMode(body.size)
+                c.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+                c.outputStream.use { it.write(body) }
+                val code = c.responseCode
+                val stream = if (code in 200..299) c.inputStream else c.errorStream
+                parseTranscript(code, stream?.bufferedReader()?.use { it.readText() }.orEmpty())
+            } finally {
+                c.disconnect()
+            }
+        }.getOrDefault(Transcript.Unreachable)
+    }
+
+    /** [spoken] after what is already in a box; a space only between words of scripts that use them. */
+    fun append(existing: String, spoken: String): String {
+        if (existing.isEmpty()) return spoken
+        val needsSpace = !existing.last().isWhitespace() && !isCjk(existing.last()) && !isCjk(spoken.first())
+        return if (needsSpace) "$existing $spoken" else existing + spoken
+    }
+
+    private fun isCjk(c: Char) = c.code in 0x2E80..0x9FFF || c.code in 0xF900..0xFAFF || c.code in 0xFF00..0xFFEF
 
     suspend fun health(url: String): Health = withContext(Dispatchers.IO) {
         runCatching {
