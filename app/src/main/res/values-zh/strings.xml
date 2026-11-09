@@ -152,6 +152,16 @@
     </plurals>
     <string name="delete_many_text">对话内容会从手机上删除。正在执行的任务会先停止。</string>
     <string name="reply_hint">消息</string>
+    <string name="voice_done">完成</string>
+    <string name="voice_transcribing">正在转写…</string>
+    <string name="voice_retry">重试</string>
+    <string name="voice_discard">丢弃</string>
+    <string name="voice_dismiss">知道了</string>
+    <string name="voice_problem_permission">语音输入需要麦克风权限，请在系统的应用设置中允许。</string>
+    <string name="voice_problem_microphone">现在无法使用麦克风，可能有其他应用正在使用。</string>
+    <string name="voice_problem_short">录音太短。请点麦克风，说完后点“完成”。</string>
+    <string name="voice_problem_no_speech">没有听到说话声。</string>
+    <string name="voice_problem_rejected">服务器拒绝了这段录音：%1$s</string>
     <string name="voice_title">语音输入</string>
     <string name="voice_why">在你自己的电脑上把语音转成文字，使用 WeiAssist tools 文件夹里的语音服务器。它没有密码，请只在你信任的网络中使用。</string>
     <string name="voice_off">未开启</string>

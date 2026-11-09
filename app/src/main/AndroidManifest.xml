@@ -5,6 +5,10 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!-- Voice input, recorded only while the user is dictating. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+
     <!-- WeiAssist Gateway, the optional AI gateway app: Settings says whether it is installed (GatewayCard). -->
     <queries>
         <package android:name="com.lanqi.weiassist.gateway" />

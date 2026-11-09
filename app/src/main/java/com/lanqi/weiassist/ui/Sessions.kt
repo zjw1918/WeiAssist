@@ -190,19 +190,9 @@ private fun EmptySessions() {
 
 /**
  * The supervisor: tell it, in words, what to start, stop or combine; it manages the sessions below.
- * Speech goes through the phone's own recognizer when there is one (voice is just words for it).
  */
 @Composable
 private fun SupervisorCard(vm: AppViewModel, s: SessionSummary?) {
-    val ctx = LocalContext.current
-    val speech = remember {
-        android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
-            .putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-    }
-    val canSpeak = remember { speech.resolveActivity(ctx.packageManager) != null }
-    val listen = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { r ->
-        r.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let { vm.askSupervisor(it) }
-    }
     Surface(Modifier.fillMaxWidth().padding(top = 4.dp), shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow) {
         Column(Modifier.padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(
@@ -224,10 +214,11 @@ private fun SupervisorCard(vm: AppViewModel, s: SessionSummary?) {
                 style = MaterialTheme.typography.bodyMedium, maxLines = 3, overflow = TextOverflow.Ellipsis,
                 color = if (s?.error == true) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            DictationBar(vm.dictation, DictationTarget.Supervisor)
             Composer(
                 vm.supervisorInput, { vm.supervisorInput = it }, stringResource(R.string.supervisor_placeholder),
                 onSend = { vm.askSupervisor() }, maxLines = 3,
-                extra = if (canSpeak) { { IconButton(onClick = { listen.launch(speech) }) { AppIcon(R.drawable.ic_mic, stringResource(R.string.voice_input)) } } } else null,
+                extra = dictationMic(vm, DictationTarget.Supervisor),
             )
         }
     }
@@ -289,10 +280,19 @@ private fun NewSessionSheet(vm: AppViewModel, onDismiss: () -> Unit) {
             )
             // New sessions use the AI engine chosen in Settings; the box says which.
             val engine by vm.defaultEngine.collectAsStateWithLifecycle()
+            DictationBar(vm.dictation, DictationTarget.NewSession)
+            val mic = dictationMic(vm, DictationTarget.NewSession)
             OutlinedTextField(
                 vm.input, { vm.input = it }, modifier = Modifier.fillMaxWidth(), minLines = 3, maxLines = 6,
                 label = { Text(stringResource(R.string.chat_label, vm.engineShortName(engine))) },
-                trailingIcon = if (vm.input.isEmpty()) null else { { ClearButton { vm.input = "" } } },
+                trailingIcon = if (vm.input.isEmpty() && mic == null) null else {
+                    {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (vm.input.isNotEmpty()) ClearButton { vm.input = "" }
+                            mic?.invoke()
+                        }
+                    }
+                },
                 shape = MaterialTheme.shapes.medium,
             )
             // Files for the first message: photos, PDFs, text files.
@@ -613,6 +613,7 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
                 // Typing a slash command's name: the session's core's commands that match.
                 val commands by vm.coreCommands.collectAsStateWithLifecycle()
                 if (asking == null) CommandSuggestions(vm.reply, commands[s.core].orEmpty(), { vm.reply = it }, Modifier.padding(bottom = 8.dp))
+                DictationBar(vm.dictation, DictationTarget.Reply)
                 // While it works, a message steers it: the model reads it after its current step.
                 Composer(
                     vm.reply, { vm.reply = it },
@@ -620,6 +621,7 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
                     onSend = vm::sendReply,
                     sendEnabled = vm.reply.isNotBlank() || vm.replyAttachments.isNotEmpty(),
                     attachments = vm.replyAttachments, onAttach = { vm.attach(it, toReply = true) }, onRemoveAttachment = { vm.removeAttachment(it, fromReply = true) },
+                    extra = dictationMic(vm, DictationTarget.Reply),
                 )
             }
         }
