@@ -350,11 +350,15 @@ interface Session {
 	running: boolean;
 	/** The run was started by a background command's result, not by the app: a message may overtake it. */
 	selfStarted?: boolean;
+	/** Between turns, no compaction before the conversation has this many messages. */
+	compactAgainAt?: number;
 }
 
 const sessions = new Map<string, Session>();
 /** Compactions in a row that may fail to make room before the run gives up. */
 const MAX_COMPACT_RETRIES = 2;
+/** Messages that must come before compacting between turns again: when it can't get below the limit, not every turn. */
+const COMPACT_GAP = 6;
 /** Sessions whose user asked to be read now (hurry): tool calls not started yet wait until the model has read it. */
 const hurried = new Set<string>();
 
@@ -480,6 +484,8 @@ async function configure(cfg: Config) {
 		beforeToolCall: beforeToolCall(session),
 		// Pi's hook to shape the context per model call: drop old screens (see pruneOldScreens).
 		transformContext: phone ? pruneOldScreens : undefined,
+		// A long run stays inside the context window, without waiting for a provider to refuse it.
+		prepareNextTurnWithContext: compactBetweenTurns(session),
 		// Pi resolves auth per request from the credential store (api key, or ChatGPT token refreshed as needed).
 		streamFn: models.streamSimple.bind(models),
 	});
@@ -553,6 +559,15 @@ async function run(s: Session, start: () => Promise<void>) {
 	}
 }
 
+/** Pi's hook before each next turn of a run: the conversation is near the window, so compact it now. */
+const compactBetweenTurns = (s: Session) => async ({ context }: any) => {
+	const messages = s.agent.state.messages;
+	if (messages.length < (s.compactAgainAt ?? 0) || !needsCompaction(messages, s.agent.state.model.contextWindow)) return undefined;
+	const done = await compactSession(s, false, true);
+	s.compactAgainAt = s.agent.state.messages.length + COMPACT_GAP;
+	return done ? { context: { ...context, messages: s.agent.state.messages.slice() } } : undefined;
+};
+
 function overflowed(s: Session) {
 	const last: any = s.agent.state.messages.at(-1);
 	return last?.role === "assistant" && last.stopReason === "error" && isContextOverflow(last, s.agent.state.model.contextWindow);
@@ -562,11 +577,11 @@ function overflowed(s: Session) {
  * Replace the older part of the session's conversation with a summary (see compact.ts). [dropFailed]: the
  * last message is a reply that failed because the context was too long; it goes. False if nothing changed.
  */
-async function compactSession(s: Session, dropFailed = false): Promise<boolean> {
+async function compactSession(s: Session, dropFailed = false, midRun = dropFailed): Promise<boolean> {
 	const before = s.agent.state.messages;
 	const messages = dropFailed ? before.slice(0, -1) : before;
 	// After a failed reply the task under way is kept word for word; before a new task all may be summarised.
-	const after = await compact(messages, s.agent.state.model, models.completeSimple.bind(models), dropFailed).catch((e) => {
+	const after = await compact(messages, s.agent.state.model, models.completeSimple.bind(models), midRun).catch((e) => {
 		console.warn(`compaction failed for ${s.id}: ${e}`);
 		return null;
 	});
@@ -610,7 +625,7 @@ function hurry(id: string) {
 function deliverLate(id: string, r: LateResult) {
 	const s = sessions.get(id);
 	if (!s) return;
-	bridge({ type: "trigger", session: id, source: "tool-jobs", text: r.text.split("\n", 1)[0] });
+	bridge({ type: "trigger", session: id, source: "tool-jobs", call: r.call, text: r.text.split("\n", 1)[0] });
 	const text = `<background-result tool="${r.tool}">\nAn automatic notice, not from the user: this command, which you left running in the background, has ended.\nCommand: ${r.command.slice(0, 500)}\n${r.isError ? "It failed.\n" : ""}${r.text}\n</background-result>`;
 	const message = { role: "user", content: [{ type: "text", text }], timestamp: Date.now() } as AgentMessage;
 	if (s.running) { s.agent.steer(message); return; }
@@ -766,6 +781,7 @@ const queries: Record<string, (a: any) => Promise<unknown>> = {
 	prompt: (json: string) => { const a = arg(json); guard("prompt", () => prompt(a.session, a.text, a.content), a.session); },
 	steer: (json: string) => { const a = arg(json); guard("steer", async () => steer(a.session, a.text, a.content), a.session); },
 	hurry: (json: string) => hurry(arg(json).session),
+	late: (json: string) => { const a = arg(json); deliverLate(a.session, { call: a.call, tool: "bash", command: a.command ?? "", text: a.text, isError: false }); },
 	abort: (json: string) => abort(arg(json).session),
 	dispose: (json: string) => dispose(arg(json).session),
 	/** Sessions alive in this runtime (after a renderer restart this is empty: Kotlin reconfigures). */

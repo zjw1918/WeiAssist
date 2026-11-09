@@ -33,6 +33,7 @@ import org.json.JSONObject
  * - `tool` {session, call, name, args}: runs it and answers a [ToolResult] as JSON. `call` is the core's id for
  *   this call.
  * - `tool_cancel` {session, call} when the user stops the run while the call works (e.g. a bash command).
+ * - `trigger` with source `tool-jobs` and {call} tells the app that a background command's result reached the model.
  * - `tool_peek` {session, call}, for [hurry]: null if the call has ended, else { text }, what the model gets for now.
  */
 interface AgentCore {
@@ -55,6 +56,11 @@ interface AgentCore {
      * background. Its result comes when it ends. Only for a core with [CoreCapabilities.hurry].
      */
     suspend fun hurry(session: String) {}
+    /**
+     * A command that went on in the background has ended, after the core's own wait for it was lost (its runtime
+     * restarted). The model is told; `text` is the result. Only for a core with [CoreCapabilities.hurry].
+     */
+    suspend fun backgroundResult(session: String, call: String, command: String, text: String) {}
     /**
      * The user's slash command for session [session] (`/name input`, as typed), run by the core itself and never
      * sent to the model as a message: its outcome is a `command_result` event; work it starts (a message it sends

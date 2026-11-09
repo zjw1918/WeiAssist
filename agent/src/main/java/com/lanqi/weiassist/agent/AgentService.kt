@@ -52,7 +52,7 @@ class AgentService : Service() {
         // The shell helper (for virtual displays): start it if it was set up and isn't running (e.g. after a reboot).
         com.lanqi.weiassist.shell.ShellBackend.get(this).autoStart()
         scope.launch {
-            kotlinx.coroutines.flow.combine(controller.state, controller.sessions.summaries, controller.gateway.state, ::work)
+            kotlinx.coroutines.flow.combine(controller.state, controller.sessions.summaries, controller.gateway.state, controller.backgroundJobs.jobs, ::work)
                 .distinctUntilChanged()
                 .collect(::onWork)
         }
@@ -96,9 +96,11 @@ class AgentService : Service() {
         if (allowed && nm.areNotificationsEnabled()) nm.notify(a.id, NOTIFICATION_ASK, n)
     }
 
-    private fun work(s: AgentState, list: List<SessionSummary>, g: Gateway.State): Work {
+    private fun work(s: AgentState, list: List<SessionSummary>, g: Gateway.State, jobs: List<BackgroundJob>): Work {
         val active = list.filter { it.status.active }
-        return Work(active.size, s.signingInWithBrowser, active.singleOrNull()?.title, g.bot.takeIf { g.listening })
+        // A session whose command goes on in the background is work too: the command's result must find the app alive.
+        val waiting = jobs.map { it.session }.distinct().count { id -> active.none { it.id == id } }
+        return Work(active.size + waiting, s.signingInWithBrowser, active.singleOrNull()?.title, g.bot.takeIf { g.listening })
     }
 
     /**
@@ -126,7 +128,7 @@ class AgentService : Service() {
         when (intent?.action) {
             ACTION_STOP -> controller.stopAll()
             else -> {
-                val w = work(controller.state.value, controller.sessions.summaries.value, controller.gateway.state.value)
+                val w = work(controller.state.value, controller.sessions.summaries.value, controller.gateway.state.value, controller.backgroundJobs.jobs.value)
                 // startForegroundService() promises startForeground(); keep it even if the work just ended.
                 goForeground(w)
                 if (!w.active) onWork(w)

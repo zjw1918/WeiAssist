@@ -611,6 +611,32 @@ test("a single long task is compacted inside its own steps, and more than once",
 	assert.equal(host.messages.filter((m) => m.type === "assistant_end" && m.session === "one").at(-1).stopReason, "stop");
 });
 
+test("a run nearly at the window compacts between its steps, without waiting for an error, and not every step", async () => {
+	const host = await startHost({ credentials: apiKeyCredentials, hostCalls: { bash: () => "exit code 0" } });
+	await configure(host, "pro", { bash: true });
+	const before = mock.requests.length;
+	host.call("prompt", { session: "pro", text: "keep X [[script:bash_twice]] [[usage:10000000]]" });
+	await host.waitFor("idle", (m) => m.session === "pro");
+	const sent = mock.requests.slice(before).map((r) => r.body);
+	assert.equal(sent.filter((b) => b.includes("You compact a conversation")).length, 1, "one compaction, then the gap");
+	assert.match(sent.at(-1), /Summary of the earlier conversation/);
+	assert.match(sent.at(-1), /keep X/);
+	assert.ok(host.messages.some((m) => m.type === "compacted" && m.session === "pro"));
+	assert.equal(host.messages.filter((m) => m.type === "assistant_end" && m.session === "pro").at(-1).stopReason, "stop");
+});
+
+test("a result collected after a restart reaches the model, and says which call it was", async () => {
+	const host = await startHost({ credentials: apiKeyCredentials });
+	await configure(host, "rs");
+	const before = mock.requests.length;
+	host.call("late", { session: "rs", call: "c7", command: "make all", text: "exit code 0\n--- stdout ---\nbuilt" });
+	const card = await host.waitFor("trigger", (m) => m.session === "rs");
+	assert.equal(card.call, "c7");
+	await host.waitFor("idle", (m) => m.session === "rs");
+	const body = mock.requests.slice(before).map((r) => r.body).join("\n");
+	assert.match(body, /background-result[\s\S]*make all[\s\S]*built/);
+});
+
 test("compaction that doesn't make room gives up instead of asking for ever", async () => {
 	const host = await startHost({ credentials: apiKeyCredentials, hostCalls: { bash: () => "exit code 0" } });
 	await configure(host, "lost", { bash: true });
