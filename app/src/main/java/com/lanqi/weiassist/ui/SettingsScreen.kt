@@ -64,7 +64,13 @@ fun SettingsTab(vm: AppViewModel, s: AgentState) {
     Scaffold(
         modifier = Modifier.nestedScroll(bar.nestedScrollConnection),
         contentWindowInsets = WindowInsets(0),
-        topBar = { TopAppBar(title = { Text(stringResource(R.string.tab_settings)) }, scrollBehavior = bar) },
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(R.string.tab_settings)) },
+                actions = { ScanQrButton() },
+                scrollBehavior = bar,
+            )
+        },
     ) { inner ->
         Column(Modifier.fillMaxSize().padding(inner).verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
             val accessibilityOn by vm.accessibilityOn.collectAsStateWithLifecycle()

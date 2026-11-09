@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- The QR scanner (ScanActivity); phones without a camera can still install the app. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+
     <!-- WeiAssist Gateway, the optional AI gateway app: Settings says whether it is installed (GatewayCard). -->
     <queries>
         <package android:name="com.lanqi.weiassist.gateway" />
@@ -33,6 +37,7 @@
                 <data android:scheme="weiassist" android:host="signed-in" />
             </intent-filter>
         </activity>
+        <activity android:name=".ui.ScanActivity" android:exported="false" />
         <!-- Lets the app the user picks open a file from a chat (see FileCard). -->
         <provider
             android:name="androidx.core.content.FileProvider"

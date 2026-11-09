@@ -504,4 +504,12 @@
     <string name="tool_ask_user">Ask you</string>
     <string name="tool_exit_plan_mode">Present the plan</string>
     <string name="context_hint_core">How full the conversation is now. When it gets close to full, older messages are summarized to make room (/compact does it now).</string>
+    <string name="scan_qr">Scan QR code</string>
+    <string name="scan_hint">Point the camera at a QR code</string>
+    <string name="scan_result_title">Result</string>
+    <string name="scan_select_hint">Press and hold the text to select any part of it.</string>
+    <string name="scan_again">Scan again</string>
+    <string name="scan_camera_needed">Scanning needs access to the camera.</string>
+    <string name="scan_open_app_settings">Open app settings</string>
+    <string name="scan_camera_failed">The camera could not be opened.</string>
 </resources>

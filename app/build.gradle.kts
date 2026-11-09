@@ -82,6 +82,10 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(project(":agent"))
     implementation(libs.androidx.browser)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.zxing.core)
     debugImplementation(libs.androidx.compose.ui.tooling)
     testImplementation(libs.junit)
 }

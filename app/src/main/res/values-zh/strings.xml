@@ -497,4 +497,12 @@
     <string name="tool_ask_user">向你提问</string>
     <string name="tool_exit_plan_mode">提交计划</string>
     <string name="context_hint_core">当前对话占用的上下文。快满时，较早的消息会被总结以腾出空间（/compact 可立即执行）。</string>
+    <string name="scan_qr">扫描二维码</string>
+    <string name="scan_hint">将摄像头对准二维码</string>
+    <string name="scan_result_title">扫描结果</string>
+    <string name="scan_select_hint">长按文字可选择其中任意部分。</string>
+    <string name="scan_again">再扫一次</string>
+    <string name="scan_camera_needed">扫码需要使用摄像头的权限。</string>
+    <string name="scan_open_app_settings">打开应用设置</string>
+    <string name="scan_camera_failed">无法打开摄像头。</string>
 </resources>
