@@ -2,6 +2,7 @@
 //   Kotlin -> JS: window.PiHost.<fn>(json)   (evaluateJavascript)
 //   JS -> Kotlin: PiBridge.postMessage(json) (WebViewCompat.addWebMessageListener)
 // No LLM, agent or login logic lives here: this file adapts Pi's own APIs to that channel.
+import "./polyfills";
 import { Agent, type AgentEvent, type AgentMessage, type BeforeToolCallContext } from "@earendil-works/pi-agent-core";
 import {
 	clampThinkingLevel,
@@ -667,6 +668,12 @@ async function providerAuth(route: string) {
 const queries: Record<string, (a: any) => Promise<unknown>> = {
 	coreRoutes: () => coreRoutes(),
 	providerAuth: (a) => providerAuth(a.provider),
+	/** The app's custom providers changed; `key` (optional) is a new API key for `provider`. */
+	setCustomProviders: async (a) => {
+		await setCustomProviders(a.providers ?? []);
+		if (a.provider && a.key) await credentials.modify(a.provider, async () => ({ type: "api_key", key: a.key }));
+		await status();
+	},
 };
 
 (globalThis as any).PiHost = {
@@ -692,14 +699,6 @@ const queries: Record<string, (a: any) => Promise<unknown>> = {
 	status: () => guard("status", status),
 	/** Synchronous, for evaluateJavascript's result: Pi's catalog entries for these model ids (see lookupModels). */
 	lookupModels: (json: string) => JSON.stringify(lookupModels(arg(json).ids ?? [])),
-	/** The app's custom providers changed; `key` (optional) is a new API key for `provider`. */
-	setCustomProviders: (json: string) =>
-		guard("setCustomProviders", async () => {
-			const a = arg(json);
-			await setCustomProviders(a.providers ?? []);
-			if (a.provider && a.key) await credentials.modify(a.provider, async () => ({ type: "api_key", key: a.key }));
-			await status();
-		}),
 	login: (json: string) => guard("login", () => startLogin(arg(json).provider, arg(json).type)),
 	cancelLogin: () => login?.abort(),
 	answer: (json: string) => {

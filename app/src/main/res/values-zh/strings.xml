@@ -83,6 +83,7 @@
     <string name="custom_model_id">模型 ID</string>
     <string name="custom_model_add">添加</string>
     <string name="custom_save">保存并使用</string>
+    <string name="custom_save_failed">没能保存这个服务商：%1$s</string>
     <string name="custom_delete">删除</string>
     <string name="custom_delete_title">删除 %1$s？</string>
     <string name="custom_delete_text">从手机上删除这个服务商和它保存的密钥。</string>

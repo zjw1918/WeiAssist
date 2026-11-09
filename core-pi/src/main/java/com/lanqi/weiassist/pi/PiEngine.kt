@@ -177,6 +177,7 @@ class PiEngine(context: Context, private val agentName: String) : AgentCore, Cor
                 if (m.optString("type") == "tool_start") Log.d(TAG, "← pi tool ${m.optString("tool")} ${m.optJSONObject("args")?.let(::redactArgs)}")
                 if (m.optString("type") == "tool_end") Log.d(TAG, "← pi tool ${m.optString("tool")} done error=${m.optBoolean("isError")}")
                 if (m.optString("type") !in QUIET) Log.d(TAG, "← pi ${m.optString("type")} ${m.optString("session")}")
+                if (m.optString("type") == "error") Log.w(TAG, "Pi failed in ${m.optString("id")}: ${m.optString("message")}")
                 _events.tryEmit(m)
             }
         }
@@ -237,9 +238,10 @@ class PiEngine(context: Context, private val agentName: String) : AgentCore, Cor
     override fun savedApiKey(provider: String): String? = runCatching {
         JSONObject(store.read() ?: return null).optJSONObject(provider)?.takeIf { it.optString("type") == "api_key" }?.optString("key")
     }.getOrNull()?.ifEmpty { null }
-    /** The custom providers changed; [key], if given, is [provider]'s new API key. */
-    override suspend fun setCustomProviders(list: org.json.JSONArray, provider: String?, key: String?) =
-        call("setCustomProviders", JSONObject().put("providers", list).apply { if (provider != null && key != null) put("provider", provider).put("key", key) })
+    /** The custom providers changed; [key], if given, is [provider]'s new API key. Throws if Pi couldn't take them. */
+    override suspend fun setCustomProviders(list: org.json.JSONArray, provider: String?, key: String?) {
+        query("setCustomProviders", JSONObject().put("providers", list).apply { if (provider != null && key != null) put("provider", provider).put("key", key) })
+    }
     /** pi-host's `configure`: a new Pi Agent for the session, or new settings for its existing one. */
     override suspend fun configure(session: String, config: SessionConfig) {
         val m = config.model

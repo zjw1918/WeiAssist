@@ -18,6 +18,7 @@ interface CoreAccounts {
     /** The user's own providers, read at start (also after a runtime restart). Each: { id, name, baseUrl, models: [ids], images }. */
     var customProviders: () -> JSONArray
     /** The custom providers changed; [key], if given, is [provider]'s new API key. */
+    /** Throws if the core could not take them (the key is then not saved). */
     suspend fun setCustomProviders(list: JSONArray, provider: String? = null, key: String? = null)
 
     /** Catalog entries for these model ids: { id: { contextWindow, images, match } }, only for ids it knows. */
