@@ -47,7 +47,14 @@
     <string name="tg_new">已开始新对话。</string>
     <string name="tg_stopped">已停止。</string>
     <string name="tg_nothing_running">现在没有在运行的任务。</string>
-    <string name="tg_text_only">这里可以读文字、图片和文件；暂时还不能读语音、视频和贴纸。</string>
+    <string name="tg_text_only">这里可以读文字、语音、图片和文件；暂时还不能读视频和贴纸。</string>
+    <string name="tg_voice_heard">🎤 %1$s</string>
+    <string name="tg_voice_off">要听懂语音消息，需要一台语音服务器。请在 WeiAssist 的“设置 → 语音输入”中设置。</string>
+    <string name="tg_voice_long">这条语音太长了，请控制在大约 20 分钟以内。</string>
+    <string name="tg_voice_no_speech">这条语音里没有听到说话声。</string>
+    <string name="tg_voice_unreachable">连不上你的语音服务器，所以没收到这条语音。请确认它正在运行，并且手机在同一网络中，然后重新发送。</string>
+    <string name="tg_voice_loading">你的语音服务器还在加载模型，请稍后重新发送这条语音。</string>
+    <string name="tg_voice_rejected">你的语音服务器拒绝了这条语音：%1$s</string>
     <string name="tg_not_sent">没能转交这条消息，请再试一次。</string>
     <string name="tg_status_none">还没有对话。给我发条消息就能开始。</string>
     <string name="tg_state_running">进行中</string>

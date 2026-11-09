@@ -8,6 +8,7 @@ import com.lanqi.weiassist.channels.ChatRef
 import com.lanqi.weiassist.channels.Inbound
 import com.lanqi.weiassist.channels.Link
 import com.lanqi.weiassist.channels.Press
+import com.lanqi.weiassist.channels.RemoteFile
 import com.lanqi.weiassist.channels.Rich
 import com.lanqi.weiassist.channels.TelegramBot
 import com.lanqi.weiassist.phone.AgentAccessibilityService
@@ -257,21 +258,56 @@ class Gateway(context: Context, private val sessions: SessionManager, private va
             "status" -> reply(b, m.chat, status(m.chat))
             "screen" -> scope.launch { sendScreen(b, m.chat) }
             else -> {
+                // A voice note counts as its words, once they are known (the chat is told if they can't be).
+                val words = m.voice?.let { note -> listOf(m.text, transcribe(b, m.chat, note) ?: return).filter { it.isNotBlank() }.joinToString("\n\n") } ?: m.text
                 // The agent waits for an answer here: the words are the answer to its question.
                 val open = bindings[m.chat.key]?.let { questions[it] }?.takeIf { it.chat == m.chat }
-                if (open != null && m.files.isEmpty() && m.text.isNotBlank()) { step(b, open) { it.custom(m.text) }; return }
+                if (open != null && m.files.isEmpty() && words.isNotBlank()) { step(b, open) { it.custom(words) }; return }
                 if (m.unsupported && m.files.isEmpty()) { reply(b, m.chat, app.getString(R.string.tg_text_only)); return }
                 val (id, note) = session(m.chat)
                 if (note != null) reply(b, m.chat, note)
                 val (files, where) = receive(b, m, id)
                 // Another command (the session's core's: /plan, /goal…), without the "@bot" Telegram may add to it.
-                val typed = if (c != null) "/${c.name}" + if (c.args.isNotEmpty()) " ${c.args}" else "" else m.text
+                val typed = if (c != null) "/${c.name}" + if (c.args.isNotEmpty()) " ${c.args}" else "" else words
                 val text = listOf(typed, where).filter { it.isNotBlank() }.joinToString("\n\n")
                 if (text.isBlank() && files.isEmpty()) return // nothing usable came (the chat was told why)
                 if (!sessions.send(id, text, files)) { reply(b, m.chat, app.getString(R.string.tg_not_sent)); return }
                 if (replies[id]?.isActive != true) replies[id] = scope.launch { mirror(b, id, m.chat) }
             }
         }
+    }
+
+    /**
+     * What a voice note says, also shown in the chat so a mishearing is seen at once; null when it can't be known, and
+     * the chat is told why. Uses the server and language set for voice input in Settings.
+     */
+    private suspend fun transcribe(b: TelegramBot, chat: ChatRef, note: RemoteFile): String? {
+        val settings = VoiceSettings(app)
+        val url = settings.url.value
+        if (url == null) { reply(b, chat, app.getString(R.string.tg_voice_off)); return null }
+        if (note.size > MAX_VOICE) { reply(b, chat, app.getString(R.string.tg_voice_long)); return null }
+        val tmp = File(app.cacheDir, "inbox/${java.util.UUID.randomUUID().toString().take(8)}-voice.ogg").apply { parentFile?.mkdirs() }
+        try {
+            b.download(note, tmp)
+            val problem = when (val t = VoiceServer.transcribe(url, tmp, settings.language.value, note.name, note.mime)) {
+                is VoiceServer.Transcript.Text -> {
+                    if (t.text.isNotBlank()) {
+                        reply(b, chat, app.getString(R.string.tg_voice_heard, t.text.take(MAX_DETAIL)))
+                        return t.text
+                    }
+                    app.getString(R.string.tg_voice_no_speech)
+                }
+                VoiceServer.Transcript.Unreachable -> app.getString(R.string.tg_voice_unreachable)
+                VoiceServer.Transcript.Loading -> app.getString(R.string.tg_voice_loading)
+                is VoiceServer.Transcript.Rejected -> app.getString(R.string.tg_voice_rejected, t.message)
+            }
+            reply(b, chat, problem)
+        } catch (e: ChannelException) {
+            reply(b, chat, app.getString(R.string.tg_file_not_fetched, note.name, e.message.orEmpty()))
+        } finally {
+            tmp.delete()
+        }
+        return null
     }
 
     /**
@@ -698,6 +734,8 @@ class Gateway(context: Context, private val sessions: SessionManager, private va
         private const val TYPING_MS = 4_500L
         /** The most of a question's detail (a plan) a chat message shows: Telegram allows 4096 characters. */
         private const val MAX_DETAIL = 3000
+        /** About 20 minutes of a voice note: longer might outlast the wait for its transcript, and hold up the chat. */
+        private const val MAX_VOICE = 4L * 1024 * 1024
         /** Bots may send files up to 50 MB. */
         private const val MAX_SEND = 50L * 1024 * 1024
     }

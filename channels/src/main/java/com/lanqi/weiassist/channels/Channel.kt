@@ -65,7 +65,8 @@ data class Sender(val id: String, val name: String)
 /**
  * A message to the assistant, or a tap on one of its buttons ([press], with empty [text]). [private]: a
  * one-to-one chat with the bot (groups are not supported yet). [files]: photos and documents with it (an
- * album comes as one message). [unsupported]: it carried something else (a voice note, a sticker), not handled yet.
+ * album comes as one message). [voice]: a voice note, for speech to text. [unsupported]: it carried something else
+ * (a video, a sticker), not handled yet.
  */
 data class Inbound(
     val chat: ChatRef,
@@ -75,6 +76,7 @@ data class Inbound(
     val unsupported: Boolean = false,
     val press: Press? = null,
     val files: List<RemoteFile> = emptyList(),
+    val voice: RemoteFile? = null,
 )
 
 /** A message in the channel's own markup ([markup]), and the same as plain text in case the markup is refused. */

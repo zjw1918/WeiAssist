@@ -53,4 +53,6 @@ itself**, never from the chat. A question nobody answers within 15 minutes count
 - **After the phone restarts or WeiAssist is updated**, open the app once to bring the bot back. A task that was
   running then shows as *Interrupted* in the app; send it again or tap **Continue** there.
 - **Phone tasks while the phone is locked** may not work.
-- Not supported yet: voice messages, videos and stickers; group chats.
+- **Voice messages** need a voice server, set under Settings → Voice input (see `tools/voice-server`). The bot shows
+  what it heard and then acts on it right away. The phone must be able to reach the server.
+- Not supported yet: videos and stickers; group chats.
