@@ -16,15 +16,15 @@
 
 <p align="center"><b>English</b> · <a href="README.zh-CN.md">简体中文</a></p>
 
-WeiAssist is an open-source AI assistant that lives on your phone. Chat with the AI provider of your choice, hand
-it photos and files, let it run Linux commands, use your phone's apps for you, and keep several conversations
-going at once. Away from your phone? Talk to it from Telegram.
+WeiAssist is an open-source AI agent that operates your Android phone for you, with no server in between. It uses
+your apps, runs Linux commands, works with photos and files, and keeps several tasks going at once. Away from your
+phone? Talk to it from Telegram. It is a research and study project.
 
 **You choose the engine.** The agent loop runs on [Pi](https://github.com/earendil-works/pi), built in, or on
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness), which the app installs for you. There are no
 servers of ours in between: the app talks to your provider directly, and your keys stay on the phone.
 
-**New: your phone as an AI gateway.** Install the optional Gateway app and the phone runs
+**Optional: your phone as an AI gateway.** Install the optional Gateway app and the phone runs
 [magpie](https://github.com/yetone/magpie): sign in once with your subscriptions and keys, and every engine, every app
 on the phone and every device on your network can use them through one API. [More below](#ai-gateway-magpie).
 
@@ -32,10 +32,17 @@ on the phone and every device on your network can use them through one API. [Mor
 [Telegram](docs/TELEGRAM.md) · [AI gateway](#ai-gateway-magpie) · [Voice input](#voice-input) · [Architecture](docs/ARCHITECTURE.md) · [Progress](docs/PROGRESS.md) ·
 [Roadmap](docs/ROADMAP.md)
 
+<p align="center">
+  <img src="docs/images/telegram-demo.gif" width="560"
+    alt="Telegram on a Mac and the phone side by side: asked for San Diego's weather, the assistant answers using Termux; asked to email the forecast with Gmail, it writes the email on the phone and asks before tapping Send, in Telegram and on the phone; Deny is tapped in Telegram and nothing is sent">
+</p>
+
+It writes the email on the phone and asks before tapping Send, in Telegram and on the phone. Deny, and nothing is sent.
+
 ## Install
 
-Download the APK from [Releases](https://github.com/zjw1918/WeiAssist/releases/latest) and open it. Allow
-installs from your browser or file manager when Android asks.
+Needs Android 8.0 or newer. Download the APK from [Releases](https://github.com/zjw1918/WeiAssist/releases/latest)
+and open it. Allow installs from your browser or file manager when Android asks.
 
 Optional: **Gateway** (`Gateway-<version>.apk`, same release) makes the phone an AI gateway
 for its own apps and the devices on its network ([AI gateway](#ai-gateway-magpie)). Skip it if you only want the
@@ -48,7 +55,7 @@ assistant.
 2. Start a conversation and ask something.
 3. Optional, under **Settings**:
    - **Linux commands:** a guided [Termux](https://termux.dev) setup, so it can look things up, work with data and
-     write and run code.
+     write and run code. On Xiaomi/HyperOS, open Termux once if WeiAssist can't reach it.
    - **AI engine:** keep Pi, or set up DeepSeek Harness (needs Termux, about 1.5 GB and 10–30 minutes).
    - **Phone tasks:** turn on its accessibility service to let it use apps.
    - **Telegram:** pair a bot to talk to it from anywhere ([guide](docs/TELEGRAM.md)).
@@ -135,11 +142,6 @@ rest of its work a tap away.
 
 ### Talk to it from Telegram
 
-<p align="center">
-  <img src="docs/images/telegram-demo.gif" width="560"
-    alt="Telegram on a Mac and the phone side by side: asked for San Diego's weather, the assistant answers using Termux; asked to email the forecast with Gmail, it writes the email on the phone and asks before tapping Send, in Telegram and on the phone; Deny is tapped in Telegram and nothing is sent">
-</p>
-
 Create a bot with [BotFather](https://t.me/BotFather), paste its token in **Settings → Telegram** and pair your account. Each chat is a
 conversation; it streams answers, takes photos and files, and asks you (✅ / ❌) before anything risky. No server
 needed. Details: [docs/TELEGRAM.md](docs/TELEGRAM.md).
@@ -160,12 +162,16 @@ It understands voice messages too, if you run the voice server on your own Apple
   OpenAI-compatible server (Ollama, vLLM, LM Studio…).
 - **An AI gateway on the phone:** with the Gateway app, your subscriptions and keys serve every engine, your other
   apps and your network through one API ([more](#ai-gateway-magpie)).
+- **Steer long tasks while they run:** a message reaches the model at its next step. If that step is a long command
+  that looks stuck, **Read now** moves it to the background so the model can read you, check on it and adjust.
 - **Photos and files:** send images, PDFs and documents; it sends back the files it makes.
 - **Linux on the phone:** with Termux it browses, analyzes data, and builds and runs code, with long jobs kept
   running in `tmux`.
 - **Several conversations at once,** each in the background with its own history, plus a supervisor that starts,
   checks and stops them for you, by typing or by voice.
-- **Phone tasks:** it can use your apps, and asks before anything like Send, Pay or Delete.
+- **Phone tasks:** it can use your apps, and asks before anything like Send, Pay or Delete. After one Wireless
+  debugging pairing, on the phone itself (no computer or root), each task gets its own virtual screen, so several can
+  run side by side while you use the phone.
 - **English and Chinese UI.**
 
 ## Privacy and safety
@@ -204,7 +210,7 @@ cd dsh-host && npm test          # the dsh bridge; set DSH_RUN and DSH_HOME to r
 ```
 
 Releases are built and signed by the Release workflow when a version tag is pushed
-(`git tag v0.2 && git push origin v0.2`). Locally, `assembleRelease` signs only when it finds a
+(`git tag v0.5.0 && git push origin v0.5.0`). Locally, `assembleRelease` signs only when it finds a
 `keystore.properties` (at `WEIASSIST_SIGNING`, or in `~/.android/weiassist-release/`).
 
 ## License

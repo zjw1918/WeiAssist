@@ -16,17 +16,23 @@
 
 <p align="center"><a href="README.md">English</a> · <b>简体中文</b></p>
 
-小维助手是一个开源的、运行在手机上的 AI 助手。你可以用自己选的 AI 服务和它聊天，发给它照片和文件，让它运行 Linux 命令、替你操作手机上的应用，还能同时进行多个对话。不在手机旁边？用 Telegram 也能找它。
+小维助手是一个开源的 AI 智能体，替你操作 Android 手机，中间没有服务器。它能使用你的应用、运行 Linux 命令、处理照片和文件，还能同时进行多个任务。不在手机旁边？用 Telegram 也能找它。这是一个研究和学习项目。
 
 **AI 引擎由你选。** 智能体循环可以跑在内置的 [Pi](https://github.com/earendil-works/pi) 上，也可以跑在 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 上（应用会帮你安装）。中间没有我们的服务器：应用直接连接你的 AI 服务，密钥只保存在手机上。
 
-**新功能：把手机变成 AI 网关。** 装上可选的“网关”应用，手机就会运行 [magpie](https://github.com/yetone/magpie)：用你的订阅和密钥登录一次，所有引擎、手机上的其他应用和局域网里的设备都能通过同一个 API 使用它们。[详见下文](#ai-网关magpie)。
+**可选：把手机变成 AI 网关。** 装上可选的“网关”应用，手机就会运行 [magpie](https://github.com/yetone/magpie)：用你的订阅和密钥登录一次，所有引擎、手机上的其他应用和局域网里的设备都能通过同一个 API 使用它们。[详见下文](#ai-网关magpie)。
 
 [下载](https://github.com/zjw1918/WeiAssist/releases/latest) · [Termux 设置](docs/TERMUX.md) · [Telegram](docs/TELEGRAM.md) · [AI 网关](#ai-网关magpie) · [语音输入](#语音输入) · [架构](docs/ARCHITECTURE.md) · [进度](docs/PROGRESS.md) · [路线图](docs/ROADMAP.md)（文档为英文）
 
+<p align="center">
+  <img src="docs/images/telegram-demo.gif" width="560" alt="Mac 上的 Telegram 和手机并排：问圣地亚哥的天气，助手用 Termux 回答；让它用 Gmail 发送天气预报，它在手机上写好邮件，点发送前在 Telegram 和手机上同时询问；在 Telegram 里点了拒绝，什么也没发出">
+</p>
+
+它在手机上写好邮件，点发送前在 Telegram 和手机上同时询问。点拒绝，什么也不会发出。
+
 ## 安装
 
-从 [Releases](https://github.com/zjw1918/WeiAssist/releases/latest) 下载 APK 并打开。Android 询问时，允许浏览器或文件管理器安装应用。
+需要 Android 8.0 或更高版本。从 [Releases](https://github.com/zjw1918/WeiAssist/releases/latest) 下载 APK 并打开。Android 询问时，允许浏览器或文件管理器安装应用。
 
 可选：**网关**（同一版本中的 `Gateway-<版本>.apk`）让手机成为 AI 网关，服务本机应用和局域网设备（见 [AI 网关](#ai-网关magpie)）。只用助手的话不必安装。
 
@@ -35,7 +41,7 @@
 1. 打开小维助手，连接一个 AI 服务：用 ChatGPT、SuperGrok 或 X Premium 账号登录，或粘贴 API 密钥。如果网关应用已开启并登录，也可以点 **使用网关**。
 2. 新建一个对话，问它点什么。
 3. 可选，都在 **设置** 里：
-   - **Linux 命令：** 按引导设置 [Termux](https://termux.dev)，它就能查资料、处理数据、写代码并运行。
+   - **Linux 命令：** 按引导设置 [Termux](https://termux.dev)，它就能查资料、处理数据、写代码并运行。在小米/HyperOS 上，如果小维助手连不上 Termux，先打开一次 Termux。
    - **AI 引擎：** 继续用 Pi，或安装 DeepSeek Harness（需要 Termux，约 1.5 GB 空间，安装需 10–30 分钟）。
    - **手机任务：** 打开它的无障碍服务，让它操作手机上的应用。
    - **Telegram：** 配对一个机器人，随时随地找它（[说明](docs/TELEGRAM.md)）。
@@ -103,10 +109,6 @@
 
 ### 用 Telegram 找它
 
-<p align="center">
-  <img src="docs/images/telegram-demo.gif" width="560" alt="Mac 上的 Telegram 和手机并排：问圣地亚哥的天气，助手用 Termux 回答；让它用 Gmail 发送天气预报，它在手机上写好邮件，点发送前在 Telegram 和手机上同时询问；在 Telegram 里点了拒绝，什么也没发出">
-</p>
-
 用 [BotFather](https://t.me/BotFather) 创建一个机器人，把它的 token 粘贴到 **设置 → Telegram**，再配对你的账号。每个聊天就是一个对话：回答实时显示，能收发照片和文件，有风险的操作前会先问你（✅ / ❌）。不需要服务器。详见 [docs/TELEGRAM.md](docs/TELEGRAM.md)。
 
 <p align="center">
@@ -123,8 +125,9 @@
 - **手机上的 AI 网关：** 有了网关应用，你的订阅和密钥通过同一个 API 服务所有引擎、其他应用和局域网（[详见](#ai-网关magpie)）。
 - **照片和文件：** 发给它图片、PDF 和文档；它也会把做好的文件发回给你。
 - **手机上的 Linux：** 有了 Termux，它能上网查资料、分析数据、构建和运行代码，长任务在 `tmux` 里持续运行。
+- **长任务运行中也能调整：** 你的消息会在模型的下一步送达。如果这一步是一条看起来卡住的长命令，点 **立即读取**，命令转到后台继续运行，模型就能读到你的话、检查进度并及时调整。
 - **同时进行多个对话，** 每个都在后台运行、保留历史；还有一个总管对话，可以用打字或语音替你开始、查看和停止它们。
-- **手机任务：** 它能操作你的应用，遇到发送、支付、删除这类操作会先问你。
+- **手机任务：** 它能操作你的应用，遇到发送、支付、删除这类操作会先问你。在手机上完成一次无线调试配对后（不需要电脑或 root），每个任务都有自己的虚拟屏幕，可以多个任务同时运行，不影响你使用手机。
 - **中英文界面。**
 
 ## 隐私与安全
@@ -159,7 +162,7 @@ cd pi-host && npm test           # 内置智能体的端到端测试
 cd dsh-host && npm test          # dsh 桥接测试；设置 DSH_RUN 和 DSH_HOME 后针对真实的 dsh 运行
 ```
 
-推送版本标签（`git tag v0.2 && git push origin v0.2`）后，Release 工作流会构建并签名 APK。本地的
+推送版本标签（`git tag v0.5.0 && git push origin v0.5.0`）后，Release 工作流会构建并签名 APK。本地的
 `assembleRelease` 只有找到 `keystore.properties`（在 `WEIASSIST_SIGNING` 指定的位置，或
 `~/.android/weiassist-release/`）时才会签名。
 
