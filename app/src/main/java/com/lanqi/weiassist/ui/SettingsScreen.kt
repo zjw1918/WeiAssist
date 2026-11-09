@@ -189,7 +189,8 @@ private fun EngineSection(vm: AppViewModel, s: AgentState, openDshSetup: () -> U
                     checked && e.id == DSH -> openDshSetup
                     else -> null
                 },
-                trailing = { RadioButton(selected = default == e.id, onClick = if (usable) ({ vm.selectCore(e.id) }) else null, enabled = usable || default == e.id) },
+                // The row takes the tap. A RadioButton with an onClick is wider (its touch target), so mixing them misaligns.
+                trailing = { RadioButton(selected = default == e.id, onClick = null, enabled = usable || default == e.id) },
             )
         }
     }
