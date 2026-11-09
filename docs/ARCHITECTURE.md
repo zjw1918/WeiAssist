@@ -149,8 +149,8 @@ entry in the registry.
   longer loads the bridge.
 - **Termux must not be frozen:** once a RUN_COMMAND ends, Termux is a cached background app, and HyperOS gave dsh
   almost no CPU (minutes to boot) or froze it outright (`do_freezer_trap`), even reading `/proc/<pid>/cmdline` in the
-  launch script blocked. `launchDsh` therefore starts a keepalive task that lasts as long as dsh's tmux session (Termux
-  stays a foreground service, no wake lock), and the setup screen asks for Termux's battery use to be unrestricted
+  launch script blocked. `launchDsh` therefore makes sure the app-end watcher task is running (`Termux.watchForAppEnd`; Termux
+  stays a foreground service, no wake lock, and dsh is ended with the app), and the setup screen asks for Termux's battery use to be unrestricted
   (HyperOS freezes even foreground services of restricted apps).
 - **Ubuntu where Docker Hub is blocked:** proot-distro 5 pulls `ubuntu:latest` from Docker Hub (mainland China blocks
   it). It also installs a plain rootfs tarball, so the script can take Ubuntu's own `ubuntu-base` from

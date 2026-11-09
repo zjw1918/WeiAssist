@@ -76,10 +76,7 @@ class Termux(context: Context) {
             # power the app's Termux bash has too; the app's before_tool still gates every call.
             # An earlier dsh survives its tmux session (proot and node are reparented): end its node, whose command
             # line is exactly this (proot exits with it).
-            for p in /proc/[0-9]*; do
-                [ "${'$'}(tr '\0' ' ' < "${'$'}{p}/cmdline" 2> /dev/null)" = "node ./node_modules/.bin/dsh --profile weiassist " ] && kill "${'$'}{p#/proc/}" 2> /dev/null
-            done
-            tmux kill-session -t dsh 2> /dev/null
+            $STOP_DSH
             # NODE_COMPILE_CACHE: Node keeps the modules it compiled there (the bridge saves them once dsh is up), so
             # later boots skip most of that work. Node checks each entry against its file and Node's version.
             tmux new-session -d -s dsh proot-distro login ubuntu --termux-home -- env DSH_HOME=/root/.weiassist-dsh/linux/home WEIASSIST_SESSIONS_DIR=/root/sessions DSH_PERMISSION_MODE=danger-full-access NODE_COMPILE_CACHE=/root/.weiassist-dsh/linux/compile-cache "${'$'}@" sh -c 'cd /root/.weiassist-dsh/linux/run && exec node ./node_modules/.bin/dsh --profile weiassist > /root/.weiassist-dsh/dsh.log 2>&1'
@@ -89,33 +86,14 @@ class Termux(context: Context) {
         """.trimIndent()
         // $0 = what to say when dsh isn't set up; then the environment.
         val args = arrayOf("-c", script, DshSetup.NOT_SET_UP) + env.map { (k, v) -> "$k=$v" }
+        // First: it keeps Termux in the foreground during the boot, and replaces a watcher left by an earlier app.
+        watchForAppEnd()
         val r = execute(args, 30) ?: return NO_ANSWER
         if (r.getInt("err", RESULT_OK) != RESULT_OK) return "Termux could not start DeepSeek Harness: ${r.getString("errmsg").orEmpty()}"
         val code = r.getInt("exitCode", -1)
         if (code != 0) return r.getString("stdout").orEmpty().ifBlank { r.getString("stderr").orEmpty() }.ifBlank { "exit code $code" }
-        keepDshRunning()
+        dshStarted = true
         return null
-    }
-
-    /**
-     * Keep Termux's service in the foreground while dsh runs: a task that waits as long as dsh's tmux session lasts.
-     * Otherwise Termux becomes a cached background app once the launch command ends, and some phones (HyperOS) then
-     * give its processes almost no CPU: dsh took minutes to boot, or never connected. A running task keeps Termux a
-     * foreground service (its "1 task" notification), without a wake lock. One at a time; it ends with dsh.
-     */
-    private fun keepDshRunning() {
-        val script = """
-            # dsh-keepalive
-            d="${'$'}{HOME}/.weiassist-dsh"; f="${'$'}{d}/keepalive.pid"
-            export TMUX_TMPDIR="${'$'}{d}/.tmux"
-            p="${'$'}(cat "${'$'}{f}" 2> /dev/null)"
-            [ -n "${'$'}{p}" ] && grep -q dsh-keepalive "/proc/${'$'}{p}/cmdline" 2> /dev/null && exit 0
-            echo ${'$'}${'$'} > "${'$'}{f}"
-            while tmux has-session -t dsh 2> /dev/null; do sleep 15; done
-            rm -f "${'$'}{f}"
-        """.trimIndent()
-        // No result wanted: Termux holds the task, not this app.
-        start(command(arrayOf("-c", script), "dsh"))
     }
 
     /**
@@ -261,22 +239,41 @@ class Termux(context: Context) {
         execute(arrayOf("-c", STOP_ALL), 30)
     }
 
+    @Volatile private var dshStarted = false
+
+    /** The app was closed but its process may live on, so the watcher won't fire: end dsh too. The next use boots it. */
+    suspend fun stopDsh() {
+        if (dshStarted && setupProblem() == null) execute(arrayOf("-c", STOP_DSH), 30)
+        dshStarted = false
+    }
+
     private val lifeline by lazy { AppLifeline(java.util.UUID.randomUUID().toString()) }
     private var watcherStartedAt = 0L
 
     /**
      * Have a watcher in Termux while this process lives: when the process ends, even by a force-stop (which is what
-     * swiping the app away is on some phones), it ends everything the sessions left running there.
+     * swiping the app away is on some phones), it ends dsh and everything the sessions left running there.
+     *
+     * Being a running task, it also keeps Termux's service in the foreground (its "1 task" notification), without a
+     * wake lock. Otherwise Termux becomes a cached background app once a command ends, and some phones (HyperOS) then
+     * give its processes almost no CPU: dsh took minutes to boot, or never connected.
      */
     @Synchronized private fun watchForAppEnd() {
         val now = System.currentTimeMillis()
         if (lifeline.connected || now - watcherStartedAt < WATCHER_RETRY_MS) return
         watcherStartedAt = now
         val script = """
+            # weiassist-watcher
+            # An older watcher belongs to an app that's gone: it must not go on to end what this app starts.
+            f="${'$'}{HOME}/.weiassist-watcher.pid"; p="${'$'}(cat "${'$'}{f}" 2> /dev/null)"
+            [ -n "${'$'}{p}" ] && grep -q weiassist-watcher "/proc/${'$'}{p}/cmdline" 2> /dev/null && kill "${'$'}{p}" 2> /dev/null
+            echo ${'$'}${'$'} > "${'$'}{f}"
             exec 3<> "/dev/tcp/127.0.0.1/${'$'}{1}" || exit 1
             printf '%s\n' "${'$'}{2}" >&3
+            # Nothing arrives; the read ends when the connection does. Where HyperOS destroyed a frozen app's connection this
+            # end is never told: the job then ends at the app's next start, by the sweep there.
             read -r -u 3 _
-        """.trimIndent() + "\n" + STOP_ALL
+        """.trimIndent() + "\n" + STOP_DSH + "\n" + STOP_ALL
         // No result wanted: Termux holds the task, not this app.
         start(command(arrayOf("-c", script, "bash", lifeline.port.toString(), lifeline.token), "watcher"))
     }
@@ -568,6 +565,12 @@ class Termux(context: Context) {
          * they keep running with the screen off; drop it when none has. Run after each command and clean-up.
          */
         private const val WATCHER_RETRY_MS = 10_000L
+
+        /**
+         * Ends dsh, wherever it was started from. Its tmux session alone isn't enough: proot and node are reparented and
+         * survive it, so end its node, whose command line is exactly this (proot exits with it).
+         */
+        private const val STOP_DSH = """for p in /proc/[0-9]*; do [ "${'$'}(tr '\0' ' ' < "${'$'}{p}/cmdline" 2> /dev/null)" = "node ./node_modules/.bin/dsh --profile weiassist " ] && kill "${'$'}{p#/proc/}" 2> /dev/null; done; TMUX_TMPDIR="${'$'}{HOME}/.weiassist-dsh/.tmux" tmux kill-session -t dsh 2> /dev/null"""
 
         /** Ends every session's tmux jobs and running commands. */
         private val STOP_ALL get() = PRELUDE + """

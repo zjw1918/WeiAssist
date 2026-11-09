@@ -9,8 +9,8 @@ import kotlin.concurrent.thread
 
 /**
  * A local port a watcher in Termux stays connected to. When this process ends, however it ends (a force-stop gives
- * it no chance to run anything), the system closes the connection, and that is how the watcher knows. The watcher
- * proves itself with [token]: another app connecting must not count as the watcher being there.
+ * it no chance to run anything), the connection closes, and that is how the watcher knows. The watcher proves itself
+ * with [token]: another app connecting must not count as the watcher being there.
  */
 class AppLifeline(val token: String) : Closeable {
     // 127.0.0.1, not getLoopbackAddress(): that is ::1 on Android.

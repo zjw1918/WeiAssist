@@ -651,6 +651,7 @@ class AgentController(context: Context) {
         scope.launch {
             waiting.forEach { id -> runCatching { sessions.abandon(id) } }
             termux.stopAllJobs()
+            termux.stopDsh()
         }
     }
 
