@@ -104,6 +104,9 @@ fun SettingsTab(vm: AppViewModel, s: AgentState) {
             SectionHeader(stringResource(R.string.telegram_title))
             Group { Column(Modifier.padding(GroupContentPadding)) { TelegramSection(vm) } }
 
+            SectionHeader(stringResource(R.string.voice_title))
+            Group { Column(Modifier.padding(GroupContentPadding)) { VoiceSection(vm.voice) } }
+
             // Per-app language is a system screen on Android 13+.
             if (Build.VERSION.SDK_INT >= 33) {
                 SectionHeader(stringResource(R.string.section_general))
