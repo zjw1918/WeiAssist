@@ -533,7 +533,8 @@ test("a conversation near the context window is compacted before the next task",
 	assert.match(sent[0], /You compact a conversation/);
 	assert.match(sent[0], /old question: I like llamas/);
 	assert.match(sent[1], /SUMMARY: the user likes llamas/);
-	assert.doesNotMatch(sent[1], /old question/);
+	assert.match(sent[1], /\[1\] old question: I like llamas/, "the user's words are kept");
+	assert.doesNotMatch(sent[1], /noted, llamas/, "the rest went into the summary");
 	assert.match(sent[1], /what do I like\?/);
 	assert.ok(host.messages.some((m) => m.type === "compacted" && m.session === "c"));
 	const saved = host.messages.filter((m) => m.type === "transcript" && m.session === "c").at(-1).messages;
@@ -561,6 +562,62 @@ test("a reply that fails with 'context too long' is followed by compaction and a
 	assert.match(sent[1], /You compact a conversation/);
 	assert.match(sent[2], /SUMMARY: the user likes llamas/);
 	assert.match(sent[2], /go on \[\[overflow\]\]/, "the task itself is kept word for word");
+});
+
+test("the user's own words survive compaction word for word; notices and files don't count as theirs", async () => {
+	const host = await startHost({ credentials: apiKeyCredentials });
+	const words = (text) => ({ role: "user", content: [{ type: "text", text }], timestamp: 1 });
+	await configure(host, "pin", { messages: [
+		words("GOAL: migrate the database, never touch folder X"),
+		words("<background-result tool=\"bash\">exit code 0</background-result>"),
+		{ role: "user", content: [{ type: "text", text: "use the staging server" }, { type: "text", text: "<attachment>notes.txt</attachment>" }], timestamp: 2 },
+		...longHistory(10_000_000),
+	] });
+	const before = mock.requests.length;
+	host.call("prompt", { session: "pin", text: "go on" });
+	await host.waitFor("idle", (m) => m.session === "pin");
+	const task = mock.requests.slice(before).map((r) => r.body)[1];
+	assert.match(task, /word for word/);
+	assert.match(task, /\[1\] GOAL: migrate the database, never touch folder X/);
+	assert.match(task, /use the staging server/);
+	assert.match(task, /old question: I like llamas/);
+	assert.doesNotMatch(task, /exit code 0/);
+	assert.doesNotMatch(task, /notes\.txt/);
+});
+
+test("words carried by a summary stay exact through the next compaction, also after a restart", async () => {
+	const host = await startHost({ credentials: apiKeyCredentials });
+	const head = { role: "user", content: [{ type: "text", text: "[Summary of the earlier conversation, written to save space]\nparaphrased away" }], timestamp: 1, pins: ["GOAL: keep folder X intact"] };
+	await configure(host, "pin2", { messages: [head, ...longHistory(10_000_000)] });
+	const before = mock.requests.length;
+	host.call("prompt", { session: "pin2", text: "go on" });
+	await host.waitFor("idle", (m) => m.session === "pin2");
+	assert.match(mock.requests.slice(before).map((r) => r.body)[1], /\[1\] GOAL: keep folder X intact/);
+	const saved = host.messages.filter((m) => m.type === "transcript" && m.session === "pin2").at(-1).messages;
+	assert.ok(saved[0].pins.includes("GOAL: keep folder X intact"), "the saved transcript carries them");
+});
+
+test("a single long task is compacted inside its own steps, and more than once", async () => {
+	const host = await startHost({ credentials: apiKeyCredentials, hostCalls: { bash: () => "exit code 0" } });
+	await configure(host, "one", { bash: true });
+	const task = "never touch X [[script:bash_twice]] [[overflow-after:1:2:one]]";
+	const before = mock.requests.length;
+	host.call("prompt", { session: "one", text: task });
+	await host.waitFor("idle", (m) => m.session === "one");
+	const sent = mock.requests.slice(before).map((r) => r.body);
+	assert.equal(sent.filter((b) => b.includes("You compact a conversation")).length, 2);
+	assert.match(sent.at(-1), /never touch X/);
+	assert.equal(host.messages.filter((m) => m.type === "error" && m.session === "one").length, 0);
+	assert.equal(host.messages.filter((m) => m.type === "assistant_end" && m.session === "one").at(-1).stopReason, "stop");
+});
+
+test("compaction that doesn't make room gives up instead of asking for ever", async () => {
+	const host = await startHost({ credentials: apiKeyCredentials, hostCalls: { bash: () => "exit code 0" } });
+	await configure(host, "lost", { bash: true });
+	const before = mock.requests.length;
+	host.call("prompt", { session: "lost", text: "go [[script:bash]] [[overflow-after:1:99:lost]]" });
+	await host.waitFor("idle", (m) => m.session === "lost");
+	assert.equal(mock.requests.slice(before).filter((r) => r.body.includes("You compact a conversation")).length, 2);
 });
 
 test("the user's message is saved before the first turn ends", async () => {
