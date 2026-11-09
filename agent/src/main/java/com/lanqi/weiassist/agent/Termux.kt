@@ -125,6 +125,7 @@ class Termux(context: Context) {
     suspend fun run(session: String, call: String, command: String, timeoutSec: Int): String {
         setupProblem()?.let { return it }
         markUsed(session, true)
+        watchForAppEnd()
         // $1 = the command, $2 = session folder, $3 = call id, $4 = timeout. The command is an argument,
         // never spliced into the script, so it needs no quoting. timeout runs in the background so the
         // pidfile holds its pid: Stop (tool_cancel) sends it TERM, and timeout passes that on to the whole job.
@@ -257,16 +258,27 @@ class Termux(context: Context) {
     /** The app was closed: end every session's tmux jobs and running commands. Their files stay. */
     suspend fun stopAllJobs() {
         if (prefs.getStringSet("used", emptySet()).isNullOrEmpty() || setupProblem() != null) return
-        val script = PRELUDE + """
-            for d in "${'$'}{HOME}"/sessions/*/; do
-              TMUX_TMPDIR="${'$'}{d}.tmux" tmux kill-server 2> /dev/null
-              rm -f "${'$'}{d}".bash-*.kept "${'$'}{d}".bash-*.code
-              for p in "${'$'}{d}".bash-*.pid; do [ -f "${'$'}{p}" ] && kill -TERM "${'$'}(cat "${'$'}{p}")" 2> /dev/null; done
-            done
-            sync_lock > /dev/null 2>&1
-            exit 0
-        """.trimIndent()
-        execute(arrayOf("-c", script), 30)
+        execute(arrayOf("-c", STOP_ALL), 30)
+    }
+
+    private val lifeline by lazy { AppLifeline(java.util.UUID.randomUUID().toString()) }
+    private var watcherStartedAt = 0L
+
+    /**
+     * Have a watcher in Termux while this process lives: when the process ends, even by a force-stop (which is what
+     * swiping the app away is on some phones), it ends everything the sessions left running there.
+     */
+    @Synchronized private fun watchForAppEnd() {
+        val now = System.currentTimeMillis()
+        if (lifeline.connected || now - watcherStartedAt < WATCHER_RETRY_MS) return
+        watcherStartedAt = now
+        val script = """
+            exec 3<> "/dev/tcp/127.0.0.1/${'$'}{1}" || exit 1
+            printf '%s\n' "${'$'}{2}" >&3
+            read -r -u 3 _
+        """.trimIndent() + "\n" + STOP_ALL
+        // No result wanted: Termux holds the task, not this app.
+        start(command(arrayOf("-c", script, "bash", lifeline.port.toString(), lifeline.token), "watcher"))
     }
 
     /**
@@ -555,6 +567,19 @@ class Termux(context: Context) {
          * Shell function: hold Termux's wake lock while any session has tmux jobs (servers, long builds), so
          * they keep running with the screen off; drop it when none has. Run after each command and clean-up.
          */
+        private const val WATCHER_RETRY_MS = 10_000L
+
+        /** Ends every session's tmux jobs and running commands. */
+        private val STOP_ALL get() = PRELUDE + """
+            for d in "${'$'}{HOME}"/sessions/*/; do
+              TMUX_TMPDIR="${'$'}{d}.tmux" tmux kill-server 2> /dev/null
+              rm -f "${'$'}{d}".bash-*.kept "${'$'}{d}".bash-*.code
+              for p in "${'$'}{d}".bash-*.pid; do [ -f "${'$'}{p}" ] && kill -TERM "${'$'}(cat "${'$'}{p}")" 2> /dev/null; done
+            done
+            sync_lock > /dev/null 2>&1
+            exit 0
+        """.trimIndent()
+
         private val PRELUDE = """
             sync_lock() {
               f="${'$'}{HOME}/sessions/.wakelock"; live=
