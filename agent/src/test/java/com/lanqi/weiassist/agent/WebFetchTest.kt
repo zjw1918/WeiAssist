@@ -41,6 +41,26 @@ class WebFetchTest {
         }
     }
 
+    @Test fun `with the user's setting on, a local dev server can be read`() = runBlocking {
+        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0).apply {
+            createContext("/api/health") { ex -> val b = """{"ok":true}""".toByteArray(); ex.responseHeaders.add("Content-Type", "application/json"); ex.sendResponseHeaders(200, b.size.toLong()); ex.responseBody.use { it.write(b) } }
+            start()
+        }
+        WebFetch.allowLocal = { true }
+        try {
+            for (host in listOf("127.0.0.1", "localhost")) {
+                val r = WebFetch.run(JSONObject().put("url", "http://$host:${server.address.port}/api/health"))
+                assertFalse(r.text, r.isError)
+                assertTrue(r.text, r.text.endsWith("\n{\"ok\":true}") && "Content-Type: application/json" in r.text)
+            }
+        } finally {
+            WebFetch.allowLocal = { false }
+            server.stop(0)
+        }
+        val off = WebFetch.run(JSONObject().put("url", "http://127.0.0.1:${server.address.port}/api/health"))
+        assertTrue(off.isError && "Read local addresses" in off.text)
+    }
+
     @Test fun `a bad address is an error for the model`() = runBlocking {
         assertTrue(WebFetch.run(JSONObject().put("url", "ftp://x.org/a")).isError)
         assertTrue(WebFetch.run(JSONObject().put("url", "")).isError)

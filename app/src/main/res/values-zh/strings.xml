@@ -259,6 +259,8 @@
     <string name="a11y_off">未开启：手机任务需要它来看屏幕、点按钮。</string>
     <string name="show_live_screens">显示实时画面</string>
     <string name="show_live_screens_hint">看手机任务在各自的屏幕上工作。</string>
+    <string name="web_fetch_local">读取本地地址</string>
+    <string name="web_fetch_local_hint">允许助手读取本机和局域网上的网页，例如 localhost:8080 上的开发服务器。不需要时请保持关闭：网页可能会诱导助手读取这些地址。</string>
     <string name="section_general">通用</string>
     <string name="language">语言</string>
     <string name="language_hint">在系统设置里选择本应用的语言。</string>

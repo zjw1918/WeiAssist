@@ -65,6 +65,10 @@ class AgentController(context: Context) {
     private val allowed = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val prefs = appContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
+    init {
+        WebFetch.allowLocal = { prefs.getBoolean(WebFetch.SETTING, false) }
+    }
+
     init { migrateGatewayProvider() }
 
     private val _state = MutableStateFlow(

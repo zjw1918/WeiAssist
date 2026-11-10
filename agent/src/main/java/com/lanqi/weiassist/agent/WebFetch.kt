@@ -26,10 +26,17 @@ import javax.net.SocketFactory
  * (headings, lists, links, code and tables kept, scripts and page furniture dropped); plain text and JSON come as
  * they are; other types are only described.
  *
- * Only the public internet: the model chooses the address, and a page may ask it to fetch something, so addresses
- * on the phone itself (the app's own servers, Termux's) and on the local network are refused, on every redirect too.
+ * Only the public internet by default: the model chooses the address, and a page may ask it to fetch something, so
+ * addresses on the phone itself (the app's own servers, Termux's) and on the local network are refused, on every
+ * redirect too. With [allowLocal] (the user's setting) a URL whose host is local is read as well (e.g. a dev server on
+ * localhost:8080); a public page that redirects to a local address is still refused.
  */
 object WebFetch {
+    /** The setting's key in the app's "settings" preferences. */
+    const val SETTING = "webFetchLocal"
+    /** The user's setting: web_fetch may read this phone's and the local network's addresses. */
+    @Volatile var allowLocal: () -> Boolean = { false }
+
     const val DEFAULT_CHARS = 20_000
     const val MAX_CHARS = 100_000
     /** Read at most this much of a body: a page's text is far smaller, and a huge download is not a page. */
@@ -55,7 +62,14 @@ object WebFetch {
 
     data class Result(val text: String, val isError: Boolean = false)
 
+    /** Whether every address [host] stands for is on this phone or the local network. */
+    private fun isLocal(host: String): Boolean =
+        host.equals("localhost", true) || host.endsWith(".localhost", true) ||
+            runCatching { InetAddress.getAllByName(host).none(::isPublic) }.getOrDefault(false)
+
     private suspend fun fetch(url: String, start: Int, max: Int): Result {
+        val host = url.toHttpUrlOrNull()?.host.orEmpty()
+        val client = if (allowLocal() && kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { isLocal(host) }) localClient else client
         val request = Request.Builder().url(url)
             .header("User-Agent", USER_AGENT)
             .header("Accept", "text/html,application/xhtml+xml,text/plain,application/json;q=0.9,*/*;q=0.8")
@@ -182,7 +196,10 @@ object WebFetch {
         }
     }
 
-    private fun blocked(host: String) = Blocked("Refused: $host is on this phone or its local network. web_fetch only reads the public internet.")
+    private fun blocked(host: String) = Blocked(
+        "Refused: $host is on this phone or its local network, and web_fetch only reads the public internet. " +
+            "If the user wants this, they can turn on Settings → \"Read local addresses\" (then only addresses the URL itself names, not redirects to them).",
+    )
 
     /** Names resolve only to public addresses: the connection never reaches this phone or the local network. */
     private val publicDns = Dns { host ->
@@ -217,6 +234,11 @@ object WebFetch {
             // Straight to the site: through a proxy, the proxy would choose where the connection goes.
             .proxy(Proxy.NO_PROXY)
             .build()
+    }
+
+    /** For a URL whose host is local, with the user's setting on: no address checks, still no proxy. */
+    private val localClient: OkHttpClient by lazy {
+        Http.with(connectMs = 10_000, readMs = 20_000, callMs = 45_000).newBuilder().proxy(Proxy.NO_PROXY).build()
     }
 
     private const val USER_AGENT = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36 WeiAssist"
