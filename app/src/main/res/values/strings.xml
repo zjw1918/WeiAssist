@@ -264,6 +264,17 @@
     <string name="show_live_screens_hint">Watch phone tasks work on their own screens.</string>
     <string name="web_fetch_local">Read local addresses</string>
     <string name="web_fetch_local_hint">Let the assistant fetch pages from this phone and your local network, e.g. a dev server on localhost:8080. Keep it off unless you need it: a web page could ask the assistant to read them.</string>
+    <string name="file_access">File access</string>
+    <string name="file_access_off">Off</string>
+    <string name="file_access_off_hint">No file tools.</string>
+    <string name="file_access_session">Session folder</string>
+    <string name="file_access_session_hint">Each conversation\'s own folder: in Termux when it has Termux, else in the app.</string>
+    <string name="file_access_storage_read">Session folder + read phone storage</string>
+    <string name="file_access_storage_read_hint">Also read Download, Documents, Pictures and your other files (/sdcard).</string>
+    <string name="file_access_storage_write">Session folder + read and change phone storage</string>
+    <string name="file_access_storage_write_hint">Also create, change and replace your files there. Only if you trust what you ask for.</string>
+    <string name="file_access_grant">Allow \"All files access\"</string>
+    <string name="file_access_grant_hint">Android must allow the app to use your files first.</string>
     <string name="section_general">General</string>
     <string name="language">Language</string>
     <string name="language_hint">Choose this app\'s language in system settings.</string>
@@ -400,6 +411,7 @@
     <string name="tool_edit_file">Edit a file</string>
     <string name="tool_grep">Search in files</string>
     <string name="tool_glob">Find files</string>
+    <string name="tool_ls">List a folder</string>
     <string name="tool_todo">Update the to-do list</string>
     <string name="tool_interrupt_agent">Stop a subagent</string>
     <string name="tool_list_agents">List subagents</string>

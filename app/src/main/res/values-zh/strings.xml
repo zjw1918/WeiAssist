@@ -261,6 +261,17 @@
     <string name="show_live_screens_hint">看手机任务在各自的屏幕上工作。</string>
     <string name="web_fetch_local">读取本地地址</string>
     <string name="web_fetch_local_hint">允许助手读取本机和局域网上的网页，例如 localhost:8080 上的开发服务器。不需要时请保持关闭：网页可能会诱导助手读取这些地址。</string>
+    <string name="file_access">文件访问</string>
+    <string name="file_access_off">关闭</string>
+    <string name="file_access_off_hint">不使用文件工具。</string>
+    <string name="file_access_session">会话文件夹</string>
+    <string name="file_access_session_hint">每个会话自己的文件夹：有 Termux 时在 Termux 里，否则在应用内。</string>
+    <string name="file_access_storage_read">会话文件夹 + 读取手机存储</string>
+    <string name="file_access_storage_read_hint">还可以读取下载、文档、图片等你的文件（/sdcard）。</string>
+    <string name="file_access_storage_write">会话文件夹 + 读写手机存储</string>
+    <string name="file_access_storage_write_hint">还可以在那里新建、修改和覆盖你的文件。只在你信任所提要求时开启。</string>
+    <string name="file_access_grant">允许“所有文件访问权限”</string>
+    <string name="file_access_grant_hint">需要先在 Android 中允许本应用访问你的文件。</string>
     <string name="section_general">通用</string>
     <string name="language">语言</string>
     <string name="language_hint">在系统设置里选择本应用的语言。</string>
@@ -395,6 +406,7 @@
     <string name="tool_edit_file">编辑文件</string>
     <string name="tool_grep">在文件中搜索</string>
     <string name="tool_glob">查找文件</string>
+    <string name="tool_ls">列出文件夹</string>
     <string name="tool_todo">更新待办</string>
     <string name="tool_interrupt_agent">停止子智能体</string>
     <string name="tool_list_agents">列出子智能体</string>

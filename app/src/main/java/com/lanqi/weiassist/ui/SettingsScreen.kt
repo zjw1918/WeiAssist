@@ -97,6 +97,8 @@ fun SettingsTab(vm: AppViewModel, s: AgentState) {
                 )
             }
 
+            FileAccessSection(vm)
+
             termux?.let { t -> LinuxSection(t) { termuxSetup = true } }
 
             EngineSection(vm, s) { dshSetup = true }

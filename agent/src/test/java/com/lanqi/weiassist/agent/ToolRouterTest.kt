@@ -21,24 +21,30 @@ class ToolRouterTest {
 
     @Test fun `the catalog loads, with unique names and object schemas`() {
         val all = ToolCatalog.entries
-        assertEquals(25, all.size)
+        assertEquals(31, all.size)
         all.forEach { e ->
             assertEquals(e.spec.name, "object", JSONObject(e.spec.parameters).getString("type"))
             assertTrue(e.spec.name, e.spec.description.isNotBlank())
         }
-        assertEquals(setOf("phone", "bash", "send_file", "web", "supervisor"), all.map { it.set }.toSet())
+        assertEquals(setOf("phone", "bash", "send_file", "web", "files", "supervisor"), all.map { it.set }.toSet())
         assertTrue("supervisor tools and fetches may run side by side", all.filter { it.set == "supervisor" || it.set == "web" }.all { it.spec.parallel })
-        assertTrue(all.filter { it.set != "supervisor" && it.set != "web" }.none { it.spec.parallel })
+        // Reading files may run side by side; writing may not.
+        assertEquals(setOf("read", "ls", "glob", "grep"), all.filter { it.set == "files" && it.spec.parallel }.map { it.spec.name }.toSet())
+        assertTrue(all.filter { it.set !in setOf("supervisor", "web", "files") }.none { it.spec.parallel })
+        assertEquals(FileTools.NAMES, all.filter { it.set == "files" }.map { it.spec.name }.toSet())
     }
 
     @Test fun `each kind of session gets its own tools`() {
         // send_file with Termux: to the messaging app's chat, or the app's.
         // web_fetch in every session but the supervisor's: it needs no Termux.
-        assertEquals(listOf("bash", "web_fetch", "send_file"), names(session()))
-        assertEquals(listOf("web_fetch"), names(session(termux = false)))
+        assertEquals(listOf("bash", "web_fetch", "read", "write", "edit", "ls", "glob", "grep", "send_file"), names(session()))
+        assertEquals(listOf("web_fetch", "read", "write", "edit", "ls", "glob", "grep"), names(session(termux = false)))
         assertTrue(names(session(phone = true)).containsAll(listOf("open_app", "read_screen", "tap", "screenshot", "note", "bash", "web_fetch")))
-        assertEquals(listOf("bash", "web_fetch", "send_file"), names(session(channel = "telegram")))
-        assertEquals(listOf("web_fetch"), names(session(channel = "telegram", termux = false)))
+        assertEquals(listOf("bash", "web_fetch", "read", "write", "edit", "ls", "glob", "grep", "send_file"), names(session(channel = "telegram")))
+        assertEquals(listOf("web_fetch", "read", "write", "edit", "ls", "glob", "grep"), names(session(channel = "telegram", termux = false)))
+        // File access off: no file tools.
+        ToolCatalog.files = { false }
+        try { assertEquals(listOf("web_fetch"), names(session(termux = false))) } finally { ToolCatalog.files = { true } }
         val sup = names(session(supervisor = true, phone = true, channel = "telegram"))
         assertEquals(10, sup.size)
         assertTrue(sup.all { it.endsWith("_session") || it == "message_session" || it == "wait_for" || it == "list_sessions" })

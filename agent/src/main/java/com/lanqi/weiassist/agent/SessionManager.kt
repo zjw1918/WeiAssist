@@ -279,6 +279,7 @@ class SessionManager(
 
     /** Where session [id] keeps its files (attachments, and files the agent gave the user); deleted with it. */
     fun filesDir(id: String): java.io.File = store.attachmentsDir(id)
+    fun workspaceDir(id: String): java.io.File = store.workspaceDir(id)
 
     // ---- questions the agent asks the user -----------------------------------------------------------
 

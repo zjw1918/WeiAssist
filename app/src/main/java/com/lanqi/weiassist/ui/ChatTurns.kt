@@ -416,6 +416,7 @@ private fun toolLabel(tool: String): String = when (tool) {
     "edit", "str_replace_editor", "apply_patch" -> stringResource(R.string.tool_edit_file)
     "grep" -> stringResource(R.string.tool_grep)
     "glob" -> stringResource(R.string.tool_glob)
+    "ls" -> stringResource(R.string.tool_ls)
     "todo_write" -> stringResource(R.string.tool_todo)
     "ask_user_question" -> stringResource(R.string.tool_ask_user)
     "exit_plan_mode" -> stringResource(R.string.tool_exit_plan_mode)
