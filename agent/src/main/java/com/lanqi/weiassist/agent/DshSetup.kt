@@ -3,6 +3,8 @@ package com.lanqi.weiassist.agent
 import android.content.Context
 import android.os.PowerManager
 import android.util.Log
+import com.lanqi.weiassist.core.Http
+import com.lanqi.weiassist.core.await
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,8 +13,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 import java.security.MessageDigest
 
 /**
@@ -105,14 +105,11 @@ class DshSetup(context: Context, private val termux: Termux, private val scope: 
     private suspend fun registryGet(mirrors: Boolean, path: String): Pair<Int, JSONObject?>? = withContext(Dispatchers.IO) {
         try {
             val registry = if (mirrors) "https://registry.npmmirror.com" else "https://registry.npmjs.org"
-            val c = URL("$registry/$path").openConnection() as HttpURLConnection
-            c.connectTimeout = 10_000; c.readTimeout = 10_000
-            try {
-                val code = c.responseCode
-                code to if (code == 200) JSONObject(c.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }) else null
-            } finally {
-                c.disconnect()
+            Http.with(connectMs = 10_000, readMs = 10_000).newCall(Http.get("$registry/$path")).await { r ->
+                r.code to if (r.code == 200) JSONObject(r.body.string()) else null
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.w(TAG, "npm registry $path", e)
             null

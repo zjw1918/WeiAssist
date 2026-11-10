@@ -1,13 +1,13 @@
 package com.lanqi.weiassist.dsh
 
+import com.lanqi.weiassist.core.Http
+import okhttp3.Request as Upstream
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
-import java.net.HttpURLConnection
 import java.net.ServerSocket
 import java.net.Socket
-import java.net.URL
 import java.security.SecureRandom
 import kotlin.concurrent.thread
 
@@ -86,41 +86,35 @@ class KeyProxy(
         val routeName = path.substringBefore('/').substringBefore('?')
         val route = resolve(routeName) ?: return respond(out, 404, "no route $routeName (or no key for it)")
         val rest = path.removePrefix(routeName)
-        val url = URL(route.upstream.trimEnd('/') + rest.replace(token, route.key))
-        val c = url.openConnection() as HttpURLConnection
-        c.requestMethod = r.method
-        c.instanceFollowRedirects = false
-        c.connectTimeout = 30_000
-        c.readTimeout = 0
-        for ((name, value) in r.headers) {
-            if (name.lowercase() in DROPPED_REQUEST) continue
-            c.setRequestProperty(name, value.replace(token, route.key))
-        }
-        route.headers.forEach { (name, value) -> c.setRequestProperty(name, value) }
+        val url = route.upstream.trimEnd('/') + rest.replace(token, route.key)
         val body = if (SignInRequest.applies(route.upstream, route.key, rest)) SignInRequest.adapt(r.body) else r.body
-        if (body.isNotEmpty()) {
-            c.doOutput = true
-            c.setFixedLengthStreamingMode(body.size)
-            c.outputStream.use { it.write(body) }
-        }
-        val code = c.responseCode
-        val head = StringBuilder("HTTP/1.1 $code ${c.responseMessage ?: ""}\r\n")
-        c.headerFields.forEach { (name, values) ->
-            if (name == null || name.lowercase() in DROPPED_RESPONSE) return@forEach
-            values.forEach { head.append(name).append(": ").append(it).append("\r\n") }
-        }
-        head.append("Connection: close\r\n\r\n")
-        out.write(head.toString().toByteArray(Charsets.ISO_8859_1))
-        out.flush()
-        // Streamed through as it comes (server-sent events): the connection's end ends the body.
-        val answer = (if (code >= 400) c.errorStream else c.inputStream) ?: return
-        answer.use {
-            val buf = ByteArray(8192)
-            while (true) {
-                val n = it.read(buf)
-                if (n < 0) break
-                out.write(buf, 0, n)
-                out.flush()
+        val request = Upstream.Builder().url(url).apply {
+            for ((name, value) in r.headers) {
+                if (name.lowercase() in DROPPED_REQUEST) continue
+                addHeader(name, value.replace(token, route.key))
+            }
+            route.headers.forEach { (name, value) -> header(name, value) }
+            // The body has no type of its own: dsh's Content-Type header goes as it was.
+            method(r.method, Http.body(r.method, body))
+        }.build()
+        client.newCall(request).execute().use { response ->
+            val head = StringBuilder("HTTP/1.1 ${response.code} ${response.message}\r\n")
+            for ((name, value) in response.headers) {
+                if (name.lowercase() in DROPPED_RESPONSE) continue
+                head.append(name).append(": ").append(value).append("\r\n")
+            }
+            head.append("Connection: close\r\n\r\n")
+            out.write(head.toString().toByteArray(Charsets.ISO_8859_1))
+            out.flush()
+            // Streamed through as it comes (server-sent events): the connection's end ends the body.
+            response.body.byteStream().use {
+                val buf = ByteArray(8192)
+                while (true) {
+                    val n = it.read(buf)
+                    if (n < 0) break
+                    out.write(buf, 0, n)
+                    out.flush()
+                }
             }
         }
     }
@@ -189,6 +183,8 @@ class KeyProxy(
     }
 
     private companion object {
+        /** No redirects (they go back to dsh as they are), and no read limit: a model answer may take minutes. */
+        val client by lazy { Http.with(connectMs = 30_000, readMs = 0, followRedirects = false) }
         /** 64 MiB: a long conversation with screenshots. */
         const val MAX_BODY = 64 * 1024 * 1024
         /** Set by the connection itself, or hop-by-hop. Accept-Encoding: answers come back uncompressed. */

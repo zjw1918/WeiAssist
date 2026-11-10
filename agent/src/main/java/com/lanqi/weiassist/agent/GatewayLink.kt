@@ -1,11 +1,10 @@
 package com.lanqi.weiassist.agent
 
 import android.content.Context
+import com.lanqi.weiassist.core.Http
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * Where the AI providers come from (the Providers tab). [WeiAssist]: Pi's own providers, keys and sign-ins, the
@@ -48,27 +47,15 @@ object GatewayLink {
     }
 
     fun serving(): Boolean = runCatching {
-        val c = URL("$BASE_URL/models").openConnection() as HttpURLConnection
-        try {
-            c.connectTimeout = 1_000
-            c.readTimeout = 2_000
-            c.responseCode in 200..299
-        } finally {
-            c.disconnect()
-        }
+        Http.with(connectMs = 1_000, readMs = 2_000).newCall(Http.get("$BASE_URL/models")).execute().use { it.isSuccessful }
     }.getOrDefault(false)
 
     /** The model ids in the gateway's own order (newest first), which the id-sorted model list loses. */
     suspend fun listedIds(): List<String> = withContext(Dispatchers.IO) {
         runCatching {
-            val c = URL("$BASE_URL/models").openConnection() as HttpURLConnection
-            try {
-                c.connectTimeout = 2_000
-                c.readTimeout = 5_000
-                val data = JSONObject(c.inputStream.bufferedReader().use { it.readText() }).getJSONArray("data")
+            Http.with(connectMs = 2_000, readMs = 5_000).newCall(Http.get("$BASE_URL/models")).execute().use { r ->
+                val data = JSONObject(r.body.string()).getJSONArray("data")
                 (0 until data.length()).map { data.getJSONObject(it).optString("id") }
-            } finally {
-                c.disconnect()
             }
         }.getOrDefault(emptyList())
     }

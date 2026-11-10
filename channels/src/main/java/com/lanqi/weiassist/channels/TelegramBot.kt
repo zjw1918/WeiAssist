@@ -1,19 +1,22 @@
 package com.lanqi.weiassist.channels
 
+import com.lanqi.weiassist.core.Http
+import com.lanqi.weiassist.core.await
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
-import kotlin.coroutines.coroutineContext
 
 /**
  * A Telegram bot, through the Bot API (https://core.telegram.org/bots/api). It receives by long polling
@@ -183,70 +186,37 @@ class TelegramBot(
 
     private fun clean(s: String) = if (token.isEmpty()) s else s.replace(token, "<token>")
 
-    /** Requests over HttpURLConnection; cancelling the coroutine closes the connection (ends a long poll at once). */
+    /** Requests through the app's HTTP client; cancelling the coroutine cancels the request (ends a long poll at once). */
     class HttpApi(private val token: String, private val base: String = "https://api.telegram.org") : Api {
-        override suspend fun call(method: String, params: JSONObject, timeoutMs: Int): JSONObject = withContext(Dispatchers.IO) {
-            val conn = URL("$base/bot$token/$method").openConnection() as HttpURLConnection
-            val closing = coroutineContext[Job]?.invokeOnCompletion { conn.disconnect() }
-            try {
-                conn.requestMethod = "POST"
-                conn.connectTimeout = 15_000
-                conn.readTimeout = timeoutMs
-                conn.doOutput = true
-                conn.setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                conn.outputStream.use { it.write(params.toString().toByteArray()) }
-                val code = conn.responseCode
-                val body = (if (code < 400) conn.inputStream else conn.errorStream)?.use { String(it.readBytes()) }.orEmpty()
-                runCatching { JSONObject(body) }.getOrElse { JSONObject().put("ok", false).put("error_code", code).put("description", "HTTP $code") }
-            } finally {
-                closing?.dispose()
-                conn.disconnect()
+        override suspend fun call(method: String, params: JSONObject, timeoutMs: Int): JSONObject {
+            val request = Request.Builder().url("$base/bot$token/$method")
+                .post(params.toString().toRequestBody("application/json; charset=utf-8".toMediaType())).build()
+            return Http.with(connectMs = 15_000, readMs = timeoutMs.toLong()).newCall(request).await(::decode)
+        }
+
+        override suspend fun upload(method: String, fields: Map<String, String>, fileField: String, file: java.io.File, name: String, mime: String): JSONObject {
+            val quoted = name.replace("\"", "'").replace("\r", "").replace("\n", "")
+            val body = MultipartBody.Builder().setType(MultipartBody.FORM).apply {
+                fields.forEach { (k, v) -> addFormDataPart(k, v) }
+                // Streamed from the file as it is sent: a 50 MB video is never all in memory.
+                addFormDataPart(fileField, quoted, file.asRequestBody(mime.toMediaTypeOrNull()))
+            }.build()
+            val request = Request.Builder().url("$base/bot$token/$method").post(body).build()
+            return Http.with(connectMs = 15_000, readMs = 120_000).newCall(request).await(::decode)
+        }
+
+        override suspend fun download(path: String, dest: java.io.File) {
+            Http.with(connectMs = 15_000, readMs = 60_000).newCall(Http.get("$base/file/bot$token/$path")).await { r ->
+                if (r.code != 200) throw IOException("HTTP ${r.code}")
+                dest.parentFile?.mkdirs()
+                r.body.byteStream().use { i -> dest.outputStream().use { o -> i.copyTo(o) } }
             }
         }
 
-        override suspend fun upload(method: String, fields: Map<String, String>, fileField: String, file: java.io.File, name: String, mime: String): JSONObject =
-            withContext(Dispatchers.IO) {
-                val boundary = "----weiassist" + java.util.UUID.randomUUID().toString().replace("-", "")
-                val conn = URL("$base/bot$token/$method").openConnection() as HttpURLConnection
-                val closing = coroutineContext[Job]?.invokeOnCompletion { conn.disconnect() }
-                try {
-                    conn.requestMethod = "POST"
-                    conn.connectTimeout = 15_000
-                    conn.readTimeout = 120_000
-                    conn.doOutput = true
-                    conn.setChunkedStreamingMode(64 * 1024)
-                    conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-                    conn.outputStream.buffered().use { out ->
-                        fun w(s: String) = out.write(s.toByteArray())
-                        for ((k, v) in fields) w("--$boundary\r\nContent-Disposition: form-data; name=\"$k\"\r\n\r\n$v\r\n")
-                        val quoted = name.replace("\"", "'").replace("\r", "").replace("\n", "")
-                        w("--$boundary\r\nContent-Disposition: form-data; name=\"$fileField\"; filename=\"$quoted\"\r\nContent-Type: $mime\r\n\r\n")
-                        file.inputStream().use { it.copyTo(out) }
-                        w("\r\n--$boundary--\r\n")
-                    }
-                    val code = conn.responseCode
-                    val body = (if (code < 400) conn.inputStream else conn.errorStream)?.use { String(it.readBytes()) }.orEmpty()
-                    runCatching { JSONObject(body) }.getOrElse { JSONObject().put("ok", false).put("error_code", code).put("description", "HTTP $code") }
-                } finally {
-                    closing?.dispose()
-                    conn.disconnect()
-                }
-            }
-
-        override suspend fun download(path: String, dest: java.io.File) = withContext(Dispatchers.IO) {
-            val conn = URL("$base/file/bot$token/$path").openConnection() as HttpURLConnection
-            val closing = coroutineContext[Job]?.invokeOnCompletion { conn.disconnect() }
-            try {
-                conn.connectTimeout = 15_000
-                conn.readTimeout = 60_000
-                if (conn.responseCode != 200) throw IOException("HTTP ${conn.responseCode}")
-                dest.parentFile?.mkdirs()
-                conn.inputStream.use { i -> dest.outputStream().use { o -> i.copyTo(o) } }
-                Unit
-            } finally {
-                closing?.dispose()
-                conn.disconnect()
-            }
+        /** The Bot API's JSON answer; a body that isn't JSON (a proxy's error page) as a failed call. */
+        private fun decode(r: Response): JSONObject {
+            val body = r.body.string()
+            return runCatching { JSONObject(body) }.getOrElse { JSONObject().put("ok", false).put("error_code", r.code).put("description", "HTTP ${r.code}") }
         }
     }
 
