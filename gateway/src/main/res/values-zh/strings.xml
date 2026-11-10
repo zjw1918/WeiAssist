@@ -16,4 +16,5 @@
     <string name="notif_serving_lan">正在为本机和 %1$s 提供服务</string>
     <string name="autostart_hint">要在手机重启或本应用更新后继续服务，请允许它自启动和后台运行：很多手机默认关闭，需要在应用设置（电池或自启动）中打开。否则，打开一次本应用即可重新启动。</string>
     <string name="autostart_settings">应用设置</string>
+    <string name="versions">magpie %1$s · 网关 %2$s</string>
 </resources>

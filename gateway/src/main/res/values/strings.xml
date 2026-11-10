@@ -16,4 +16,5 @@
     <string name="notif_serving_lan">Serving this phone and %1$s</string>
     <string name="autostart_hint">To keep serving after the phone restarts or this app updates, allow it to auto-launch and run in the background: on many phones that is off until you turn it on in the app\'s settings (Battery, or Auto launch). Otherwise, open this app once to start it again.</string>
     <string name="autostart_settings">App settings</string>
+    <string name="versions">magpie %1$s · Gateway %2$s</string>
 </resources>
