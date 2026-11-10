@@ -393,6 +393,7 @@ private fun toolLabel(tool: String): String = when (tool) {
     "open_app" -> stringResource(R.string.tool_open_app)
     "tap", "tap_at" -> stringResource(R.string.tool_tap)
     "long_press" -> stringResource(R.string.tool_long_press)
+    "drag" -> stringResource(R.string.tool_drag)
     "type_text" -> stringResource(R.string.tool_type_text)
     "swipe" -> stringResource(R.string.tool_swipe)
     "scroll" -> stringResource(R.string.tool_scroll)
@@ -428,7 +429,7 @@ private fun toolLabel(tool: String): String = when (tool) {
 private fun toolIcon(tool: String) = when (tool) {
     "bash" -> R.drawable.ic_terminal
     "open_app" -> R.drawable.ic_open_in_new
-    "tap", "tap_at", "long_press", "swipe", "scroll", "press_key" -> R.drawable.ic_touch
+    "tap", "tap_at", "drag", "long_press", "swipe", "scroll", "press_key" -> R.drawable.ic_touch
     "type_text", "note" -> R.drawable.ic_edit
     "read_screen", "screenshot" -> R.drawable.ic_phone
     "create_session", "message_session", "send_message", "list_sessions", "get_session", "wait_for", "pause_session", "resume_session",

@@ -85,6 +85,9 @@ class PhoneActions(private val context: Context) {
             "read_screen" -> svc.readScreen(d, t.width, t.height)
             "tap" -> svc.tap(a.getInt("id"), d) { x, y -> t.io.tap(x, y, 60) }.settled()
             "tap_at" -> (if (t.io.tap(a.getInt("x").toFloat(), a.getInt("y").toFloat(), 60)) "tapped at ${a.getInt("x")},${a.getInt("y")}" else "tap failed").settled()
+            "drag" -> drag(a) { x1, y1, x2, y2, move, hold ->
+                if (t.io.drag(x1.toFloat(), y1.toFloat(), x2.toFloat(), y2.toFloat(), move, hold)) dragged(x1, y1, x2, y2, hold) else "drag failed"
+            }.settled()
             "long_press" -> svc.centerOf(a.getInt("id"), d).let { (x, y) -> if (t.io.tap(x, y, 700)) "long-pressed [${a.getInt("id")}]" else "long press failed" }.settled()
             "type_text" -> if (!a.has("id")) typeVirtual(svc, t, a.getString("text"), a.optBoolean("submit")).settled()
             else svc.typeText(a.getInt("id"), a.getString("text"), d).let { typed ->
@@ -212,6 +215,7 @@ class PhoneActions(private val context: Context) {
             "read_screen" -> svc.readScreen()
             "tap" -> svc.tap(a.getInt("id")).settled(svc)
             "tap_at" -> svc.tapAt(a.getInt("x"), a.getInt("y")).settled(svc)
+            "drag" -> drag(a) { x1, y1, x2, y2, move, hold -> svc.drag(x1, y1, x2, y2, move, hold) }.settled(svc)
             "long_press" -> svc.longPress(a.getInt("id")).settled(svc)
             "type_text" -> if (!a.has("id")) svc.typeIntoFocused(a.getString("text"), a.optBoolean("submit")).settled(svc) else svc.typeText(a.getInt("id"), a.getString("text")).let { typed ->
                 if (!a.optBoolean("submit") || !typed.startsWith("typed")) typed
@@ -340,7 +344,19 @@ class PhoneActions(private val context: Context) {
             "Open the app you need with open_app first."
         private const val NO_ENTER = "could not press enter: no text field has focus. Tap the field first, or tap the app's own Go / Search button or a suggestion"
         /** Actions after which an app may have opened a new window. */
-        private val LAUNCHING = setOf("tap", "tap_at", "long_press", "type_text", "press_key", "open_app")
+        private val LAUNCHING = setOf("tap", "tap_at", "drag", "long_press", "type_text", "press_key", "open_app")
+
+        /** The longest move or hold of one drag (the shell helper allows as much). */
+        const val MAX_DRAG_MS = 10_000L
+
+        /** drag's arguments, clamped, to [f]. */
+        private inline fun drag(a: JSONObject, f: (Int, Int, Int, Int, Long, Long) -> String): String = f(
+            a.getInt("x1"), a.getInt("y1"), a.getInt("x2"), a.getInt("y2"),
+            a.optLong("duration_ms", 300).coerceIn(50, MAX_DRAG_MS), a.optLong("hold_ms", 0).coerceIn(0, MAX_DRAG_MS),
+        )
+
+        fun dragged(x1: Int, y1: Int, x2: Int, y2: Int, holdMs: Long) =
+            "dragged from $x1,$y1 to $x2,$y2" + if (holdMs > 0) " and held $holdMs ms" else ""
         /** How long open_app waits for a starting app to show a window, and for it to arrive on the display at all. */
         private const val OPEN_WAIT_MS = 15_000L
         private const val OPEN_ELSEWHERE_MS = 3_000L

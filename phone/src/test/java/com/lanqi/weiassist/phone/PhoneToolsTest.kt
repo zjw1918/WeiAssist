@@ -75,6 +75,14 @@ class PhoneToolsTest {
         assertEquals("""{"x":900,"y":2200}""", f.actions.single { it.first == "label_at" }.second)
     }
 
+    @Test fun `a drag that ends where it began is a tap there, and a real drag (a joystick) asks nothing`() = runBlocking {
+        val f = Fake(labelAt = "立即购买").apply { allow = false }
+        assertEquals(PhonePolicy.DECLINED, f.check("drag", args("x1" to 900, "y1" to 2200, "x2" to 910, "y2" to 2210, "hold_ms" to 800)))
+        assertEquals("""{"x":900,"y":2200}""", f.actions.single { it.first == "label_at" }.second)
+        assertNull(f.check("drag", args("x1" to 300, "y1" to 1800, "x2" to 450, "y2" to 1800, "hold_ms" to 2000)))
+        assertEquals(1, f.asked.size)
+    }
+
     @Test fun `the card shows what was typed, by field name`() = runBlocking {
         val f = Fake(screen = sendScreen)
         f.tools.call("s", "read_screen", JSONObject())

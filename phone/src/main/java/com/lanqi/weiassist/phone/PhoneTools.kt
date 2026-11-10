@@ -65,8 +65,9 @@ class PhoneTools(private val run: suspend (session: String, action: String, args
         var typed = t.typed.toList()
         when {
             tool == "tap" -> label = PhonePolicy.labelOf(args.id()?.let { t.screen[it] } ?: "")
-            tool == "tap_at" -> {
-                label = run(session, "label_at", JSONObject().put("x", args.optInt("x")).put("y", args.optInt("y")))
+            tool == "tap_at" || tool == "drag" && tapLike(args) -> {
+                val (x, y) = if (tool == "drag") args.optInt("x1") to args.optInt("y1") else args.optInt("x") to args.optInt("y")
+                label = run(session, "label_at", JSONObject().put("x", x).put("y", y))
                 blind = t.blindTyped && label.isBlank()
             }
             tool == "press_key" && args.optString("key") == "enter" && t.blindTyped -> blind = true
@@ -98,11 +99,20 @@ class PhoneTools(private val run: suspend (session: String, action: String, args
         return "${if (id == null) "field" else PhonePolicy.fieldName(t.screen[id])}: ${args.optString("text")}"
     }
 
+    /**
+     * A drag that ends where it began (within a finger's width) clicks what is there, as a tap does. A longer one
+     * moves things (a joystick, a slider) and clicks nothing.
+     */
+    private fun tapLike(a: JSONObject): Boolean =
+        kotlin.math.hypot((a.optInt("x2") - a.optInt("x1")).toDouble(), (a.optInt("y2") - a.optInt("y1")).toDouble()) <= TAP_SLOP
+
     /** An element id from the latest screen, if the call names one. */
     private fun JSONObject.id(): Int? = if (has("id") && !isNull("id")) optInt("id") else null
 
     private companion object {
         /** Tools that act on the screen: done through [run], then the screen they leave is read. */
-        val ACTIONS = setOf("open_app", "tap", "tap_at", "long_press", "swipe", "type_text", "scroll", "press_key")
+        val ACTIONS = setOf("open_app", "tap", "tap_at", "drag", "long_press", "swipe", "type_text", "scroll", "press_key")
+        /** Pixels a drag may move and still count as a tap. */
+        const val TAP_SLOP = 30.0
     }
 }

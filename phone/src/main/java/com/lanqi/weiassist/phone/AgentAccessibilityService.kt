@@ -309,14 +309,16 @@ class AgentAccessibilityService : AccessibilityService() {
         else -> false
     }.let { if (it) "pressed $key" else "could not press $key" }
 
-    private suspend fun gesture(path: Path, durationMs: Long): Boolean {
+    private suspend fun gesture(path: Path, durationMs: Long): Boolean = stroke(GestureDescription.StrokeDescription(path, 0, durationMs))
+
+    private suspend fun stroke(s: GestureDescription.StrokeDescription): Boolean {
         val done = CompletableDeferred<Boolean>()
-        val sent = dispatchGesture(GestureDescription.Builder().addStroke(GestureDescription.StrokeDescription(path, 0, durationMs)).build(),
+        val sent = dispatchGesture(GestureDescription.Builder().addStroke(s).build(),
             object : GestureResultCallback() {
                 override fun onCompleted(g: GestureDescription?) { done.complete(true) }
                 override fun onCancelled(g: GestureDescription?) { done.complete(false) }
             }, null)
-        return sent && kotlinx.coroutines.withTimeoutOrNull(durationMs + 3_000) { done.await() } == true
+        return sent && kotlinx.coroutines.withTimeoutOrNull(s.duration + 3_000) { done.await() } == true
     }
 
     private fun checkNotOwnApp() = check(rootInActiveWindow?.packageName != packageName) { OWN_APP }
@@ -325,6 +327,18 @@ class AgentAccessibilityService : AccessibilityService() {
     suspend fun tapAt(x: Int, y: Int): String {
         checkNotOwnApp()
         return if (gesture(Path().apply { moveTo(x.toFloat(), y.toFloat()) }, 60)) "tapped at $x,$y" else "tap at $x,$y failed"
+    }
+
+    /**
+     * Press at x1,y1, move to x2,y2 over [moveMs], keep the finger there [holdMs], then lift: a virtual joystick held
+     * in one direction, a slider, drag and drop. The hold continues the same stroke, so the finger never lifts between.
+     */
+    suspend fun drag(x1: Int, y1: Int, x2: Int, y2: Int, moveMs: Long, holdMs: Long): String {
+        checkNotOwnApp()
+        val move = Path().apply { moveTo(x1.toFloat(), y1.toFloat()); if (x1 != x2 || y1 != y2) lineTo(x2.toFloat(), y2.toFloat()) }
+        val first = GestureDescription.StrokeDescription(move, 0, moveMs, holdMs > 0)
+        val ok = stroke(first) && (holdMs <= 0 || stroke(first.continueStroke(Path().apply { moveTo(x2.toFloat(), y2.toFloat()) }, 0, holdMs, false)))
+        return if (ok) PhoneActions.dragged(x1, y1, x2, y2, holdMs) else "drag failed"
     }
 
     suspend fun longPress(id: Int): String {

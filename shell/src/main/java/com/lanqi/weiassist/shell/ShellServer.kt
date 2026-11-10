@@ -77,6 +77,8 @@ class ShellServer private constructor(
     override fun tap(displayId: Int, x: Float, y: Float, durationMs: Long) = displays.has(displayId) && displays.tap(displayId, x, y, durationMs)
     override fun swipe(displayId: Int, x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long) =
         displays.has(displayId) && displays.swipe(displayId, x1, y1, x2, y2, durationMs)
+    override fun drag(displayId: Int, x1: Float, y1: Float, x2: Float, y2: Float, moveMs: Long, holdMs: Long) =
+        displays.has(displayId) && displays.drag(displayId, x1, y1, x2, y2, moveMs, holdMs)
     override fun key(displayId: Int, keyCode: Int) = displays.has(displayId) && displays.key(displayId, keyCode)
 
     override fun activities(): String =

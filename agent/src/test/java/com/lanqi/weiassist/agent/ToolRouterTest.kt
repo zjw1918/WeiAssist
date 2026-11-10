@@ -21,7 +21,7 @@ class ToolRouterTest {
 
     @Test fun `the catalog loads, with unique names and object schemas`() {
         val all = ToolCatalog.entries
-        assertEquals(33, all.size)
+        assertEquals(34, all.size)
         all.forEach { e ->
             assertEquals(e.spec.name, "object", JSONObject(e.spec.parameters).getString("type"))
             assertTrue(e.spec.name, e.spec.description.isNotBlank())
@@ -41,7 +41,7 @@ class ToolRouterTest {
         // web_fetch in every session but the supervisor's: it needs no Termux.
         assertEquals(listOf("bash", "web_fetch", "read", "write", "edit", "ls", "glob", "grep", "ask_user_question", "todo_write", "send_file"), names(session()))
         assertEquals(listOf("web_fetch", "read", "write", "edit", "ls", "glob", "grep", "ask_user_question", "todo_write"), names(session(termux = false)))
-        assertTrue(names(session(phone = true)).containsAll(listOf("open_app", "read_screen", "tap", "screenshot", "note", "bash", "web_fetch")))
+        assertTrue(names(session(phone = true)).containsAll(listOf("open_app", "read_screen", "tap", "drag", "screenshot", "note", "bash", "web_fetch")))
         assertEquals(listOf("bash", "web_fetch", "read", "write", "edit", "ls", "glob", "grep", "ask_user_question", "todo_write", "send_file"), names(session(channel = "telegram")))
         assertEquals(listOf("web_fetch", "read", "write", "edit", "ls", "glob", "grep", "ask_user_question", "todo_write"), names(session(channel = "telegram", termux = false)))
         // File access off: no file tools.
@@ -104,10 +104,10 @@ class ToolRouterTest {
         f.phoneAnswer = com.lanqi.weiassist.phone.Shot("/9j/AAAA", 1080, 2400, 720, 1600).pack()
         val shot = f.router.call("s", "c3", "screenshot", JSONObject())
         assertEquals("/9j/AAAA", shot.image)
-        assertEquals("Screenshot scaled to 720x1600 px; the screen is 1080x2400. For tap_at, multiply x and y by 1.5.", shot.text)
+        assertEquals("Screenshot scaled to 720x1600 px; the screen is 1080x2400. For tap_at and drag, multiply x and y by 1.5.", shot.text)
         // A 720 px virtual display isn't scaled: its pixels are tap_at's (a fixed factor sent taps off this screen).
         f.phoneAnswer = com.lanqi.weiassist.phone.Shot("/9j/BBBB", 720, 1600, 720, 1600).pack()
-        assertEquals("Screenshot of the whole screen, 720x1600 px: tap_at takes these pixels as they are.", f.router.call("s", "c5", "screenshot", JSONObject()).text)
+        assertEquals("Screenshot of the whole screen, 720x1600 px: tap_at and drag take these pixels as they are.", f.router.call("s", "c5", "screenshot", JSONObject()).text)
         // A message instead of a picture stays text: as an image the provider would reject the request.
         f.phoneAnswer = "no app open yet"
         assertNull(f.router.call("s", "c4", "screenshot", JSONObject()).image)

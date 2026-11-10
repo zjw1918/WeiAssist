@@ -78,6 +78,42 @@
 			}
 		},
 		{
+			"name": "drag",
+			"set": "phone",
+			"label": "Drag",
+			"description": "Press at x1,y1, move the finger to x2,y2 over duration_ms (default 300), keep it there for hold_ms (default 0), then lift. Screen pixels, as for tap_at. For game controls (hold a virtual joystick in a direction: start on the stick's centre, end toward where to go, hold_ms 500-5000), sliders, drag and drop, drawing. Moves and holds up to 10000 ms each. To act while holding (e.g. watch a game), take a screenshot after it.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"x1": {
+						"type": "integer"
+					},
+					"y1": {
+						"type": "integer"
+					},
+					"x2": {
+						"type": "integer"
+					},
+					"y2": {
+						"type": "integer"
+					},
+					"duration_ms": {
+						"type": "integer"
+					},
+					"hold_ms": {
+						"type": "integer"
+					}
+				},
+				"required": [
+					"x1",
+					"y1",
+					"x2",
+					"y2"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
 			"name": "long_press",
 			"set": "phone",
 			"label": "Long press",

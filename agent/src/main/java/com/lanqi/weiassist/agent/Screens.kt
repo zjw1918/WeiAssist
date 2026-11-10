@@ -150,6 +150,7 @@ class DisplayScreenPool(
         private inline fun <T> call(default: T, f: () -> T): T = try { f() } catch (e: RemoteException) { default }
         override fun tap(x: Float, y: Float, durationMs: Long) = call(false) { h.tap(display, x, y, durationMs) }
         override fun swipe(x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long) = call(false) { h.swipe(display, x1, y1, x2, y2, durationMs) }
+        override fun drag(x1: Float, y1: Float, x2: Float, y2: Float, moveMs: Long, holdMs: Long) = call(false) { h.drag(display, x1, y1, x2, y2, moveMs, holdMs) }
         override fun key(keyCode: Int) = call(false) { h.key(display, keyCode) }
         override fun screenshot(maxWidth: Int, quality: Int): ByteArray = call(ByteArray(0)) { h.screenshot(display, maxWidth, quality) }
         override fun startActivity(component: String): String = call("Error: the shell helper is gone") { h.startActivity(display, component) }

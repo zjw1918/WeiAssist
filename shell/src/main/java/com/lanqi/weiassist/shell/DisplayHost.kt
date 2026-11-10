@@ -253,14 +253,23 @@ internal class DisplayHost(
         return touch(display, MotionEvent.ACTION_UP, down, x, y)
     }
 
-    fun swipe(display: Int, x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long): Boolean {
+    fun swipe(display: Int, x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long): Boolean =
+        drag(display, x1, y1, x2, y2, durationMs.coerceIn(100, 3_000), 0)
+
+    /** Down at x1,y1, moves to x2,y2 over [moveMs], stays there [holdMs] (still reporting the finger, as a real one does), up. */
+    fun drag(display: Int, x1: Float, y1: Float, x2: Float, y2: Float, moveMs: Long, holdMs: Long): Boolean {
         val down = SystemClock.uptimeMillis()
         if (!touch(display, MotionEvent.ACTION_DOWN, down, x1, y1)) return false
-        val steps = (durationMs.coerceIn(100, 3_000) / 16).toInt().coerceAtLeast(4)
+        val steps = (moveMs.coerceIn(16, MAX_GESTURE_MS) / 16).toInt().coerceAtLeast(4)
         for (i in 1..steps) {
             val t = i.toFloat() / steps
             SystemClock.sleep(16)
             touch(display, MotionEvent.ACTION_MOVE, down, x1 + (x2 - x1) * t, y1 + (y2 - y1) * t)
+        }
+        val until = SystemClock.uptimeMillis() + holdMs.coerceIn(0, MAX_GESTURE_MS)
+        while (SystemClock.uptimeMillis() < until) {
+            SystemClock.sleep(50)
+            touch(display, MotionEvent.ACTION_MOVE, down, x2, y2)
         }
         return touch(display, MotionEvent.ACTION_UP, down, x2, y2)
     }
@@ -273,6 +282,9 @@ internal class DisplayHost(
     }
 
     companion object {
+        /** The longest move or hold of one gesture (the phone tools allow 10 s). */
+        private const val MAX_GESTURE_MS = 10_000L
+
         /** The system context as the shell package (as scrcpy does). Must run on a Looper thread. */
         fun shellContext(): Context {
             val at = Class.forName("android.app.ActivityThread").getMethod("systemMain").invoke(null)

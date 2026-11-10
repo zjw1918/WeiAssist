@@ -32,6 +32,8 @@ interface IShellService {
     boolean tap(int displayId, float x, float y, long durationMs);
     /** A straight swipe like a finger, over [durationMs]. */
     boolean swipe(int displayId, float x1, float y1, float x2, float y2, long durationMs);
+    /** Press at x1,y1, move to x2,y2 over [moveMs], keep the finger there for [holdMs], then lift (a joystick, a slider). */
+    boolean drag(int displayId, float x1, float y1, float x2, float y2, long moveMs, long holdMs);
     /** A key (KeyEvent.KEYCODE_*) pressed and released on the display. */
     boolean key(int displayId, int keyCode);
     /** Which tasks and apps are on which display: the relevant lines of `dumpsys activity activities`. */

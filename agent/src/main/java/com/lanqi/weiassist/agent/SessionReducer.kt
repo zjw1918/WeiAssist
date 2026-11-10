@@ -261,6 +261,7 @@ object SessionReducer {
         "open_app" -> a?.optString("app").orEmpty()
         "tap", "long_press" -> "[${a?.optInt("id")}]"
         "tap_at" -> "${a?.optInt("x")},${a?.optInt("y")}"
+        "drag" -> "${a?.optInt("x1")},${a?.optInt("y1")} → ${a?.optInt("x2")},${a?.optInt("y2")}" + (a?.optLong("hold_ms", 0)?.takeIf { it > 0 }?.let { " · ${it} ms" } ?: "")
         "type_text" -> "“${a?.optString("text").orEmpty().take(40)}”"
         "swipe" -> a?.optString("direction").orEmpty()
         "scroll" -> a?.optString("direction").orEmpty()

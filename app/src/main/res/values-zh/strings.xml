@@ -338,6 +338,7 @@
     <string name="tool_open_app">打开应用</string>
     <string name="tool_tap">点击</string>
     <string name="tool_long_press">长按</string>
+    <string name="tool_drag">拖动</string>
     <string name="tool_type_text">输入文字</string>
     <string name="tool_swipe">滑动</string>
     <string name="tool_scroll">滚动</string>

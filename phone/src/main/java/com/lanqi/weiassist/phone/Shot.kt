@@ -11,8 +11,8 @@ data class Shot(val jpegBase64: String, val screenW: Int, val screenH: Int, val 
 
     /** What the model reads with the picture. */
     fun caption(): String =
-        if (screenW == imageW && screenH == imageH) "Screenshot of the whole screen, ${imageW}x$imageH px: tap_at takes these pixels as they are."
-        else "Screenshot scaled to ${imageW}x$imageH px; the screen is ${screenW}x$screenH. For tap_at, multiply x and y by ${factor()}."
+        if (screenW == imageW && screenH == imageH) "Screenshot of the whole screen, ${imageW}x$imageH px: tap_at and drag take these pixels as they are."
+        else "Screenshot scaled to ${imageW}x$imageH px; the screen is ${screenW}x$screenH. For tap_at and drag, multiply x and y by ${factor()}."
 
     private fun factor(): String = (screenW.toDouble() / imageW).let { f -> "%.3f".format(java.util.Locale.ROOT, f).trimEnd('0').trimEnd('.') }
 

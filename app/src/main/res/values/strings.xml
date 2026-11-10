@@ -343,6 +343,7 @@
     <string name="tool_open_app">Open app</string>
     <string name="tool_tap">Tap</string>
     <string name="tool_long_press">Long press</string>
+    <string name="tool_drag">Drag</string>
     <string name="tool_type_text">Type</string>
     <string name="tool_swipe">Swipe</string>
     <string name="tool_scroll">Scroll</string>

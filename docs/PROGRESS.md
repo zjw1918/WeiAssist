@@ -41,7 +41,7 @@ and risky taps approved from the chat; tried with a real bot on the realme.
 - **Project files:** CI workflow, README, ARCHITECTURE, CONTRIBUTING, Code of Conduct, SECURITY, Apache-2.0 and NOTICE.
 
 ### Agent capabilities
-- **Tools:** `bash` (Termux, see below), `open_app`, `read_screen` (with element centres), `screenshot` (image for vision models), `tap`, `tap_at`, `long_press`, `type_text`, `scroll`, `swipe`, `press_key`, `wait`.
+- **Tools:** `bash` (Termux, see below), `open_app`, `read_screen` (with element centres), `screenshot` (image for vision models), `tap`, `tap_at`, `drag` (press, move, hold: game joysticks, sliders), `long_press`, `type_text`, `scroll`, `swipe`, `press_key`, `wait`.
 - **Settling:** every action waits for the UI to settle; on a session's display, `open_app` first waits for the app's window.
 - **Context:** Pi's `transformContext` keeps only the latest two screens per model call.
 - **Safety:**

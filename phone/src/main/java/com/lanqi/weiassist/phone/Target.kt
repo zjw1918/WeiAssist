@@ -30,6 +30,8 @@ sealed interface Target {
 interface DisplayIo {
     fun tap(x: Float, y: Float, durationMs: Long): Boolean
     fun swipe(x1: Float, y1: Float, x2: Float, y2: Float, durationMs: Long): Boolean
+    /** Press at x1,y1, move to x2,y2 over [moveMs], stay there [holdMs], lift. */
+    fun drag(x1: Float, y1: Float, x2: Float, y2: Float, moveMs: Long, holdMs: Long): Boolean
     fun key(keyCode: Int): Boolean
     /** JPEG bytes, empty if there is no frame. */
     fun screenshot(maxWidth: Int, quality: Int): ByteArray
