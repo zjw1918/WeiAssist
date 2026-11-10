@@ -154,7 +154,8 @@ class FileTools(
         is Place.Local -> withContext(Dispatchers.IO) {
             val d = p.file
             when {
-                !d.exists() -> ToolResult("No such folder: ${p.shown}", isError = true)
+                // Looking before making it is normal: an answer, not a failed step.
+                !d.exists() -> ToolResult("${p.shown} doesn't exist yet.")
                 !d.isDirectory -> ToolResult("${p.shown} is a file (${d.length()} bytes).")
                 else -> {
                     val entries = d.listFiles().orEmpty().sortedBy { it.name.lowercase() }
@@ -169,7 +170,7 @@ class FileTools(
                     val (type, size, name) = l.split(' ', limit = 3).let { Triple(it[0], it.getOrElse(1) { "0" }, it.getOrElse(2) { "" }) }
                     Triple(name, type == "d", size.toLongOrNull() ?: 0)
                 }))
-                3 -> ToolResult("No such folder: ${p.shown}", isError = true)
+                3 -> ToolResult("${p.shown} doesn't exist yet.")
                 4 -> ToolResult("${p.shown} is a file.")
                 else -> ToolResult(out.ifBlank { "ls failed ($code)" }, isError = true)
             }
@@ -184,7 +185,7 @@ class FileTools(
                 val byPath = '/' in pattern
                 val pat = if (byPath) pattern.replace("**/", "*").replace("**", "*") else pattern
                 val (code, out) = termuxScript(session, GLOB, listOf(p.path, pat, if (byPath) "path" else "name"))
-                if (code == 3) return ToolResult("No such folder: ${p.shown}", isError = true)
+                if (code == 3) return ToolResult("${p.shown} doesn't exist yet, so no files match.")
                 out.lines().filter { it.isNotBlank() }
             }
         }

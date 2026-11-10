@@ -29,10 +29,11 @@ object Prompts {
     fun forSession(s: SessionSummary, name: String): List<PromptSection> {
         fun section(id: String, joiner: String = "", forTool: String? = null) =
             PromptSection(id, joiner + text(id).replace("{name}", name).replace("{channel}", s.channel?.let(::channelName).orEmpty()), forTool)
-        if (s.supervisor) return listOf(section("supervisor"))
+        if (s.supervisor) return listOf(section("supervisor"), section("ask", "\n\n", forTool = "ask_user_question"))
         return buildList {
             add(section(if (s.phone) "phone" else "chat"))
             add(section("web", "\n\n", forTool = "web_fetch"))
+            add(section("ask", "\n\n", forTool = "ask_user_question"))
             add(section("files", "\n\n", forTool = "read"))
             add(section(if (s.termux) "files-termux" else "files-app", "\n", forTool = "read"))
             when (fileAccess()) {
