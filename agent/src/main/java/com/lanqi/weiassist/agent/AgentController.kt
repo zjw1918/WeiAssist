@@ -779,6 +779,12 @@ class AgentController(context: Context) {
     private fun friendly(msg: String): String = when {
         _state.value.source == ProviderSource.Gateway && GatewayLink.unreachable(msg) ->
             appContext.getString(R.string.err_gateway_unreachable) + "\n" + msg
+        // Any other provider that didn't answer: which one, and where (a server on the network may be off or asleep).
+        GatewayLink.unreachable(msg) -> with(_state.value) {
+            val name = provider?.name ?: providerId
+            GatewayLink.unreachableAddress(msg)?.let { appContext.getString(R.string.err_server_unreachable, name, it) }
+                ?: appContext.getString(R.string.err_server_unreachable_plain, name)
+        } + "\n" + msg
         outOfCredit(msg) -> with(_state.value) {
             // OpenAI: people often expect a ChatGPT plan to cover the API, so say it doesn't.
             if (providerId == "openai") appContext.getString(R.string.err_quota)

@@ -64,6 +64,23 @@ class MessageContextAndPlanTest {
         assertNull(Plan.parse(JSONObject()))
     }
 
+    @Test fun `a server that didn't answer is named with its address`() {
+        assertEquals("10.0.0.144:3425", GatewayLink.unreachableAddress("Connection error.: Network error: Failed to connect to /10.0.0.144:3425"))
+        assertEquals("127.0.0.1:3425", GatewayLink.unreachableAddress("fetch failed: connect ECONNREFUSED 127.0.0.1:3425"))
+        assertEquals("api.example.com:443", GatewayLink.unreachableAddress("Failed to connect to api.example.com:443"))
+        assertEquals(null, GatewayLink.unreachableAddress("Connection error."))
+        assertTrue(GatewayLink.unreachable("Connection error.: Network error: Failed to connect to /10.0.0.144:3425"))
+    }
+
+    @Test fun `every session but the supervisor's is told to ask with choices when it must wait for the user`() {
+        val chat = SessionSummary("s1", "", phone = false, status = SessionStatus.Idle, createdAt = 0, updatedAt = 0)
+        val tools = ToolCatalog.forSession(chat).map { it.name }
+        val p = com.lanqi.weiassist.core.composePrompt(Prompts.forSession(chat, "Ada"), tools)
+        assertTrue(p, "ask with ask_user_question instead of ending your turn" in p)
+        // A core with its own ask_user_question (dsh) keeps the app's guide only if it keeps the app's tool.
+        assertFalse(com.lanqi.weiassist.core.composePrompt(Prompts.forSession(chat, "Ada"), tools - "ask_user_question").contains("ask_user_question"))
+    }
+
     @Test fun `Pi's questions take dsh's shape, and the answers come back as text`() {
         fun opts(vararg labels: String) = JSONArray(labels.map { JSONObject().put("label", it) })
         val q1 = JSONObject().put("question", "Which Ann?").put("header", "Contact").put("options", opts("Ann Lee (Recommended)", "Ann Wu"))

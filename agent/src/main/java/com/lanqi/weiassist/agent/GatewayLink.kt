@@ -67,6 +67,10 @@ object GatewayLink {
      * A request's error that means nothing answered (with the gateway as the provider: it stopped, or its app's
      * process ended). Pi in a WebView says "Failed to fetch", dsh's Node "fetch failed" or ECONNREFUSED.
      */
+    /** The host:port a failed connection named ("Failed to connect to /10.0.0.144:3425"), if it says. */
+    fun unreachableAddress(msg: String): String? =
+        Regex("""(?:connect to|ECONNREFUSED)\s+/?([A-Za-z0-9.\-\[\]:]+:\d+)""").find(msg)?.groupValues?.get(1)
+
     fun unreachable(msg: String) = listOf("ECONNREFUSED", "Connection refused", "Failed to connect", "fetch failed", "Failed to fetch", "Connection error")
         .any { it in msg }
 }

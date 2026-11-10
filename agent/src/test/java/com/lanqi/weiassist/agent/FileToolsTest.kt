@@ -128,6 +128,14 @@ class FileToolsTest {
         assertTrue(call("read", "path" to "/sdcard/Download/report.txt").text.contains("All files access"))
     }
 
+    @Test fun `looking at a folder that isn't there yet is an answer, not a failure`() {
+        val r = call("ls", "path" to "notes")
+        assertFalse(r.text, r.isError)
+        assertEquals("notes doesn't exist yet.", r.text)
+        assertFalse(call("glob", "pattern" to "*.md", "path" to "notes").isError)
+        assertTrue("reading a missing file still fails", call("read", "path" to "notes/a.md").isError)
+    }
+
     @Test fun `off means no file tools at all`() {
         level = Level.Off
         assertTrue(call("ls", "path" to ".").isError)

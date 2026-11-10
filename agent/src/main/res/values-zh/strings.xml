@@ -18,6 +18,8 @@
     <string name="gateway_not_serving">网关没有开启。请先打开“网关”应用并开启它。</string>
     <string name="gateway_no_models">网关还没有可用的模型。请先在它的控制台登录一个服务商。</string>
     <string name="err_gateway_unreachable">网关没有响应：打开“网关”应用开启它，或在“AI 服务”页改用 WeiAssist 自己的服务商。</string>
+    <string name="err_server_unreachable">连不上 %1$s（%2$s）。请检查本机网络；如果它是局域网里的服务器或另一台设备，请确认它已开启、没有休眠，然后重新发送。</string>
+    <string name="err_server_unreachable_plain">连不上 %1$s。请检查本机网络；如果它是局域网里的服务器或另一台设备，请确认它已开启、没有休眠，然后重新发送。</string>
     <string name="err_model">这个账号用不了模型 %1$s，在上面换一个试试。</string>
     <string name="first_hello">你好</string>
     <string name="confirm_title">小维助手要点「%1$s」</string>

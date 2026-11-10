@@ -18,6 +18,8 @@
     <string name="gateway_not_serving">Gateway isn\'t on. Open the Gateway app and turn it on first.</string>
     <string name="gateway_no_models">Gateway serves no models yet. Sign in to a provider in its console first.</string>
     <string name="err_gateway_unreachable">Gateway isn\'t answering: open the Gateway app to turn it on, or switch to WeiAssist\'s own providers in the AI providers tab.</string>
+    <string name="err_server_unreachable">Couldn\'t reach %1$s at %2$s. Check this phone\'s network; if it\'s a server on your network or another device, make sure it\'s on and awake. Then send again.</string>
+    <string name="err_server_unreachable_plain">Couldn\'t reach %1$s. Check this phone\'s network; if it\'s a server on your network or another device, make sure it\'s on and awake. Then send again.</string>
     <string name="err_model">This account can\'t use the model %1$s. Pick another one above.</string>
     <string name="first_hello">Hello</string>
     <string name="confirm_title">WeiAssist wants to tap “%1$s”</string>
