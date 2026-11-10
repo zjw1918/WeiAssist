@@ -15,6 +15,18 @@ android {
     }
     defaultConfig {
         minSdk = 26
+        // Which magpie this is, for the gateway app to show: the release tag on the pinned commit (when the checkout
+        // has tags; CI's shallow one may not) and the commit.
+        fun git(vararg args: String) = providers.exec {
+            workingDir = layout.projectDirectory.dir("upstream").asFile
+            commandLine("git", *args)
+            isIgnoreExitValue = true
+        }.standardOutput.asText.orNull?.lineSequence()?.firstOrNull()?.trim().orEmpty()
+        buildConfigField("String", "MAGPIE_TAG", "\"${git("tag", "--points-at", "HEAD", "--sort=-creatordate")}\"")
+        buildConfigField("String", "MAGPIE_COMMIT", "\"${git("rev-parse", "--short", "HEAD")}\"")
+    }
+    buildFeatures {
+        buildConfig = true
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11

@@ -16,8 +16,11 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
 import android.widget.TextView
+import android.content.res.Configuration
 import androidx.core.view.ViewCompat
+import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
+import com.lanqi.weiassist.magpie.BuildConfig as MagpieBuild
 import com.lanqi.weiassist.magpie.MagpieHost
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -42,6 +45,14 @@ class GatewayActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Drawn under transparent system bars on every Android version (15+ does so anyway), with the bars' icons dark
+        // on the light theme and light on the dark one: else they stay white on the white page and can't be read.
+        WindowCompat.enableEdgeToEdge(window)
+        val night = (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = !night
+            isAppearanceLightNavigationBars = !night
+        }
         val pad = dp(20)
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -92,6 +103,11 @@ class GatewayActivity : Activity() {
                 }
             }
         }, LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT))
+        // Which magpie and which app this is (to compare with magpie's releases, or to report a problem).
+        column.addView(text(versions(), 14f, muted = true).apply {
+            setTextIsSelectable(true)
+            setPadding(0, dp(32), 0, 0)
+        })
         setContentView(ScrollView(this).apply { addView(column) })
     }
 
@@ -141,6 +157,20 @@ class GatewayActivity : Activity() {
         val colors = theme.obtainStyledAttributes(intArrayOf(if (muted) android.R.attr.textColorSecondary else android.R.attr.textColorPrimary))
         setTextColor(colors.getColorStateList(0))
         colors.recycle()
+    }
+
+    /** "magpie v0.1.3536 (03a800ac6) · Gateway 0.5.1": the tag when the build knew it, the commit always. */
+    private fun versions(): String {
+        val tag = MagpieBuild.MAGPIE_TAG
+        val commit = MagpieBuild.MAGPIE_COMMIT
+        val magpie = when {
+            tag.isNotEmpty() && commit.isNotEmpty() -> "$tag ($commit)"
+            tag.isNotEmpty() -> tag
+            commit.isNotEmpty() -> commit
+            else -> "?"
+        }
+        val app = runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull().orEmpty()
+        return getString(R.string.versions, magpie, app)
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
