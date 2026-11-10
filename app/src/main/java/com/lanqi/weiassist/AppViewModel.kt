@@ -154,6 +154,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         private set
     fun showPreviews(on: Boolean) { showPreviews = on; prefs.edit().putBoolean("showLivePreviews", on).apply() }
 
+    /** What the file tools may reach (read by the agent on every call; a session's tools and prompt when it starts). */
+    var fileAccess by mutableStateOf(com.lanqi.weiassist.agent.FileTools.Level.of(prefs.getString(com.lanqi.weiassist.agent.FileTools.SETTING, null)))
+        private set
+    fun fileAccess(l: com.lanqi.weiassist.agent.FileTools.Level) { fileAccess = l; prefs.edit().putString(com.lanqi.weiassist.agent.FileTools.SETTING, l.id).apply() }
+
     /** web_fetch may read this phone's and the local network's addresses (read by WebFetch on every call). */
     var webFetchLocal by mutableStateOf(prefs.getBoolean(com.lanqi.weiassist.agent.WebFetch.SETTING, false))
         private set

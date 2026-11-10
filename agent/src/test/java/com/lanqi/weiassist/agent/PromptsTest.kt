@@ -18,13 +18,13 @@ class PromptsTest {
 
     @Test fun `Pi's prompts are word for word what pi-host composed before, for every kind of session`() {
         // prompts-pi-before.json: the prompts pi-host's own code composed, generated from it before the move. The web
-        // guide came later: it goes with web_fetch, so without that tool the prompt is still the old one.
+        // and file guides came later: they go with web_fetch and read, so without those the prompt is still the old one.
         val before = JSONArray(checkNotNull(javaClass.getResourceAsStream("/prompts-pi-before.json")).use { String(it.readBytes()) })
         assertEquals(12, before.length())
         for (i in 0 until before.length()) {
             val c = before.getJSONObject(i)
             val s = session(c.getString("kind"), c.getBoolean("bash"), c.optString("channel").takeIf { it.isNotEmpty() && it != "null" })
-            assertEquals(c.toString(), c.getString("prompt"), composePrompt(Prompts.forSession(s, "小维助手"), all(s) - "web_fetch"))
+            assertEquals(c.toString(), c.getString("prompt"), composePrompt(Prompts.forSession(s, "小维助手"), all(s) - "web_fetch" - "read"))
         }
     }
 

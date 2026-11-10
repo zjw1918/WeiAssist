@@ -23,6 +23,7 @@ class ToolRouter(
     private val bashDetached: (session: String, call: String, command: String, timeoutSec: Int) -> Unit,
     private val sendFile: suspend (session: String, path: String, caption: String) -> Pair<Boolean, String>,
     private val supervisor: suspend (caller: String, action: String, args: JSONObject) -> String,
+    private val files: suspend (session: String, name: String, args: JSONObject) -> ToolResult = { _, n, _ -> ToolResult("No file tool $n.", isError = true) },
     private val web: suspend (args: JSONObject) -> ToolResult = { a -> WebFetch.run(a).let { ToolResult(it.text, isError = it.isError) } },
 ) {
     private data class Running(val command: String, val timeoutSec: Int)
@@ -60,6 +61,7 @@ class ToolRouter(
                     catch (e: kotlinx.coroutines.CancellationException) { if (fetch.isCancelled && isActive) ToolResult("stopped by the user") else throw e }
                     finally { runningWeb -= "$session/$call" }
                 }
+            ToolCatalog.FILES -> if (!gate(session)) ToolResult("stopped by the user") else files(session, name, args)
             ToolCatalog.SEND_FILE -> {
                 val (ok, text) = if (!gate(session)) false to "Stopped by the user." else sendFile(session, args.getString("path"), args.optString("caption"))
                 ToolResult(text, isError = !ok)

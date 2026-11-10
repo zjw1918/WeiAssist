@@ -21,6 +21,11 @@ class SessionStore(root: File) {
     /** Where a session's attached files are kept (see Attachments.keep). */
     fun attachmentsDir(id: String) = File(attachmentsRoot, id)
 
+    private val workspacesRoot = File(root, "workspaces")
+
+    /** A session's own folder for the file tools, when it has no Termux (see FileTools). */
+    fun workspaceDir(id: String) = File(workspacesRoot, id)
+
     private fun file(id: String, kind: String) = AtomicFile(File(dir, "$id.$kind.json"))
 
     fun loadSummaries(): List<SessionSummary> = dir.listFiles { f -> f.name.endsWith(".meta.json") }.orEmpty()
@@ -60,6 +65,7 @@ class SessionStore(root: File) {
         // Every file of the session, whichever core wrote its transcript.
         dir.listFiles { f -> f.name.startsWith("$id.") }.orEmpty().forEach { it.delete() }
         attachmentsDir(id).deleteRecursively()
+        workspaceDir(id).deleteRecursively()
     }
 
     private fun read(f: AtomicFile): String? = runCatching { String(f.readFully()) }.getOrNull()

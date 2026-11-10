@@ -342,6 +342,46 @@ class Termux(context: Context) {
         return r.getString("stdout").orEmpty().trim().ifEmpty { null }
     }
 
+    /**
+     * Put [file] at [path] (relative to session [session]'s folder, ~/…, or absolute): its folders are made and an
+     * existing file is replaced, as a whole (downloaded beside it, then moved). Null when done, else why not.
+     */
+    suspend fun pushTo(session: String, file: java.io.File, path: String): String? {
+        setupProblem()?.let { return it }
+        markUsed(session, true)
+        // $1 = session folder, $2 = path, $3 = URL. Exit codes: 5 no curl, 6 a folder is in the way.
+        val script = """
+            d="${'$'}{HOME}/sessions/${'$'}{1}"; mkdir -p "${'$'}{d}" && cd "${'$'}{d}" || exit 97
+            f="${'$'}{2/#\~/${'$'}HOME}"
+            [ -d "${'$'}{f}" ] && exit 6
+            mkdir -p "${'$'}(dirname "${'$'}{f}")" || exit 7
+            command -v curl > /dev/null || exit 5
+            t="${'$'}{f}.weiassist-writing"
+            curl -sS -f --max-time 110 -o "${'$'}{t}" "${'$'}{3}" && mv -f "${'$'}{t}" "${'$'}{f}"
+        """.trimIndent()
+        val (r, ok) = LoopbackTransfer.send(file) { url -> execute(arrayOf("-c", script, "bash", safe(session), path, url), 150) }
+        val code = r?.getInt("exitCode", -1) ?: return "No answer from Termux."
+        if (ok && code == 0) return null
+        if (r.getInt("err", RESULT_OK) != RESULT_OK) return "Termux could not run the command: ${r.getString("errmsg").orEmpty()}"
+        return when (code) {
+            5 -> "curl is missing in Termux: run `pkg install -y curl` with bash, then try again."
+            6 -> "$path is a folder."
+            7 -> "Could not make the folders for $path."
+            else -> "The file could not be written in Termux. ${r.getString("stderr").orEmpty().take(300)}".trim()
+        }
+    }
+
+    /**
+     * Run a file tool's [script] with bash ($1… = [args], $SESSION = the session's folder name): exit code and output
+     * (stdout, then stderr), or null if Termux didn't answer.
+     */
+    suspend fun fileScript(session: String, script: String, args: List<String>): Pair<Int, String>? {
+        markUsed(session, true)
+        val r = execute(arrayOf("-c", "SESSION=\"${'$'}{0}\"\n$script", safe(session)) + args.toTypedArray(), 60) ?: return null
+        if (r.getInt("err", RESULT_OK) != RESULT_OK) return 2 to "Termux could not run the command: ${r.getString("errmsg").orEmpty()}"
+        return r.getInt("exitCode", -1) to (r.getString("stdout").orEmpty() + r.getString("stderr").orEmpty())
+    }
+
     /** What [inspect] found. [problem]: Termux can't run this app's commands (then the rest is unknown). */
     data class Inspection(
         val problem: String? = null,

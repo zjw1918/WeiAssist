@@ -21,6 +21,17 @@ export const SCRIPTS = {
 	send: [{ tool: "read_screen", args: {} }, { tool: "tap", args: { id: 2 } }, { text: "sent" }],
 	buy_at: [{ tool: "tap_at", args: { x: 900, y: 2200 } }, { text: "ordered" }],
 	shot: [{ tool: "screenshot", args: {} }, { text: "looked" }],
+	// The file tools in the session's folder, then the phone's storage (refused unless the user allows it).
+	files: [
+		{ tool: "write", args: { path: "notes/plan.md", content: "# Plan\nTODO: buy milk\nTODO: call Ann\n" } },
+		{ tool: "edit", args: { path: "notes/plan.md", old_string: "buy milk", new_string: "buy oat milk" } },
+		{ tool: "read", args: { path: "notes/plan.md" } },
+		{ tool: "ls", args: { path: "notes" } },
+		{ tool: "glob", args: { pattern: "*.md" } },
+		{ tool: "grep", args: { pattern: "TODO" } },
+		{ tool: "ls", args: { path: "/sdcard/Download" } },
+		{ text: "worked with files" },
+	],
 	// web_fetch: a real page, then an address on the phone itself (refused).
 	fetch: [{ tool: "web_fetch", args: { url: "https://example.com" } }, { tool: "web_fetch", args: { url: "http://127.0.0.1:8787/v1/models" } }, { text: "fetched a page" }],
 	// A conversation from Telegram sends a file it made in Termux.

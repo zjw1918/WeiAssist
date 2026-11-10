@@ -280,6 +280,7 @@ object SessionReducer {
         "web_search" -> a?.optJSONArray("queries")?.let { q -> (0 until q.length()).joinToString(" · ") { q.optString(it) } }
             ?: a?.optString("query").orEmpty()
         "read", "write", "edit", "read_image", "str_replace_editor" -> a?.optString("file_path").orEmpty().ifEmpty { a?.optString("path").orEmpty() }
+        "ls" -> a?.optString("path").orEmpty().ifEmpty { "." }
         "grep", "glob" -> listOfNotNull(a?.optString("pattern")?.ifEmpty { null }, a?.optString("path")?.ifEmpty { null }).joinToString("  in  ")
         "interrupt_agent" -> a?.optString("agent_id").orEmpty()
         "skill" -> a?.optString("name").orEmpty()

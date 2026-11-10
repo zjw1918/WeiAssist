@@ -19,7 +19,8 @@ object ToolCatalog {
 
     /**
      * The tools of a session: the supervisor's own (it doesn't operate the phone or run commands); web_fetch for
-     * every other session; phone tools for a phone session; bash and send_file with Termux (send_file: to the
+     * every other session; the file tools
+     * unless the user turned them off; phone tools for a phone session; bash and send_file with Termux (send_file: to the
      * messaging app's chat, or the app's). A core that has a tool of the same name keeps its own (dsh's web_fetch).
      */
     fun forSession(s: SessionSummary): List<ToolSpec> {
@@ -27,6 +28,7 @@ object ToolCatalog {
             s.supervisor -> setOf(SUPERVISOR)
             else -> buildSet {
                 add(WEB)
+                if (files()) add(FILES)
                 if (s.phone) add(PHONE)
                 if (s.termux) add(BASH)
                 if (s.termux) add(SEND_FILE)
@@ -39,6 +41,10 @@ object ToolCatalog {
     const val BASH = "bash"
     const val SEND_FILE = "send_file"
     const val WEB = "web"
+    const val FILES = "files"
+
+    /** Whether the user lets the assistant use files at all (Settings → File access); read when a session is set up. */
+    @Volatile var files: () -> Boolean = { true }
     const val SUPERVISOR = "supervisor"
 
     private fun load(): String = checkNotNull(ToolCatalog::class.java.getResourceAsStream("tools.json")) { "tools.json is missing" }

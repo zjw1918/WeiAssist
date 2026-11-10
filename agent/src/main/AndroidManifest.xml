@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- Android 14+: the agent's foreground service type. See AgentService and docs/ARCHITECTURE.md. -->
@@ -11,6 +12,11 @@
     <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
     <!-- Keep the CPU awake while a bash command runs (builds, tests with the screen off). -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- The file tools on the phone's storage, only when the user picks it in Settings → File access:
+         "All files access" on Android 11+, the storage permissions before. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
     <queries>
         <package android:name="com.termux" />
     </queries>

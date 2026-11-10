@@ -67,6 +67,30 @@ class AgentController(context: Context) {
 
     init {
         WebFetch.allowLocal = { prefs.getBoolean(WebFetch.SETTING, false) }
+        ToolCatalog.files = { fileAccess() != FileTools.Level.Off }
+        Prompts.fileAccess = ::fileAccess
+    }
+
+    /** The user's choice in Settings → File access. */
+    private fun fileAccess() = FileTools.Level.of(prefs.getString(FileTools.SETTING, null))
+
+    /** The file tools (read, write, edit, ls, glob, grep). */
+    private val files by lazy {
+        FileTools(
+            level = ::fileAccess,
+            summary = sessions::summary,
+            workspace = sessions::workspaceDir,
+            storageRoot = android.os.Environment.getExternalStorageDirectory(),
+            storageGranted = { storageGranted(appContext) },
+            termux = object : FileTools.TermuxFiles {
+                override fun problem() = termux.setupProblem()
+                override suspend fun script(session: String, script: String, args: List<String>) = termux.fileScript(session, script, args)
+                override suspend fun pull(session: String, path: String, dest: File, maxBytes: Long) = termux.pull(session, path, dest, maxBytes)
+                override suspend fun push(session: String, file: File, path: String) = termux.pushTo(session, file, path)
+            },
+            image = Attachments::jpegForModel,
+            scratch = File(appContext.cacheDir, "file-tools"),
+        )
     }
 
     init { migrateGatewayProvider() }
@@ -355,6 +379,7 @@ class AgentController(context: Context) {
             bashDetached = { s, c, command, timeout -> backgroundJobs.add(BackgroundJob(s, c, command, timeout, System.currentTimeMillis())) },
             sendFile = ::sendFile,
             supervisor = commands::handle,
+            files = files::call,
         )
     }
 

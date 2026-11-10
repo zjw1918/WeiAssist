@@ -2,7 +2,7 @@
 	"about": [
 		"The app's tools, for every AI core: name, label, description and parameters (JSON Schema), as the model sees them.",
 		"set: which sessions get it (ToolCatalog.forSession): phone = phone sessions; bash = sessions with Termux;",
-		"send_file = sessions with Termux in a messaging app; web = every session but the supervisor; supervisor = the supervisor.",
+		"send_file = sessions with Termux in a messaging app; web = every session but the supervisor; files = every session but the supervisor, unless the user turned file access off; supervisor = the supervisor.",
 		"parallel: the core may run several calls of it at once (else one at a time).",
 		"A core declares these and sends each call to the app's \"tool\" host call (ToolRouter), which runs it."
 	],
@@ -286,6 +286,165 @@
 				},
 				"required": [
 					"url"
+				],
+				"additionalProperties": false
+			},
+			"parallel": true
+		},
+		{
+			"name": "read",
+			"set": "files",
+			"label": "Read file",
+			"description": "Read a text file (or look at an image: png, jpg, webp…). Long files come in parts: up to 2000 lines from offset, saying how to read on. Paths: relative to this session's folder; with Termux, also ~/… and Termux's absolute paths; /sdcard/… is the phone's storage when the user allows it.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"path": {
+						"type": "string",
+						"description": "The file's path"
+					},
+					"offset": {
+						"type": "integer",
+						"description": "First line to read, from 1 (default 1)"
+					},
+					"limit": {
+						"type": "integer",
+						"description": "Most lines to read (default 2000)"
+					}
+				},
+				"required": [
+					"path"
+				],
+				"additionalProperties": false
+			},
+			"parallel": true
+		},
+		{
+			"name": "write",
+			"set": "files",
+			"label": "Write file",
+			"description": "Create or replace a file with this content; missing folders are made. To change part of an existing file, use edit. Paths: relative to this session's folder; with Termux, also ~/… and Termux's absolute paths; /sdcard/… is the phone's storage when the user allows it.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"path": {
+						"type": "string",
+						"description": "The file's path"
+					},
+					"content": {
+						"type": "string",
+						"description": "The whole new content"
+					}
+				},
+				"required": [
+					"path",
+					"content"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "edit",
+			"set": "files",
+			"label": "Edit file",
+			"description": "Replace exact text in a file: old_string must match the file exactly (spaces and line breaks included) and occur once, unless replace_all. Read the file first. Paths: relative to this session's folder; with Termux, also ~/… and Termux's absolute paths; /sdcard/… is the phone's storage when the user allows it.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"path": {
+						"type": "string",
+						"description": "The file's path"
+					},
+					"old_string": {
+						"type": "string",
+						"description": "The exact text to replace"
+					},
+					"new_string": {
+						"type": "string",
+						"description": "The text to put in its place"
+					},
+					"replace_all": {
+						"type": "boolean",
+						"description": "Replace every occurrence (default false)"
+					}
+				},
+				"required": [
+					"path",
+					"old_string",
+					"new_string"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "ls",
+			"set": "files",
+			"label": "List folder",
+			"description": "List a folder: its files with sizes, and its subfolders (ending in /). Paths: relative to this session's folder; with Termux, also ~/… and Termux's absolute paths; /sdcard/… is the phone's storage when the user allows it.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"path": {
+						"type": "string",
+						"description": "The folder (default: this session's folder)"
+					}
+				},
+				"required": [],
+				"additionalProperties": false
+			},
+			"parallel": true
+		},
+		{
+			"name": "glob",
+			"set": "files",
+			"label": "Find files",
+			"description": "Find files by name: a glob like *.go matches file names anywhere below the folder; one with a / (src/**/*.kt) matches paths. Hidden folders are skipped. Paths: relative to this session's folder; with Termux, also ~/… and Termux's absolute paths; /sdcard/… is the phone's storage when the user allows it.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"pattern": {
+						"type": "string",
+						"description": "The glob, e.g. *.md or src/**/*.kt"
+					},
+					"path": {
+						"type": "string",
+						"description": "The folder to search (default: this session's folder)"
+					}
+				},
+				"required": [
+					"pattern"
+				],
+				"additionalProperties": false
+			},
+			"parallel": true
+		},
+		{
+			"name": "grep",
+			"set": "files",
+			"label": "Search in files",
+			"description": "Search files for a regular expression: each match as path:line: text. Binary files and hidden folders are skipped. Paths: relative to this session's folder; with Termux, also ~/… and Termux's absolute paths; /sdcard/… is the phone's storage when the user allows it.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"pattern": {
+						"type": "string",
+						"description": "The regular expression"
+					},
+					"path": {
+						"type": "string",
+						"description": "The file or folder to search (default: this session's folder)"
+					},
+					"glob": {
+						"type": "string",
+						"description": "Only files whose name matches this glob, e.g. *.go"
+					},
+					"ignore_case": {
+						"type": "boolean",
+						"description": "Ignore upper/lower case"
+					}
+				},
+				"required": [
+					"pattern"
 				],
 				"additionalProperties": false
 			},

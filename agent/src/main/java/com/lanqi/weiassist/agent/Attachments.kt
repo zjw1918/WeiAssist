@@ -163,6 +163,14 @@ object Attachments {
         out
     }
 
+    /** An image file as the model sees attachments (base64 JPEG, scaled down), or null if Android can't decode it. */
+    fun jpegForModel(f: File): String? {
+        val bmp = decodeScaled { f.inputStream() } ?: return null
+        val out = java.io.ByteArrayOutputStream()
+        flatten(bmp).compress(Bitmap.CompressFormat.JPEG, 85, out)
+        return Base64.encodeToString(out.toByteArray(), Base64.NO_WRAP)
+    }
+
     private fun text(t: String) = JSONObject().put("type", "text").put("text", t)
     private fun image(bytes: ByteArray, mime: String) =
         JSONObject().put("type", "image").put("mimeType", mime).put("data", Base64.encodeToString(bytes, Base64.NO_WRAP))
