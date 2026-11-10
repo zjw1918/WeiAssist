@@ -38,14 +38,25 @@ class MessageContextAndPlanTest {
         assertFalse(MessageContext.text(at, Locale.ENGLISH).contains("Since your last turn"))
     }
 
-    @Test fun `tmux's job list becomes jobs`() {
-        val jobs = Termux.parseTmuxJobs("s1", "magpie-build\t1794292000\t\"cd proj/magpie && go build -o magpie .\"\nweb\t1794292100\tpython -m http.server 8080\n\n")
-        assertEquals(listOf("magpie-build", "web"), jobs.map { it.name })
+    @Test fun `the job list becomes tmux jobs and left-behind processes`() {
+        val jobs = Termux.parseSessionJobs("s1",
+            "tmux\tmagpie-build\t1794292000\t\"cd proj/magpie && go build -o magpie .\"\n" +
+                "process\t28512\t1794292100\tbash -c for i in \$(seq 1 60); do echo tick \$i; sleep 5; done \n" +
+                "process\tnot-a-pid\t1\tx\nweird\tx\t1\ty\n\n")
+        assertEquals(listOf("magpie-build", "28512"), jobs.map { it.name })
+        assertEquals(listOf(null, 28512), jobs.map { it.pid })
         assertEquals(1794292000_000L, jobs[0].startedAt)
         assertEquals("cd proj/magpie && go build -o magpie .", jobs[0].command)
-        assertEquals("python -m http.server 8080", jobs[1].command)
-        assertTrue(Termux.parseTmuxJobs("s1", "").isEmpty())
-        assertEquals(0L, Termux.parseTmuxJobs("s1", "odd").single().startedAt)
+        assertEquals("bash -c for i in \$(seq 1 60); do echo tick \$i; sleep 5; done", jobs[1].command)
+        assertTrue(Termux.parseSessionJobs("s1", "").isEmpty())
+    }
+
+    @Test fun `the model hears about left-behind processes the user or Stop ended`() {
+        val process = SessionJob("s1", "28512", 0, "bash -c sleep 300", pid = 28512)
+        assertEquals("The user stopped your background process `bash -c sleep 300` (pid 28512) from the app; it has ended.", MessageContext.userStopped(process))
+        assertEquals("The user stopped your tmux job `web` from the app; it has ended.", MessageContext.userStopped(SessionJob("s1", "web", 0, "x")))
+        assertEquals("The user pressed Stop, which ended your tmux job `web` and background processes `a`, `b`. They are not running any more.",
+            MessageContext.stopped(emptyList(), listOf("web"), listOf("a", "b")))
     }
 
     @Test fun `a steered message counts as delivered when the core echoes it with the context`() {

@@ -110,6 +110,9 @@ class Termux(context: Context) {
         val script = PRELUDE + """
             d="${'$'}{HOME}/sessions/${'$'}{2}"; mkdir -p "${'$'}{d}/.tmux" && cd "${'$'}{d}" || exit 97
             export TMUX_TMPDIR="${'$'}{d}/.tmux"
+            # Everything the command starts carries the session's mark, also what it leaves running (cmd &, nohup):
+            # the app finds those (sessionJobs) and ends them with the session (cleanUp, STOP_ALL).
+            export WEIASSIST_SESSION="${'$'}{2}"
             p="${'$'}{d}/.bash-${'$'}{3}.pid"
             o="${'$'}{d}/.bash-${'$'}{3}.out"; e="${'$'}{d}/.bash-${'$'}{3}.err"
             timeout -k 5 "${'$'}{4}" bash -c "${'$'}{1}" < /dev/null > "${'$'}{o}" 2> "${'$'}{e}" & echo ${'$'}! > "${'$'}{p}"
@@ -233,6 +236,7 @@ class Termux(context: Context) {
             d="${'$'}{HOME}/sessions/${'$'}{1}"
             if [ -d "${'$'}{d}" ]; then
               TMUX_TMPDIR="${'$'}{d}/.tmux" tmux kill-server 2> /dev/null
+              for p in /proc/[0-9]*; do tr '\0' '\n' < "${'$'}p/environ" 2> /dev/null | grep -qx "WEIASSIST_SESSION=${'$'}1" && kill -TERM "${'$'}{p#/proc/}" 2> /dev/null; done
               rm -f "${'$'}{d}"/.bash-*.kept
               for p in "${'$'}{d}"/.bash-*.pid; do [ -f "${'$'}{p}" ] && kill -TERM "${'$'}(cat "${'$'}{p}")" 2> /dev/null; done
               [ "${'$'}{2}" = 1 ] && rm -rf -- "${'$'}{d}"
@@ -383,42 +387,65 @@ class Termux(context: Context) {
     }
 
     /**
-     * Session [session]'s tmux jobs (its own tmux server, see [run]): what the model left running there, a server or a
-     * build. Null if Termux didn't answer (then nothing is known), empty when there are none.
+     * What session [session]'s work left running: its tmux jobs (its own tmux server, see [run]) and processes a
+     * command started in the background (`cmd &`, nohup) that outlived it. Null if Termux didn't answer (then nothing
+     * is known), empty when there are none.
      */
-    suspend fun tmuxJobs(session: String): List<TmuxJob>? {
+    suspend fun sessionJobs(session: String): List<SessionJob>? {
         if (setupProblem() != null || !used(session)) return emptyList()
-        // Tab-separated: name, start (epoch seconds), the command it was started with.
+        // Tab-separated: kind (tmux, process), name (or pid), start (epoch seconds), the command.
         val script = TMUX_SOCKET + """
-            [ -S "${'$'}{s}" ] || exit 0
-            tmux -S "${'$'}{s}" ls -F '#{session_name}	#{session_created}	#{pane_start_command}' 2> /dev/null
+            if [ -S "${'$'}s" ]; then
+              tmux -S "${'$'}s" ls -F 'tmux	#{session_name}	#{session_created}	#{pane_start_command}' 2> /dev/null
+            fi
+            # Processes a command left behind (cmd &, nohup): marked as this session's (run exports the mark), orphaned (their
+            # parent is 1), and not tmux's own server.
+            for p in /proc/[0-9]*; do
+              tr '\0' '\n' < "${'$'}p/environ" 2> /dev/null | grep -qx "WEIASSIST_SESSION=${'$'}1" || continue
+              [ "${'$'}(sed 's/.*) //' "${'$'}p/stat" 2> /dev/null | cut -d' ' -f2)" = 1 ] || continue
+              case "${'$'}(cat "${'$'}p/comm" 2> /dev/null)" in tmux*) continue ;; esac
+              printf 'process\t%s\t%s\t%s\n' "${'$'}{p#/proc/}" "${'$'}(stat -c %Y "${'$'}p")" "${'$'}(tr '\0' ' ' < "${'$'}p/cmdline")"
+            done
             exit 0
         """.trimIndent()
         val r = execute(arrayOf("-c", script, "bash", safe(session)), PEEK_SEC) ?: return null
         if (r.getInt("err", RESULT_OK) != RESULT_OK) return null
-        return parseTmuxJobs(session, r.getString("stdout").orEmpty())
+        return parseSessionJobs(session, r.getString("stdout").orEmpty())
     }
 
-    /** The end of what tmux job [name] of [session] shows (its pane), or null. */
-    suspend fun tmuxOutput(session: String, name: String): String? {
+    /** The end of what [job] shows: a tmux job's pane, or the file a process writes to; null if none. */
+    suspend fun jobOutput(job: SessionJob): String? {
         if (setupProblem() != null) return null
-        val script = TMUX_SOCKET + """
+        val script = if (job.pid == null) TMUX_SOCKET + """
             # "=name:" is the session's (current) pane; the screen's blank lines below the output are dropped.
-            tmux -S "${'$'}{s}" capture-pane -p -J -S -200 -t "=${'$'}{2}:" 2> /dev/null | awk 'NF { n = NR } { l[NR] = ${'$'}0 } END { for (i = 1; i <= n; i++) print l[i] }' | tail -c $PEEK_BYTES
+            tmux -S "${'$'}s" capture-pane -p -J -S -200 -t "=${'$'}2:" 2> /dev/null | awk 'NF { n = NR } { l[NR] = ${'$'}0 } END { for (i = 1; i <= n; i++) print l[i] }' | tail -c $PEEK_BYTES
+        """.trimIndent() else """
+            # Still this session's process (${'$'}2 = pid)? Then the end of the file its output goes to, if it is one.
+            tr '\0' '\n' < "/proc/${'$'}2/environ" 2> /dev/null | grep -qx "WEIASSIST_SESSION=${'$'}1" || exit 0
+            o=${'$'}(readlink "/proc/${'$'}2/fd/1" 2> /dev/null); e=${'$'}(readlink "/proc/${'$'}2/fd/2" 2> /dev/null)
+            [ -f "${'$'}o" ] && tail -c $PEEK_BYTES "${'$'}o"
+            [ -f "${'$'}e" ] && [ "${'$'}e" != "${'$'}o" ] && tail -c $PEEK_BYTES "${'$'}e"
+            exit 0
         """.trimIndent()
-        val r = execute(arrayOf("-c", script, "bash", safe(session), name), PEEK_SEC) ?: return null
+        val r = execute(arrayOf("-c", script, "bash", safe(job.session), job.pid?.toString() ?: job.name), PEEK_SEC) ?: return null
         return r.getString("stdout")?.trimEnd()?.takeIf { r.getInt("err", RESULT_OK) == RESULT_OK }
     }
 
-    /** End tmux job [name] of [session] (the user stopped it); the phone may sleep again if no job is left. */
-    suspend fun tmuxKill(session: String, name: String) {
+    /** End [job] (the user stopped it): a tmux job, or a process and what it started; the phone may sleep again. */
+    suspend fun killJob(job: SessionJob) {
         if (setupProblem() != null) return
-        val script = PRELUDE + TMUX_SOCKET + """
-            tmux -S "${'$'}{s}" kill-session -t "=${'$'}{2}" 2> /dev/null
+        val script = if (job.pid == null) PRELUDE + TMUX_SOCKET + """
+            tmux -S "${'$'}s" kill-session -t "=${'$'}2" 2> /dev/null
             sync_lock > /dev/null 2>&1
             exit 0
+        """.trimIndent() else """
+            # Only if pid ${'$'}2 is still this session's (a pid can be reused): it and what it started.
+            tr '\0' '\n' < "/proc/${'$'}2/environ" 2> /dev/null | grep -qx "WEIASSIST_SESSION=${'$'}1" || exit 0
+            pkill -TERM -P "${'$'}2" 2> /dev/null; kill -TERM "${'$'}2" 2> /dev/null
+            sleep 2; kill -0 "${'$'}2" 2> /dev/null && { pkill -KILL -P "${'$'}2" 2> /dev/null; kill -KILL "${'$'}2" 2> /dev/null; }
+            exit 0
         """.trimIndent()
-        execute(arrayOf("-c", script, "bash", safe(session), name), 20)
+        execute(arrayOf("-c", script, "bash", safe(job.session), job.pid?.toString() ?: job.name), 20)
     }
 
     /** What [inspect] found. [problem]: Termux can't run this app's commands (then the rest is unknown). */
@@ -670,6 +697,8 @@ class Termux(context: Context) {
               rm -f "${'$'}{d}".bash-*.kept "${'$'}{d}".bash-*.code
               for p in "${'$'}{d}".bash-*.pid; do [ -f "${'$'}{p}" ] && kill -TERM "${'$'}(cat "${'$'}{p}")" 2> /dev/null; done
             done
+            # What commands left running (cmd &, nohup), in any session.
+            for p in /proc/[0-9]*; do tr '\0' '\n' < "${'$'}p/environ" 2> /dev/null | grep -q "^WEIASSIST_SESSION=" && kill -TERM "${'$'}{p#/proc/}" 2> /dev/null; done
             sync_lock > /dev/null 2>&1
             exit 0
         """.trimIndent()
@@ -695,12 +724,17 @@ class Termux(context: Context) {
         /** $1 = the session's folder name: its tmux server's socket as $s (TMUX_TMPDIR is the session's .tmux, see run). */
         private const val TMUX_SOCKET = "s=\"\$HOME/sessions/\$1/.tmux/tmux-\$(id -u)/default\"\n"
 
-        /** `tmux ls` lines (name, start in epoch seconds, command; tab-separated) as jobs. Pure, for tests. */
-        internal fun parseTmuxJobs(session: String, out: String): List<TmuxJob> = out.lineSequence().mapNotNull { line ->
+        /** The job list's lines (kind, name or pid, start in epoch seconds, command; tab-separated) as jobs. Pure, for tests. */
+        internal fun parseSessionJobs(session: String, out: String): List<SessionJob> = out.lineSequence().mapNotNull { line ->
             val parts = line.split('\t')
-            val name = parts.getOrNull(0)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            val started = parts.getOrNull(1)?.trim()?.toLongOrNull()?.times(1000) ?: 0L
-            TmuxJob(session, name, started, parts.drop(2).joinToString("\t").trim().removeSurrounding("\""))
+            if (parts.size < 2 || parts[1].isBlank()) return@mapNotNull null
+            val started = parts.getOrNull(2)?.trim()?.toLongOrNull()?.times(1000) ?: 0L
+            val command = parts.drop(3).joinToString("\t").trim().removeSurrounding("\"")
+            when (parts[0]) {
+                "tmux" -> SessionJob(session, parts[1], started, command)
+                "process" -> parts[1].trim().toIntOrNull()?.let { SessionJob(session, it.toString(), started, command, pid = it) }
+                else -> null
+            }
         }.toList()
 
         /** What the model reads when a command has ended. Pure, for tests. */

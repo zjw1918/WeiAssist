@@ -36,7 +36,8 @@ class BackgroundJobs {
 }
 
 /**
- * A job the model left running in its session's tmux (a server, a build): [name] is the tmux session, [startedAt]
- * when tmux started it (ms; 0 if unknown), [command] what it runs.
+ * Work the model left running in its session: a tmux job ([name] its tmux session), or a process a command started in
+ * the background (`cmd &`, nohup) that outlived it ([pid]; [name] is the pid). [startedAt] is when it started (ms; 0 if
+ * unknown), [command] what it runs.
  */
-data class TmuxJob(val session: String, val name: String, val startedAt: Long, val command: String)
+data class SessionJob(val session: String, val name: String, val startedAt: Long, val command: String, val pid: Int? = null)

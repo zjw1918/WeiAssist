@@ -400,6 +400,7 @@
     <string name="job_stop">停止它</string>
     <string name="job_stopping">正在停止…</string>
     <string name="tmux_job">tmux · %1$s · %2$s</string>
+    <string name="process_job">后台进程 · %1$s</string>
     <string name="background_no_output">暂无输出</string>
     <string name="trigger_other">收到状态更新</string>
     <string name="tool_web_fetch">抓取网页</string>
