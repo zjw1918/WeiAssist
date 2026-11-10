@@ -89,6 +89,12 @@ fun SettingsTab(vm: AppViewModel, s: AgentState) {
                     onClick = { vm.showPreviews(!vm.showPreviews) },
                     trailing = { Switch(checked = vm.showPreviews, onCheckedChange = vm::showPreviews) },
                 )
+                GroupDivider()
+                GroupRow(
+                    title = stringResource(R.string.web_fetch_local), description = stringResource(R.string.web_fetch_local_hint),
+                    onClick = { vm.webFetchLocal(!vm.webFetchLocal) },
+                    trailing = { Switch(checked = vm.webFetchLocal, onCheckedChange = vm::webFetchLocal) },
+                )
             }
 
             termux?.let { t -> LinuxSection(t) { termuxSetup = true } }

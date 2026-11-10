@@ -262,6 +262,8 @@
     <string name="a11y_off">Off: phone tasks need it to see the screen and tap.</string>
     <string name="show_live_screens">Show live screens</string>
     <string name="show_live_screens_hint">Watch phone tasks work on their own screens.</string>
+    <string name="web_fetch_local">Read local addresses</string>
+    <string name="web_fetch_local_hint">Let the assistant fetch pages from this phone and your local network, e.g. a dev server on localhost:8080. Keep it off unless you need it: a web page could ask the assistant to read them.</string>
     <string name="section_general">General</string>
     <string name="language">Language</string>
     <string name="language_hint">Choose this app\'s language in system settings.</string>

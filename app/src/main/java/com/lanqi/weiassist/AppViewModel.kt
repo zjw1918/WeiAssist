@@ -153,6 +153,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     var showPreviews by mutableStateOf(prefs.getBoolean("showLivePreviews", true))
         private set
     fun showPreviews(on: Boolean) { showPreviews = on; prefs.edit().putBoolean("showLivePreviews", on).apply() }
+
+    /** web_fetch may read this phone's and the local network's addresses (read by WebFetch on every call). */
+    var webFetchLocal by mutableStateOf(prefs.getBoolean(com.lanqi.weiassist.agent.WebFetch.SETTING, false))
+        private set
+    fun webFetchLocal(on: Boolean) { webFetchLocal = on; prefs.edit().putBoolean(com.lanqi.weiassist.agent.WebFetch.SETTING, on).apply() }
     var useMock by mutableStateOf(false)
         private set
 
