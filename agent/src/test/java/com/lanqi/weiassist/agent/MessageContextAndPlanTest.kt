@@ -18,12 +18,34 @@ class MessageContextAndPlanTest {
         assertEquals("<context>Now: Tuesday, 10 November 2026, 13:05 (Asia/Shanghai, UTC+08:00). Phone language: zh-CN.</context>",
             MessageContext.text(at, Locale.SIMPLIFIED_CHINESE))
         val attached = JSONArray().put(JSONObject().put("type", "image").put("data", "x").put("mimeType", "image/jpeg"))
-        val out = MessageContext.append(attached, at)
+        val out = MessageContext.append(attached, now = at)
         assertEquals(2, out.length())
         assertEquals("image", out.getJSONObject(0).getString("type"))
         assertTrue(out.getJSONObject(1).getString("text").startsWith("<context>Now: Tuesday"))
-        assertEquals(1, MessageContext.append(null, at).length())
+        assertEquals(1, MessageContext.append(null, now = at).length())
         assertTrue(MessageContext.text(at.withZoneSameInstant(ZoneId.of("UTC"))).contains("05:05 (UTC, UTC+00:00)"))
+    }
+
+    @Test fun `what the user stopped reaches the model in the context block, and the chat still shows only the typed text`() {
+        val note = MessageContext.stopped(listOf("for i in \$(seq 1 60); do echo tick \$i; sleep 5; done\nsecond line"), listOf("magpie-build"))!!
+        assertEquals("The user pressed Stop, which ended your background command `for i in \$(seq 1 60); do echo tick \$i; sleep 5; done` " +
+            "and tmux job `magpie-build`. They are not running any more.", note)
+        assertEquals("The user pressed Stop, which ended your tmux jobs `a`, `b`. They are not running any more.", MessageContext.stopped(emptyList(), listOf("a", "b")))
+        assertNull(MessageContext.stopped(emptyList(), emptyList()))
+        val text = MessageContext.text(at, Locale.ENGLISH, listOf(note))
+        assertTrue(text, text.startsWith("<context>Now: Tuesday") && text.endsWith("\nSince your last turn: $note</context>"))
+        assertEquals("is it done?", MessageContext.strip("is it done?" + text))
+        assertFalse(MessageContext.text(at, Locale.ENGLISH).contains("Since your last turn"))
+    }
+
+    @Test fun `tmux's job list becomes jobs`() {
+        val jobs = Termux.parseTmuxJobs("s1", "magpie-build\t1794292000\t\"cd proj/magpie && go build -o magpie .\"\nweb\t1794292100\tpython -m http.server 8080\n\n")
+        assertEquals(listOf("magpie-build", "web"), jobs.map { it.name })
+        assertEquals(1794292000_000L, jobs[0].startedAt)
+        assertEquals("cd proj/magpie && go build -o magpie .", jobs[0].command)
+        assertEquals("python -m http.server 8080", jobs[1].command)
+        assertTrue(Termux.parseTmuxJobs("s1", "").isEmpty())
+        assertEquals(0L, Termux.parseTmuxJobs("s1", "odd").single().startedAt)
     }
 
     @Test fun `a steered message counts as delivered when the core echoes it with the context`() {

@@ -621,6 +621,9 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
                 if (com.lanqi.weiassist.agent.Plan.open(s.plan)) PlanCard(s.id, s.plan, Modifier.padding(bottom = 8.dp))
                 val jobs by vm.backgroundJobs.collectAsStateWithLifecycle()
                 jobs.filter { it.session == s.id }.forEach { BackgroundJobCard(it, vm, Modifier.padding(bottom = 8.dp)) }
+                // Jobs the model left running in tmux (a server, a build): seen, followed and stoppable here too.
+                val tmux by vm.tmuxJobs.collectAsStateWithLifecycle()
+                tmux[s.id].orEmpty().forEach { TmuxJobCard(it, vm, Modifier.padding(bottom = 8.dp)) }
                 // While it works, a message steers it: the model reads it after its current step.
                 Composer(
                     vm.reply, { vm.reply = it },
@@ -637,34 +640,60 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
     if (s != null && delete) DeleteDialog(remember { vm.hasTermuxFiles(listOf(s.id)) }, onDismiss = { delete = false }) { vm.delete(s.id, it) }
 }
 
-/** A command going on in the background: how long, and on a tap the end of its output, kept fresh. */
+/** A command going on in the background: how long, on a tap the end of its output, kept fresh; ✕ ends it. */
 @Composable
-private fun BackgroundJobCard(job: com.lanqi.weiassist.agent.BackgroundJob, vm: AppViewModel, modifier: Modifier = Modifier) {
+private fun BackgroundJobCard(job: com.lanqi.weiassist.agent.BackgroundJob, vm: AppViewModel, modifier: Modifier = Modifier) =
+    JobCard(
+        key = job.call, title = job.command.lineSequence().first(), startedAt = job.startedAt,
+        output = { vm.backgroundOutput(job.session, job.call) }, onStop = { vm.stopBackground(job.session, job.call) }, modifier = modifier,
+    )
+
+/** A job the model left running in tmux: its name and command, how long, its screen on a tap; ✕ ends it. */
+@Composable
+private fun TmuxJobCard(job: com.lanqi.weiassist.agent.TmuxJob, vm: AppViewModel, modifier: Modifier = Modifier) =
+    JobCard(
+        key = "tmux:${job.session}:${job.name}",
+        title = stringResource(R.string.tmux_job, job.name, job.command.lineSequence().firstOrNull().orEmpty()),
+        startedAt = job.startedAt.takeIf { it > 0 },
+        output = { vm.tmuxOutput(job.session, job.name) }, onStop = { vm.stopTmux(job.session, job.name) }, modifier = modifier,
+    )
+
+@Composable
+private fun JobCard(key: String, title: String, startedAt: Long?, output: suspend () -> String?, onStop: () -> Unit, modifier: Modifier = Modifier) {
     val c = MaterialTheme.colorScheme
-    var open by rememberSaveable(job.call) { mutableStateOf(false) }
-    val now by androidx.compose.runtime.produceState(System.currentTimeMillis(), job.call) {
+    var open by rememberSaveable(key) { mutableStateOf(false) }
+    // Stop pressed: the card says so until the job is gone (Termux takes a moment).
+    var stopping by remember(key) { mutableStateOf(false) }
+    val now by androidx.compose.runtime.produceState(System.currentTimeMillis(), key) {
         while (true) { kotlinx.coroutines.delay(1000); value = System.currentTimeMillis() }
     }
-    val output by androidx.compose.runtime.produceState<String?>(null, job.call, open) {
-        while (open) { vm.backgroundOutput(job.session, job.call)?.let { value = it }; kotlinx.coroutines.delay(BACKGROUND_OUTPUT_MS) }
+    val shown by androidx.compose.runtime.produceState<String?>(null, key, open) {
+        while (open) { output()?.let { value = it }; kotlinx.coroutines.delay(BACKGROUND_OUTPUT_MS) }
     }
     Column(
         modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.surfaceContainer)
-            .clickable { open = !open }.padding(horizontal = 14.dp, vertical = 10.dp),
+            .clickable { open = !open }.padding(start = 14.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             AppIcon(R.drawable.ic_terminal, stringResource(R.string.background_running), Modifier.size(16.dp), tint = c.onSurfaceVariant)
             Spacer(Modifier.width(10.dp))
-            Text(job.command.lineSequence().first(), style = MaterialTheme.typography.bodyMedium, color = c.onSurfaceVariant,
+            Text(title, style = MaterialTheme.typography.bodyMedium, color = c.onSurfaceVariant,
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
             Spacer(Modifier.width(10.dp))
-            Text(DateUtils.formatElapsedTime(((now - job.startedAt) / 1000).coerceAtLeast(0)), style = MaterialTheme.typography.labelSmall, color = c.onSurfaceVariant)
+            Text(
+                if (stopping) stringResource(R.string.job_stopping)
+                else startedAt?.let { DateUtils.formatElapsedTime(((now - it) / 1000).coerceAtLeast(0)) }.orEmpty(),
+                style = MaterialTheme.typography.labelSmall, color = c.onSurfaceVariant,
+            )
+            IconButton(onClick = { stopping = true; onStop() }, enabled = !stopping) {
+                AppIcon(R.drawable.ic_stop, stringResource(R.string.job_stop), Modifier.size(18.dp), tint = if (stopping) c.outline else c.error)
+            }
         }
         if (open) Text(
-            output?.trim()?.ifEmpty { null } ?: stringResource(R.string.background_no_output),
+            shown?.trim()?.ifEmpty { null } ?: stringResource(R.string.background_no_output),
             style = androidx.compose.ui.text.TextStyle(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = 12.sp, lineHeight = 17.sp),
             color = c.onSurfaceVariant,
-            modifier = Modifier.padding(start = 26.dp, top = 8.dp).heightIn(max = 200.dp).verticalScroll(rememberScrollState()),
+            modifier = Modifier.padding(start = 26.dp, end = 10.dp, bottom = 8.dp).heightIn(max = 200.dp).verticalScroll(rememberScrollState()),
         )
     }
 }

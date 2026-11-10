@@ -195,7 +195,7 @@ class SessionManager(
             if (id !in prompted) update(id) { SessionReducer.joinTask(it, text.trim(), now, files) }
             else {
                 update(id) { SessionReducer.steered(it, text.trim(), now, files) }
-                coreOf(id)?.steer(id, UserInput(text.trim(), MessageContext.append(Attachments.content(files))))
+                coreOf(id)?.steer(id, input(id, text.trim(), files))
                 if (urgent) coreOf(id)?.hurry(id)
             }
             return true
@@ -265,7 +265,7 @@ class SessionManager(
         val s = live[id]?.value ?: return
         if (s.busy) { // a new task started meanwhile: steer that one
             val files = s.items.firstOrNull { it is ChatItem.User && it.delivery == Delivery.Queued && it.text == text }?.let { (it as ChatItem.User).attachments }.orEmpty()
-            if (id in prompted) scope.launch { coreOf(id)?.steer(id, UserInput(text, MessageContext.append(Attachments.content(files)))) } else Log.w(TAG, "late steer for $id dropped: next task not started")
+            if (id in prompted) scope.launch { coreOf(id)?.steer(id, input(id, text, files)) } else Log.w(TAG, "late steer for $id dropped: next task not started")
             return
         }
         val canRun = !s.summary.phone || screens.acquire(id) != null
@@ -322,6 +322,16 @@ class SessionManager(
     /** Every question session [id] asks is withdrawn (it was stopped, deleted, or its core went away). */
     private fun withdrawAll(id: String) = askWaits.filterKeys { it.startsWith("$id/") }.values.forEach { it.complete(null) }
 
+    /** What the user did outside the conversation, for session [id]'s model with its next message (see MessageContext). */
+    private val notes = java.util.concurrent.ConcurrentHashMap<String, MutableList<String>>()
+
+    /** Tell session [id]'s model [text] with the next message, e.g. that the user stopped one of its jobs. */
+    fun noteForModel(id: String, text: String) { notes.getOrPut(id) { java.util.Collections.synchronizedList(mutableListOf()) } += text }
+
+    /** A message for the core: what was typed, the attachments, and the context block with the notes since last time. */
+    private suspend fun input(id: String, text: String, files: List<Attachment>): UserInput =
+        UserInput(text, MessageContext.append(Attachments.content(files), notes.remove(id).orEmpty().toList()))
+
     /** Show a file the agent gave the user (send_file, already in [filesDir]) in session [id]'s chat. False: it is gone. */
     suspend fun addFile(id: String, file: Attachment, caption: String): Boolean {
         loadLive(id) ?: return false
@@ -363,7 +373,7 @@ class SessionManager(
             val task = now.pendingTask ?: if (now.pendingAttachments.isNotEmpty()) "" else return
             onTaskStarted(id)
             stopped -= id
-            core.prompt(id, UserInput(task, MessageContext.append(Attachments.content(now.pendingAttachments))))
+            core.prompt(id, input(id, task, now.pendingAttachments))
             prompted += id
         }
     }
@@ -450,6 +460,7 @@ class SessionManager(
         val core = coreOf(id) // read before the session is forgotten
         stop(id)
         onEnded(id, true, termuxFiles)
+        notes.remove(id)
         screens.release(id)
         live.remove(id); watchers.remove(id); leftWhileBusy.remove(id); paused.remove(id); stops.remove(id); configured.remove(id)
         pendingWrites.remove(id)?.cancel()
