@@ -25,10 +25,12 @@ object ToolCatalog {
      */
     fun forSession(s: SessionSummary): List<ToolSpec> {
         val sets = when {
-            s.supervisor -> setOf(SUPERVISOR)
+            s.supervisor -> setOf(SUPERVISOR, ASK, PLAN)
             else -> buildSet {
                 add(WEB)
                 if (files()) add(FILES)
+                add(ASK)
+                add(PLAN)
                 if (s.phone) add(PHONE)
                 if (s.termux) add(BASH)
                 if (s.termux) add(SEND_FILE)
@@ -42,6 +44,8 @@ object ToolCatalog {
     const val SEND_FILE = "send_file"
     const val WEB = "web"
     const val FILES = "files"
+    const val ASK = "ask"
+    const val PLAN = "plan"
 
     /** Whether the user lets the assistant use files at all (Settings → File access); read when a session is set up. */
     @Volatile var files: () -> Boolean = { true }

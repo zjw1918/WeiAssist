@@ -195,7 +195,7 @@ class SessionManager(
             if (id !in prompted) update(id) { SessionReducer.joinTask(it, text.trim(), now, files) }
             else {
                 update(id) { SessionReducer.steered(it, text.trim(), now, files) }
-                coreOf(id)?.steer(id, UserInput(text.trim(), Attachments.content(files)))
+                coreOf(id)?.steer(id, UserInput(text.trim(), MessageContext.append(Attachments.content(files))))
                 if (urgent) coreOf(id)?.hurry(id)
             }
             return true
@@ -265,7 +265,7 @@ class SessionManager(
         val s = live[id]?.value ?: return
         if (s.busy) { // a new task started meanwhile: steer that one
             val files = s.items.firstOrNull { it is ChatItem.User && it.delivery == Delivery.Queued && it.text == text }?.let { (it as ChatItem.User).attachments }.orEmpty()
-            if (id in prompted) scope.launch { coreOf(id)?.steer(id, UserInput(text, Attachments.content(files))) } else Log.w(TAG, "late steer for $id dropped: next task not started")
+            if (id in prompted) scope.launch { coreOf(id)?.steer(id, UserInput(text, MessageContext.append(Attachments.content(files)))) } else Log.w(TAG, "late steer for $id dropped: next task not started")
             return
         }
         val canRun = !s.summary.phone || screens.acquire(id) != null
@@ -363,7 +363,7 @@ class SessionManager(
             val task = now.pendingTask ?: if (now.pendingAttachments.isNotEmpty()) "" else return
             onTaskStarted(id)
             stopped -= id
-            core.prompt(id, UserInput(task, Attachments.content(now.pendingAttachments)))
+            core.prompt(id, UserInput(task, MessageContext.append(Attachments.content(now.pendingAttachments))))
             prompted += id
         }
     }

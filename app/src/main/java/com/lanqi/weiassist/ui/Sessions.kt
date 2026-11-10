@@ -617,6 +617,8 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
                 val commands by vm.coreCommands.collectAsStateWithLifecycle()
                 if (asking == null) CommandSuggestions(vm.reply, commands[s.core].orEmpty(), { vm.reply = it }, Modifier.padding(bottom = 8.dp))
                 DictationBar(vm.dictation, DictationTarget.Reply)
+                // The agent's plan, while steps remain.
+                if (com.lanqi.weiassist.agent.Plan.open(s.plan)) PlanCard(s.id, s.plan, Modifier.padding(bottom = 8.dp))
                 val jobs by vm.backgroundJobs.collectAsStateWithLifecycle()
                 jobs.filter { it.session == s.id }.forEach { BackgroundJobCard(it, vm, Modifier.padding(bottom = 8.dp)) }
                 // While it works, a message steers it: the model reads it after its current step.

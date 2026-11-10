@@ -2,7 +2,7 @@
 	"about": [
 		"The app's tools, for every AI core: name, label, description and parameters (JSON Schema), as the model sees them.",
 		"set: which sessions get it (ToolCatalog.forSession): phone = phone sessions; bash = sessions with Termux;",
-		"send_file = sessions with Termux in a messaging app; web = every session but the supervisor; files = every session but the supervisor, unless the user turned file access off; supervisor = the supervisor.",
+		"send_file = sessions with Termux in a messaging app; web = every session but the supervisor; files = every session but the supervisor, unless the user turned file access off; ask and plan = every session; supervisor = the supervisor.",
 		"parallel: the core may run several calls of it at once (else one at a time).",
 		"A core declares these and sends each call to the app's \"tool\" host call (ToolRouter), which runs it."
 	],
@@ -449,6 +449,118 @@
 				"additionalProperties": false
 			},
 			"parallel": true
+		},
+		{
+			"name": "ask_user_question",
+			"set": "ask",
+			"label": "Ask the user",
+			"description": "Ask the user 1–4 questions with answer choices, when you need a decision or a fact only they have (which contact, which option, may I go ahead). Each question offers 2–4 choices; the user taps one (or several, with multi_select) or types their own answer. You get the answers back. Put a recommended choice first and add \"(Recommended)\" to its label. Don't ask what you can find out yourself.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"questions": {
+						"type": "array",
+						"minItems": 1,
+						"maxItems": 4,
+						"description": "The questions, asked one after another",
+						"items": {
+							"type": "object",
+							"properties": {
+								"question": {
+									"type": "string",
+									"description": "The question, complete and ending with a question mark"
+								},
+								"header": {
+									"type": "string",
+									"description": "A very short label for it (at most 12 characters), e.g. Contact"
+								},
+								"options": {
+									"type": "array",
+									"minItems": 2,
+									"maxItems": 4,
+									"description": "The choices",
+									"items": {
+										"type": "object",
+										"properties": {
+											"label": {
+												"type": "string",
+												"description": "The choice, 1–5 words"
+											},
+											"description": {
+												"type": "string",
+												"description": "What it means or leads to"
+											}
+										},
+										"required": [
+											"label"
+										],
+										"additionalProperties": false
+									}
+								},
+								"multi_select": {
+									"type": "boolean",
+									"description": "The user may pick several (default false)"
+								}
+							},
+							"required": [
+								"question",
+								"options"
+							],
+							"additionalProperties": false
+						}
+					}
+				},
+				"required": [
+					"questions"
+				],
+				"additionalProperties": false
+			}
+		},
+		{
+			"name": "todo_write",
+			"set": "plan",
+			"label": "Plan",
+			"description": "Keep a visible plan for work of several steps: the user sees it as a checklist. Each call gives the whole list. Make it at the start of a task with 3 or more steps; keep exactly one step in_progress, mark each step completed as soon as it is done, and add steps you discover. Skip it for simple one-step requests.",
+			"parameters": {
+				"type": "object",
+				"properties": {
+					"todos": {
+						"type": "array",
+						"description": "The whole plan, in order",
+						"items": {
+							"type": "object",
+							"properties": {
+								"content": {
+									"type": "string",
+									"description": "The step, as an instruction (e.g. Book the table)"
+								},
+								"status": {
+									"type": "string",
+									"enum": [
+										"pending",
+										"in_progress",
+										"completed"
+									],
+									"description": "Where it is"
+								},
+								"activeForm": {
+									"type": "string",
+									"description": "The step as it is being done (e.g. Booking the table)"
+								}
+							},
+							"required": [
+								"content",
+								"status"
+							],
+							"additionalProperties": false
+						}
+					}
+				},
+				"required": [
+					"todos"
+				],
+				"additionalProperties": false
+			}
 		},
 		{
 			"name": "send_file",

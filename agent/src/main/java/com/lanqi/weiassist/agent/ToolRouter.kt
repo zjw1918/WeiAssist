@@ -23,6 +23,9 @@ class ToolRouter(
     private val bashDetached: (session: String, call: String, command: String, timeoutSec: Int) -> Unit,
     private val sendFile: suspend (session: String, path: String, caption: String) -> Pair<Boolean, String>,
     private val supervisor: suspend (caller: String, action: String, args: JSONObject) -> String,
+    /** Ask the user ([call]: the tool call, also the question's id); [askCancel] withdraws it. */
+    private val ask: suspend (session: String, call: String, args: JSONObject) -> ToolResult = { _, _, _ -> ToolResult("Nobody to ask.", isError = true) },
+    private val askCancel: suspend (session: String, call: String) -> Unit = { _, _ -> },
     private val files: suspend (session: String, name: String, args: JSONObject) -> ToolResult = { _, n, _ -> ToolResult("No file tool $n.", isError = true) },
     private val web: suspend (args: JSONObject) -> ToolResult = { a -> WebFetch.run(a).let { ToolResult(it.text, isError = it.isError) } },
 ) {
@@ -30,6 +33,8 @@ class ToolRouter(
 
     /** Bash commands running now, as "session/call": only these have anything to cancel. */
     private val runningBash = java.util.concurrent.ConcurrentHashMap<String, Running>()
+    /** Questions waiting for the user, as "session/call": Stop withdraws them. */
+    private val runningAsks = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     /** Web fetches running now, as "session/call": Stop cancels them. */
     private val runningWeb = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
 
@@ -61,6 +66,12 @@ class ToolRouter(
                     catch (e: kotlinx.coroutines.CancellationException) { if (fetch.isCancelled && isActive) ToolResult("stopped by the user") else throw e }
                     finally { runningWeb -= "$session/$call" }
                 }
+            ToolCatalog.ASK -> if (!gate(session)) ToolResult("stopped by the user") else {
+                runningAsks += "$session/$call"
+                try { ask(session, call, args) } finally { runningAsks -= "$session/$call" }
+            }
+            // The plan itself is the call's arguments: the app shows it from there (SessionReducer, Plan).
+            ToolCatalog.PLAN -> Plan.parse(args)?.let { ToolResult(Plan.answer(it)) } ?: ToolResult("Give todos: a list of {content, status}.", isError = true)
             ToolCatalog.FILES -> if (!gate(session)) ToolResult("stopped by the user") else files(session, name, args)
             ToolCatalog.SEND_FILE -> {
                 val (ok, text) = if (!gate(session)) false to "Stopped by the user." else sendFile(session, args.getString("path"), args.optString("caption"))
@@ -75,6 +86,7 @@ class ToolRouter(
     suspend fun cancel(session: String, call: String) {
         if (runningBash.containsKey("$session/$call")) bashKill(session, call)
         runningWeb["$session/$call"]?.cancel()
+        if ("$session/$call" in runningAsks) askCancel(session, call)
     }
 
     /** How call [call] is doing, for the model while it goes on in the background; null if it has ended. */
