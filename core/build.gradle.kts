@@ -11,6 +11,13 @@ android {
     }
     defaultConfig {
         minSdk = 26
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+    // -PbenchRelease: instrumented tests (HttpClientBenchmark) on the release build type, which isn't debuggable,
+    // so the code runs compiled as in the shipped app instead of mostly interpreted.
+    if (providers.gradleProperty("benchRelease").isPresent) {
+        testBuildType = "release"
+        buildTypes { release { signingConfig = signingConfigs.getByName("debug") } }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -20,7 +27,11 @@ android {
 
 dependencies {
     api(libs.kotlinx.coroutines.android)
+    api(libs.okhttp)
     testImplementation(libs.junit)
     // Android's org.json is a stub in local unit tests; use the real library there.
     testImplementation(libs.org.json)
+    // HttpClientBenchmark: OkHttp next to HttpURLConnection on a device (see tools/http-bench-server.mjs).
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.junit)
 }

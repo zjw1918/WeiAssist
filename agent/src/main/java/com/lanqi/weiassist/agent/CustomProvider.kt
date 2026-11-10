@@ -1,11 +1,10 @@
 package com.lanqi.weiassist.agent
 
+import com.lanqi.weiassist.core.Http
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 
 /** A JSON array's non-empty strings. */
 private fun strings(a: JSONArray) = (0 until a.length()).mapNotNull { a.optString(it).ifEmpty { null } }
@@ -112,20 +111,14 @@ data class CustomProvider(
         }
 
         private fun listModels(base: String, key: String?): List<ServerModel> {
-            val c = URL("$base/models").openConnection() as HttpURLConnection
-            try {
-                c.connectTimeout = 10_000
-                c.readTimeout = 15_000
-                if (!key.isNullOrBlank()) c.setRequestProperty("Authorization", "Bearer ${key.trim()}")
-                c.setRequestProperty("Accept", "application/json")
-                val code = c.responseCode
-                if (code !in 200..299) {
-                    val err = c.errorStream?.bufferedReader()?.use { it.readText() }.orEmpty().take(300)
-                    throw IllegalStateException("HTTP $code $err".trim())
-                }
-                return parseModelList(c.inputStream.bufferedReader().use { it.readText() })
-            } finally {
-                c.disconnect()
+            val headers = buildMap {
+                put("Accept", "application/json")
+                if (!key.isNullOrBlank()) put("Authorization", "Bearer ${key.trim()}")
+            }
+            return Http.with(connectMs = 10_000, readMs = 15_000).newCall(Http.get("$base/models", headers)).execute().use { r ->
+                val text = r.body.string()
+                if (!r.isSuccessful) throw IllegalStateException("HTTP ${r.code} ${text.take(300)}".trim())
+                parseModelList(text)
             }
         }
 

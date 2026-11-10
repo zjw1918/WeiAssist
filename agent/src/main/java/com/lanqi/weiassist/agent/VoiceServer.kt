@@ -1,6 +1,11 @@
 package com.lanqi.weiassist.agent
 
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import android.content.Context
+import com.lanqi.weiassist.core.Http
+import com.lanqi.weiassist.core.await
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -8,9 +13,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.net.HttpURLConnection
 import java.net.URI
-import java.net.URL
 import java.util.Locale
 import java.util.UUID
 
@@ -125,22 +128,10 @@ object VoiceServer {
         runCatching {
             val boundary = "weiassist-${UUID.randomUUID()}"
             val body = transcriptionBody(boundary, clip.readBytes(), language, name, mime)
-            val c = URL("$url/v1/audio/transcriptions").openConnection() as HttpURLConnection
-            try {
-                c.connectTimeout = 5_000
-                // The server queues requests, so this one may wait for others.
-                c.readTimeout = 120_000
-                c.requestMethod = "POST"
-                c.doOutput = true
-                c.setFixedLengthStreamingMode(body.size)
-                c.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-                c.outputStream.use { it.write(body) }
-                val code = c.responseCode
-                val stream = if (code in 200..299) c.inputStream else c.errorStream
-                parseTranscript(code, stream?.bufferedReader()?.use { it.readText() }.orEmpty())
-            } finally {
-                c.disconnect()
-            }
+            val request = Request.Builder().url("$url/v1/audio/transcriptions")
+                .post(body.toRequestBody("multipart/form-data; boundary=$boundary".toMediaType())).build()
+            // The server queues requests, so this one may wait for others.
+            Http.with(connectMs = 5_000, readMs = 120_000).newCall(request).await { r -> parseTranscript(r.code, r.body.string()) }
         }.getOrDefault(Transcript.Unreachable)
     }
 
@@ -155,16 +146,7 @@ object VoiceServer {
 
     suspend fun health(url: String): Health = withContext(Dispatchers.IO) {
         runCatching {
-            val c = URL("$url/health").openConnection() as HttpURLConnection
-            try {
-                c.connectTimeout = 3_000
-                c.readTimeout = 5_000
-                val code = c.responseCode
-                val stream = if (code in 200..299) c.inputStream else c.errorStream
-                parseHealth(code, stream?.bufferedReader()?.use { it.readText() }.orEmpty())
-            } finally {
-                c.disconnect()
-            }
+            Http.with(connectMs = 3_000, readMs = 5_000).newCall(Http.get("$url/health")).await { r -> parseHealth(r.code, r.body.string()) }
         }.getOrDefault(Health.Unreachable)
     }
 }

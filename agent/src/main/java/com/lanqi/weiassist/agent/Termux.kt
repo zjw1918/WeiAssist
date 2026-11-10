@@ -466,9 +466,8 @@ class Termux(context: Context) {
      */
     suspend fun mirrorApkUrl(): String = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         val code = runCatching {
-            val c = java.net.URL(FDROID_API).openConnection() as java.net.HttpURLConnection
-            c.connectTimeout = 6_000; c.readTimeout = 6_000
-            try { org.json.JSONObject(c.inputStream.bufferedReader().readText()).getInt("suggestedVersionCode") } finally { c.disconnect() }
+            com.lanqi.weiassist.core.Http.with(connectMs = 6_000, readMs = 6_000).newCall(com.lanqi.weiassist.core.Http.get(FDROID_API)).execute()
+                .use { org.json.JSONObject(it.body.string()).getInt("suggestedVersionCode") }
         }.getOrNull() ?: FALLBACK_VERSION_CODE
         "$FDROID_MIRROR/com.termux_$code.apk"
     }
