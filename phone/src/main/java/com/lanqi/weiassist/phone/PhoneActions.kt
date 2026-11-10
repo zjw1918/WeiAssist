@@ -98,7 +98,10 @@ class PhoneActions(private val context: Context) {
                 else -> "This task runs on a screen of its own, without a home screen or recent apps: use open_app to switch apps."
             }
             "open_app" -> openOnDisplay(svc, t, a.getString("app")).settled(maxMs = 5_000)
-            "screenshot" -> t.io.screenshot(720, 70).let { if (it.isEmpty()) "error: no picture of this screen yet; try again" else android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) }
+            "screenshot" -> t.io.screenshot(720, 70).let {
+                if (it.isEmpty()) "error: no picture of this screen yet; try again"
+                else Shot.scaled(t.width, t.height, 720).let { (w, h) -> Shot(android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP), t.width, t.height, w, h).pack() }
+            }
             "label_at" -> svc.labelAt(a.getInt("x"), a.getInt("y"), d)
             else -> "unknown action"
         }
@@ -218,7 +221,7 @@ class PhoneActions(private val context: Context) {
             "swipe" -> svc.swipe(a.getString("direction"), a.optDouble("fraction", 0.6).toFloat()).settled(svc)
             "press_key" -> (if (a.getString("key") == "enter") (if (svc.imeEnter(null)) "pressed enter" else NO_ENTER) else svc.pressKey(a.getString("key"))).settled(svc)
             "open_app" -> openApp(svc, a.getString("app")).settled(svc, maxMs = 5_000)
-            "screenshot" -> svc.screenshot()
+            "screenshot" -> svc.shot().fold({ it.pack() }, { it.message.orEmpty() })
             "label_at" -> svc.labelAt(a.getInt("x"), a.getInt("y"))
             else -> "unknown action"
         }

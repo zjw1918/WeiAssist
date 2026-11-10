@@ -100,14 +100,18 @@ class ToolRouterTest {
         assertEquals("noted", f.router.call("s", "c2", "note", args("text" to "Ann, Friday")).text)
         assertEquals(listOf("tap"), f.phone.map { it.first })
         assertEquals(3, f.phone[0].second.getInt("id"))
-        f.phoneAnswer = "/9j/AAAA"
+        // The phone's own screen, scaled down: the caption gives the factor for tap_at.
+        f.phoneAnswer = com.lanqi.weiassist.phone.Shot("/9j/AAAA", 1080, 2400, 720, 1600).pack()
         val shot = f.router.call("s", "c3", "screenshot", JSONObject())
         assertEquals("/9j/AAAA", shot.image)
-        assertTrue(shot.text.startsWith("Screenshot (720 px wide"))
+        assertEquals("Screenshot scaled to 720x1600 px; the screen is 1080x2400. For tap_at, multiply x and y by 1.5.", shot.text)
+        // A 720 px virtual display isn't scaled: its pixels are tap_at's (a fixed factor sent taps off this screen).
+        f.phoneAnswer = com.lanqi.weiassist.phone.Shot("/9j/BBBB", 720, 1600, 720, 1600).pack()
+        assertEquals("Screenshot of the whole screen, 720x1600 px: tap_at takes these pixels as they are.", f.router.call("s", "c5", "screenshot", JSONObject()).text)
         // A message instead of a picture stays text: as an image the provider would reject the request.
         f.phoneAnswer = "no app open yet"
         assertNull(f.router.call("s", "c4", "screenshot", JSONObject()).image)
-        val json = ToolRouter.screenshot("/9j/x").toJson()
+        val json = ToolRouter.screenshot(com.lanqi.weiassist.phone.Shot("/9j/x", 1440, 3200, 720, 1600).pack()).toJson()
         assertEquals("image/jpeg", json.getJSONObject("image").getString("mimeType"))
         assertFalse(json.has("isError"))
     }

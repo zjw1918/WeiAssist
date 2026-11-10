@@ -371,9 +371,12 @@ class AgentAccessibilityService : AccessibilityService() {
     }
 
     /** A JPEG of the screen, scaled to [maxWidth], as base64; or an explanation when not allowed. */
-    suspend fun screenshot(maxWidth: Int = 720): String {
+    suspend fun screenshot(maxWidth: Int = 720): String = shot(maxWidth).fold({ it.jpegBase64 }, { it.message.orEmpty() })
+
+    /** The screen as a [Shot] scaled to [maxWidth]; a failure's message says why it can't be had. */
+    suspend fun shot(maxWidth: Int = 720): Result<Shot> {
         checkNotOwnApp()
-        if (android.os.Build.VERSION.SDK_INT < 30) return "error: screenshots need Android 11+"
+        if (android.os.Build.VERSION.SDK_INT < 30) return Result.failure(IllegalStateException("error: screenshots need Android 11+"))
         val result = CompletableDeferred<android.graphics.Bitmap?>()
         takeScreenshot(android.view.Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
             override fun onSuccess(s: ScreenshotResult) {
@@ -385,11 +388,11 @@ class AgentAccessibilityService : AccessibilityService() {
             override fun onFailure(errorCode: Int) { result.complete(null) }
         })
         val full = kotlinx.coroutines.withTimeoutOrNull(5_000) { result.await() }
-            ?: return "error: the screen can't be captured (protected window, or too soon after the last screenshot)"
-        val scale = minOf(1f, maxWidth.toFloat() / full.width)
-        val small = android.graphics.Bitmap.createScaledBitmap(full, (full.width * scale).toInt(), (full.height * scale).toInt(), true)
+            ?: return Result.failure(IllegalStateException("error: the screen can't be captured (protected window, or too soon after the last screenshot)"))
+        val (w, h) = Shot.scaled(full.width, full.height, maxWidth)
+        val small = android.graphics.Bitmap.createScaledBitmap(full, w, h, true)
         val bytes = java.io.ByteArrayOutputStream().also { small.compress(android.graphics.Bitmap.CompressFormat.JPEG, 70, it) }.toByteArray()
-        return android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)
+        return Result.success(Shot(android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP), full.width, full.height, w, h))
     }
 
     fun openApp(intent: Intent) {

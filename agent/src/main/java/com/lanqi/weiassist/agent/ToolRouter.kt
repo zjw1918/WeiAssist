@@ -100,10 +100,14 @@ class ToolRouter(
         fun bashTimeout(args: JSONObject): Int =
             (if (args.has("timeout") && !args.isNull("timeout")) args.optInt("timeout", BASH_TIMEOUT) else BASH_TIMEOUT).coerceIn(1, BASH_MAX_TIMEOUT)
 
-        /** Anything but a base64 JPEG ("/9j/…") is a message for the model (an error, paused, no app yet): as an image it would make the provider reject the request. */
-        fun screenshot(data: String): ToolResult =
-            if (!data.startsWith("/9j/")) ToolResult(data)
-            else ToolResult("Screenshot (720 px wide; for tap_at, scale x and y by screen width / 720).", image = data)
+        /**
+         * A packed [com.lanqi.weiassist.phone.Shot] becomes the picture, captioned with how its pixels map to tap_at's.
+         * Anything else is a message for the model (an error, paused, no app yet): as an image it would make the provider reject the request.
+         */
+        fun screenshot(data: String): ToolResult {
+            val shot = com.lanqi.weiassist.phone.Shot.parse(data)?.takeIf { it.jpegBase64.startsWith("/9j/") } ?: return ToolResult(data)
+            return ToolResult(shot.caption(), image = shot.jpegBase64)
+        }
 
         /** A supervisor tool as SessionCommands' action and arguments. */
         fun supervisorCall(name: String, a: JSONObject): Pair<String, JSONObject> = when (name) {
