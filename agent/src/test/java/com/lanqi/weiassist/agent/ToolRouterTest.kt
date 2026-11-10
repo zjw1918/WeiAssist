@@ -21,33 +21,35 @@ class ToolRouterTest {
 
     @Test fun `the catalog loads, with unique names and object schemas`() {
         val all = ToolCatalog.entries
-        assertEquals(31, all.size)
+        assertEquals(33, all.size)
         all.forEach { e ->
             assertEquals(e.spec.name, "object", JSONObject(e.spec.parameters).getString("type"))
             assertTrue(e.spec.name, e.spec.description.isNotBlank())
         }
-        assertEquals(setOf("phone", "bash", "send_file", "web", "files", "supervisor"), all.map { it.set }.toSet())
+        assertEquals(setOf("phone", "bash", "send_file", "web", "files", "ask", "plan", "supervisor"), all.map { it.set }.toSet())
         assertTrue("supervisor tools and fetches may run side by side", all.filter { it.set == "supervisor" || it.set == "web" }.all { it.spec.parallel })
         // Reading files may run side by side; writing may not.
         assertEquals(setOf("read", "ls", "glob", "grep"), all.filter { it.set == "files" && it.spec.parallel }.map { it.spec.name }.toSet())
         assertTrue(all.filter { it.set !in setOf("supervisor", "web", "files") }.none { it.spec.parallel })
+        assertEquals(setOf("ask_user_question"), all.filter { it.set == "ask" }.map { it.spec.name }.toSet())
+        assertEquals(setOf("todo_write"), all.filter { it.set == "plan" }.map { it.spec.name }.toSet())
         assertEquals(FileTools.NAMES, all.filter { it.set == "files" }.map { it.spec.name }.toSet())
     }
 
     @Test fun `each kind of session gets its own tools`() {
         // send_file with Termux: to the messaging app's chat, or the app's.
         // web_fetch in every session but the supervisor's: it needs no Termux.
-        assertEquals(listOf("bash", "web_fetch", "read", "write", "edit", "ls", "glob", "grep", "send_file"), names(session()))
-        assertEquals(listOf("web_fetch", "read", "write", "edit", "ls", "glob", "grep"), names(session(termux = false)))
+        assertEquals(listOf("bash", "web_fetch", "read", "write", "edit", "ls", "glob", "grep", "ask_user_question", "todo_write", "send_file"), names(session()))
+        assertEquals(listOf("web_fetch", "read", "write", "edit", "ls", "glob", "grep", "ask_user_question", "todo_write"), names(session(termux = false)))
         assertTrue(names(session(phone = true)).containsAll(listOf("open_app", "read_screen", "tap", "screenshot", "note", "bash", "web_fetch")))
-        assertEquals(listOf("bash", "web_fetch", "read", "write", "edit", "ls", "glob", "grep", "send_file"), names(session(channel = "telegram")))
-        assertEquals(listOf("web_fetch", "read", "write", "edit", "ls", "glob", "grep"), names(session(channel = "telegram", termux = false)))
+        assertEquals(listOf("bash", "web_fetch", "read", "write", "edit", "ls", "glob", "grep", "ask_user_question", "todo_write", "send_file"), names(session(channel = "telegram")))
+        assertEquals(listOf("web_fetch", "read", "write", "edit", "ls", "glob", "grep", "ask_user_question", "todo_write"), names(session(channel = "telegram", termux = false)))
         // File access off: no file tools.
         ToolCatalog.files = { false }
-        try { assertEquals(listOf("web_fetch"), names(session(termux = false))) } finally { ToolCatalog.files = { true } }
+        try { assertEquals(listOf("web_fetch", "ask_user_question", "todo_write"), names(session(termux = false))) } finally { ToolCatalog.files = { true } }
         val sup = names(session(supervisor = true, phone = true, channel = "telegram"))
-        assertEquals(10, sup.size)
-        assertTrue(sup.all { it.endsWith("_session") || it == "message_session" || it == "wait_for" || it == "list_sessions" })
+        assertEquals(12, sup.size)
+        assertTrue(sup.all { it.endsWith("_session") || it == "message_session" || it == "wait_for" || it == "list_sessions" || it == "ask_user_question" || it == "todo_write" })
     }
 
     private class Fakes(val summary: SessionSummary, var open: Boolean = true) {
@@ -61,6 +63,9 @@ class ToolRouterTest {
         var sendOk = true
         val fetched = mutableListOf<String>()
         var webDone: CompletableDeferred<ToolResult>? = null
+        val asked = mutableListOf<String>()
+        val withdrawn = mutableListOf<String>()
+        var askDone: CompletableDeferred<ToolResult>? = null
         val router = ToolRouter(
             summary = { if (it == summary.id) summary else null },
             gate = { open },
@@ -72,6 +77,8 @@ class ToolRouterTest {
             sendFile = { _, path, caption -> sendOk to (if (sendOk) "sent $path ($caption)" else "No such file") },
             supervisor = { _, action, args -> supervisor += action to args; "ok $action" },
             web = { a -> fetched += a.getString("url"); webDone?.await() ?: ToolResult("page text") },
+            ask = { _, call, _ -> asked += call; askDone?.await() ?: ToolResult("Q: x\nA: y") },
+            askCancel = { _, call -> withdrawn += call; askDone?.complete(ToolResult("withdrawn", isError = true)) },
         )
     }
 
@@ -137,6 +144,22 @@ class ToolRouterTest {
         assertEquals("stopped by the user", f.router.call("s", "c3", "web_fetch", args("url" to "https://example.org")).text)
         assertEquals(listOf("https://example.org", "https://slow.example.org"), f.fetched)
         assertTrue("the supervisor has no web_fetch", Fakes(session(supervisor = true)).router.call("s", "c4", "web_fetch", args("url" to "https://example.org")).isError)
+    }
+
+    @Test fun `questions go to the user and Stop withdraws them, and the plan answers how far along it is`() = runBlocking {
+        val f = Fakes(session(termux = false))
+        assertEquals("Q: x\nA: y", f.router.call("s", "c1", "ask_user_question", args("questions" to JSONArray())).text)
+        f.askDone = CompletableDeferred()
+        val waiting = async { f.router.call("s", "c2", "ask_user_question", args("questions" to JSONArray())) }
+        repeat(5) { yield() }
+        f.router.cancel("s", "c2")
+        assertEquals("withdrawn", waiting.await().text)
+        assertEquals(listOf("c2"), f.withdrawn)
+        f.router.cancel("s", "c1") // answered: nothing to withdraw
+        assertEquals(listOf("c2"), f.withdrawn)
+        val plan = f.router.call("s", "c3", "todo_write", JSONObject().put("todos", JSONArray().put(JSONObject().put("content", "Book it").put("status", "in_progress"))))
+        assertEquals("Plan updated: 0 of 1 done. Now: Book it.", plan.text)
+        assertTrue(f.router.call("s", "c4", "todo_write", JSONObject()).isError)
     }
 
     @Test fun `send_file reports a file that didn't go as a failed step`() = runBlocking {

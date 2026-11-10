@@ -412,6 +412,8 @@
     <string name="tool_grep">Search in files</string>
     <string name="tool_glob">Find files</string>
     <string name="tool_ls">List a folder</string>
+    <string name="plan_progress">Plan · %1$d of %2$d</string>
+    <string name="plan_done">done</string>
     <string name="tool_todo">Update the to-do list</string>
     <string name="tool_interrupt_agent">Stop a subagent</string>
     <string name="tool_list_agents">List subagents</string>

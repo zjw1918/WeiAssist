@@ -70,9 +70,12 @@ object SessionReducer {
         "tool_start" -> {
             val args = m.optJSONObject("args")
             val app = if (m.optString("tool") == "open_app") args?.optString("app") else null
+            // The agent's plan, from either core's todo_write (each call is the whole list).
+            val plan = if (m.optString("tool") == "todo_write") Plan.parse(args) else null
             s.endThinking(null, now).add(step(m.optString("tool"), args), now)
                 .copy(run = s.run?.let { it.copy(steps = it.steps + 1) })
                 .let { if (app != null) it.copy(summary = it.summary.copy(app = app)) else it }
+                .let { if (plan != null) it.copy(summary = it.summary.copy(plan = plan)) else it }
                 .trace("→ ${m.optString("tool")} ${args?.toString().orEmpty()}")
         }
         "tool_end" -> {
@@ -300,9 +303,11 @@ object SessionReducer {
         items.firstOrNull { it is ChatItem.User && it.delivery == Delivery.Queued && it.text == text }?.let { (it as ChatItem.User).attachments }.orEmpty()
 
     /** The oldest queued message with this text is delivered (an exact match: Pi echoes what was steered). */
-    private fun SessionState.delivered(text: String): SessionState {
+    private fun SessionState.delivered(echoed: String): SessionState {
+        // The core echoes the message with the context block the app added (MessageContext): match what was typed.
+        val text = MessageContext.strip(echoed)
         val queued = items.indices.filter { (items[it] as? ChatItem.User)?.delivery == Delivery.Queued }
-        val i = queued.firstOrNull { (items[it] as ChatItem.User).text == text } ?: return this
+        val i = queued.firstOrNull { (items[it] as ChatItem.User).text.trim() == text } ?: return this
         return copy(items = items.toMutableList().also { it[i] = (it[i] as ChatItem.User).copy(delivery = Delivery.Sent) })
     }
 

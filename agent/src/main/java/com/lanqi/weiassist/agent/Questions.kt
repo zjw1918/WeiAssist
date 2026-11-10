@@ -59,6 +59,32 @@ data class Ask(val id: String, val questions: List<Question>) {
             return if (questions.isEmpty()) null else Ask(m.optString("ask"), questions)
         }
 
+        /**
+         * Pi's ask_user_question call ([call]: its id, also the ask's): the same shape as DeepSeek Harness's tool
+         * (questions with an optional id, header, options and multi_select). Null when it holds no question.
+         */
+        fun fromTool(call: String, args: JSONObject): Ask? {
+            val qs = args.optJSONArray("questions") ?: return null
+            val m = JSONObject().put("ask", call).put("questions", JSONArray().apply {
+                for (i in 0 until qs.length()) {
+                    val q = qs.optJSONObject(i) ?: continue
+                    put(JSONObject(q.toString()).put("id", q.optString("id").ifEmpty { "q${i + 1}" })
+                        .put("multiSelect", q.optBoolean("multi_select", q.optBoolean("multiSelect"))))
+                }
+            })
+            return parse(m)?.takeIf { a -> a.questions.all { it.text.isNotBlank() } }
+        }
+
+        /** The user's answers as Pi's tool result: each question with what was chosen or typed. */
+        fun answerText(ask: Ask, answers: List<QuestionAnswer>): String = ask.questions.joinToString("\n\n") { q ->
+            val a = answers.firstOrNull { it.id == q.id }
+            val said = when {
+                a == null || a.skipped -> "(skipped: no answer)"
+                else -> (a.selected + listOfNotNull(a.custom?.takeIf { it.isNotBlank() }?.let { "\"$it\" (typed)" })).joinToString(", ")
+            }
+            "Q: ${q.text}\nA: $said"
+        }
+
         /** The host call's answer: every question's answer, or why there is none. */
         fun reply(answers: List<QuestionAnswer>?, reason: String): JSONObject =
             if (answers == null) JSONObject().put("reason", reason)

@@ -198,6 +198,8 @@ data class SessionSummary(
     val contextTokens: Long = 0,
     /** The context window of the model the session last ran on (tokens); 0 = the core didn't say. */
     val contextWindow: Int = 0,
+    /** The agent's plan (its latest todo_write list), shown while steps remain. */
+    val plan: List<PlanItem> = emptyList(),
 ) {
     companion object {
         /** Sessions saved before there was a choice of core ran on Pi. */

@@ -71,6 +71,20 @@ class AgentController(context: Context) {
         Prompts.fileAccess = ::fileAccess
     }
 
+    /**
+     * Pi's ask_user_question: the question card in the session's chat (and buttons in its Telegram chat), as DeepSeek
+     * Harness's questions; the first answer counts.
+     */
+    private suspend fun askUser(session: String, call: String, args: JSONObject): com.lanqi.weiassist.core.ToolResult {
+        val ask = Ask.fromTool(call, args) ?: return com.lanqi.weiassist.core.ToolResult("Give questions, each with a question and 2–4 options.", isError = true)
+        val answers = kotlinx.coroutines.withContext(Dispatchers.Main) { sessions.ask(session, ask) }
+            ?: return com.lanqi.weiassist.core.ToolResult(
+                if (sessions.stoppedByUser(session)) "The user stopped the task instead of answering." else "The question was withdrawn before the user answered.",
+                isError = true,
+            )
+        return com.lanqi.weiassist.core.ToolResult(Ask.answerText(ask, answers))
+    }
+
     /** The user's choice in Settings → File access. */
     private fun fileAccess() = FileTools.Level.of(prefs.getString(FileTools.SETTING, null))
 
@@ -380,6 +394,8 @@ class AgentController(context: Context) {
             sendFile = ::sendFile,
             supervisor = commands::handle,
             files = files::call,
+            ask = ::askUser,
+            askCancel = { s, c -> kotlinx.coroutines.withContext(Dispatchers.Main) { sessions.withdraw(s, c) } },
         )
     }
 

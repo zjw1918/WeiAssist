@@ -46,6 +46,23 @@ export const SCRIPTS = {
 		{ tool: "read", args: { path: "proj/missing.txt" } },
 		{ text: "worked with files in Termux" },
 	],
+	// Pi's plan (todo_write) and a question for the user (ask_user_question), then the plan moves on.
+	plan_ask: [
+		{ tool: "todo_write", args: { todos: [
+			{ content: "Find a free evening", status: "in_progress", activeForm: "Finding a free evening" },
+			{ content: "Ask which restaurant", status: "pending" },
+			{ content: "Book the table", status: "pending" },
+		] } },
+		{ tool: "ask_user_question", args: { questions: [{ question: "Which restaurant?", header: "Place", options: [
+			{ label: "Green Tea (Recommended)", description: "Close to home" }, { label: "Wagas", description: "Quiet" },
+		] }] } },
+		{ tool: "todo_write", args: { todos: [
+			{ content: "Find a free evening", status: "completed" },
+			{ content: "Ask which restaurant", status: "completed" },
+			{ content: "Book the table", status: "in_progress", activeForm: "Booking the table" },
+		] } },
+		{ text: "planned and asked" },
+	],
 	// web_fetch: a real page, then an address on the phone itself (refused).
 	fetch: [{ tool: "web_fetch", args: { url: "https://example.com" } }, { tool: "web_fetch", args: { url: "http://127.0.0.1:8787/v1/models" } }, { text: "fetched a page" }],
 	// A conversation from Telegram sends a file it made in Termux.
