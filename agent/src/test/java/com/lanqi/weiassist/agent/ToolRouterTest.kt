@@ -1,5 +1,6 @@
 package com.lanqi.weiassist.agent
 
+import com.lanqi.weiassist.core.ToolResult
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
@@ -20,23 +21,24 @@ class ToolRouterTest {
 
     @Test fun `the catalog loads, with unique names and object schemas`() {
         val all = ToolCatalog.entries
-        assertEquals(24, all.size)
+        assertEquals(25, all.size)
         all.forEach { e ->
             assertEquals(e.spec.name, "object", JSONObject(e.spec.parameters).getString("type"))
             assertTrue(e.spec.name, e.spec.description.isNotBlank())
         }
-        assertEquals(setOf("phone", "bash", "send_file", "supervisor"), all.map { it.set }.toSet())
-        assertTrue("supervisor tools may run side by side", all.filter { it.set == "supervisor" }.all { it.spec.parallel })
-        assertTrue(all.filter { it.set != "supervisor" }.none { it.spec.parallel })
+        assertEquals(setOf("phone", "bash", "send_file", "web", "supervisor"), all.map { it.set }.toSet())
+        assertTrue("supervisor tools and fetches may run side by side", all.filter { it.set == "supervisor" || it.set == "web" }.all { it.spec.parallel })
+        assertTrue(all.filter { it.set != "supervisor" && it.set != "web" }.none { it.spec.parallel })
     }
 
     @Test fun `each kind of session gets its own tools`() {
         // send_file with Termux: to the messaging app's chat, or the app's.
-        assertEquals(listOf("bash", "send_file"), names(session()))
-        assertEquals(emptyList<String>(), names(session(termux = false)))
-        assertTrue(names(session(phone = true)).containsAll(listOf("open_app", "read_screen", "tap", "screenshot", "note", "bash")))
-        assertEquals(listOf("bash", "send_file"), names(session(channel = "telegram")))
-        assertEquals(emptyList<String>(), names(session(channel = "telegram", termux = false)))
+        // web_fetch in every session but the supervisor's: it needs no Termux.
+        assertEquals(listOf("bash", "web_fetch", "send_file"), names(session()))
+        assertEquals(listOf("web_fetch"), names(session(termux = false)))
+        assertTrue(names(session(phone = true)).containsAll(listOf("open_app", "read_screen", "tap", "screenshot", "note", "bash", "web_fetch")))
+        assertEquals(listOf("bash", "web_fetch", "send_file"), names(session(channel = "telegram")))
+        assertEquals(listOf("web_fetch"), names(session(channel = "telegram", termux = false)))
         val sup = names(session(supervisor = true, phone = true, channel = "telegram"))
         assertEquals(10, sup.size)
         assertTrue(sup.all { it.endsWith("_session") || it == "message_session" || it == "wait_for" || it == "list_sessions" })
@@ -51,6 +53,8 @@ class ToolRouterTest {
         var bashDone: CompletableDeferred<String>? = null
         val detached = mutableListOf<Triple<String, String, Int>>()
         var sendOk = true
+        val fetched = mutableListOf<String>()
+        var webDone: CompletableDeferred<ToolResult>? = null
         val router = ToolRouter(
             summary = { if (it == summary.id) summary else null },
             gate = { open },
@@ -61,6 +65,7 @@ class ToolRouterTest {
             bashDetached = { _, call, command, timeout -> detached += Triple(call, command, timeout) },
             sendFile = { _, path, caption -> sendOk to (if (sendOk) "sent $path ($caption)" else "No such file") },
             supervisor = { _, action, args -> supervisor += action to args; "ok $action" },
+            web = { a -> fetched += a.getString("url"); webDone?.await() ?: ToolResult("page text") },
         )
     }
 
@@ -112,6 +117,20 @@ class ToolRouterTest {
         f.open = false
         assertEquals("stopped by the user", f.router.call("s", "c5", "bash", args("command" to "ls")).text)
         assertEquals(4, f.bash.size)
+    }
+
+    @Test fun `web_fetch works without Termux, doesn't start once stopped, and Stop ends a running fetch`() = runBlocking {
+        val f = Fakes(session(termux = false))
+        assertEquals("page text", f.router.call("s", "c1", "web_fetch", args("url" to "https://example.org")).text)
+        f.webDone = CompletableDeferred()
+        val running = async { f.router.call("s", "c2", "web_fetch", args("url" to "https://slow.example.org")) }
+        repeat(5) { yield() }
+        f.router.cancel("s", "c2")
+        assertEquals("stopped by the user", running.await().text)
+        f.open = false
+        assertEquals("stopped by the user", f.router.call("s", "c3", "web_fetch", args("url" to "https://example.org")).text)
+        assertEquals(listOf("https://example.org", "https://slow.example.org"), f.fetched)
+        assertTrue("the supervisor has no web_fetch", Fakes(session(supervisor = true)).router.call("s", "c4", "web_fetch", args("url" to "https://example.org")).isError)
     }
 
     @Test fun `send_file reports a file that didn't go as a failed step`() = runBlocking {

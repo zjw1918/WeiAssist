@@ -1,6 +1,8 @@
 package com.lanqi.weiassist.agent
 
 import com.lanqi.weiassist.core.ToolResult
+import kotlinx.coroutines.async
+import kotlinx.coroutines.isActive
 import org.json.JSONObject
 
 /**
@@ -21,11 +23,14 @@ class ToolRouter(
     private val bashDetached: (session: String, call: String, command: String, timeoutSec: Int) -> Unit,
     private val sendFile: suspend (session: String, path: String, caption: String) -> Pair<Boolean, String>,
     private val supervisor: suspend (caller: String, action: String, args: JSONObject) -> String,
+    private val web: suspend (args: JSONObject) -> ToolResult = { a -> WebFetch.run(a).let { ToolResult(it.text, isError = it.isError) } },
 ) {
     private data class Running(val command: String, val timeoutSec: Int)
 
     /** Bash commands running now, as "session/call": only these have anything to cancel. */
     private val runningBash = java.util.concurrent.ConcurrentHashMap<String, Running>()
+    /** Web fetches running now, as "session/call": Stop cancels them. */
+    private val runningWeb = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
 
     suspend fun call(session: String, call: String, name: String, args: JSONObject): ToolResult {
         val s = summary(session) ?: return ToolResult("This session no longer exists.", isError = true)
@@ -46,6 +51,15 @@ class ToolRouter(
                     runningBash["$session/$call"] = Running(command, timeout)
                     try { ToolResult(bash(session, call, command, timeout)) } finally { runningBash -= "$session/$call" }
                 }
+            ToolCatalog.WEB ->
+                if (!gate(session)) ToolResult("stopped by the user")
+                else kotlinx.coroutines.coroutineScope {
+                    val fetch = async { web(args) }
+                    runningWeb["$session/$call"] = fetch
+                    try { fetch.await() }
+                    catch (e: kotlinx.coroutines.CancellationException) { if (fetch.isCancelled && isActive) ToolResult("stopped by the user") else throw e }
+                    finally { runningWeb -= "$session/$call" }
+                }
             ToolCatalog.SEND_FILE -> {
                 val (ok, text) = if (!gate(session)) false to "Stopped by the user." else sendFile(session, args.getString("path"), args.optString("caption"))
                 ToolResult(text, isError = !ok)
@@ -55,9 +69,10 @@ class ToolRouter(
         }
     }
 
-    /** The user stopped the run while call [call] worked: end what it started (a bash command in Termux). */
+    /** The user stopped the run while call [call] worked: end what it started (a bash command in Termux, a fetch). */
     suspend fun cancel(session: String, call: String) {
         if (runningBash.containsKey("$session/$call")) bashKill(session, call)
+        runningWeb["$session/$call"]?.cancel()
     }
 
     /** How call [call] is doing, for the model while it goes on in the background; null if it has ended. */
