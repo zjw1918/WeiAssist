@@ -621,9 +621,9 @@ fun SessionScreen(vm: AppViewModel, session: SessionState?) {
                 if (com.lanqi.weiassist.agent.Plan.open(s.plan)) PlanCard(s.id, s.plan, Modifier.padding(bottom = 8.dp))
                 val jobs by vm.backgroundJobs.collectAsStateWithLifecycle()
                 jobs.filter { it.session == s.id }.forEach { BackgroundJobCard(it, vm, Modifier.padding(bottom = 8.dp)) }
-                // Jobs the model left running in tmux (a server, a build): seen, followed and stoppable here too.
-                val tmux by vm.tmuxJobs.collectAsStateWithLifecycle()
-                tmux[s.id].orEmpty().forEach { TmuxJobCard(it, vm, Modifier.padding(bottom = 8.dp)) }
+                // What the model left running (a tmux server or build, a process started with &): seen, followed and stoppable here.
+                val left by vm.sessionJobs.collectAsStateWithLifecycle()
+                left[s.id].orEmpty().forEach { SessionJobCard(it, vm, Modifier.padding(bottom = 8.dp)) }
                 // While it works, a message steers it: the model reads it after its current step.
                 Composer(
                     vm.reply, { vm.reply = it },
@@ -648,14 +648,15 @@ private fun BackgroundJobCard(job: com.lanqi.weiassist.agent.BackgroundJob, vm: 
         output = { vm.backgroundOutput(job.session, job.call) }, onStop = { vm.stopBackground(job.session, job.call) }, modifier = modifier,
     )
 
-/** A job the model left running in tmux: its name and command, how long, its screen on a tap; ✕ ends it. */
+/** Work the model left running (a tmux job, or a process a command left behind): what, how long, its output on a tap; ✕ ends it. */
 @Composable
-private fun TmuxJobCard(job: com.lanqi.weiassist.agent.TmuxJob, vm: AppViewModel, modifier: Modifier = Modifier) =
+private fun SessionJobCard(job: com.lanqi.weiassist.agent.SessionJob, vm: AppViewModel, modifier: Modifier = Modifier) =
     JobCard(
-        key = "tmux:${job.session}:${job.name}",
-        title = stringResource(R.string.tmux_job, job.name, job.command.lineSequence().firstOrNull().orEmpty()),
+        key = "job:${job.session}:${job.name}",
+        title = if (job.pid == null) stringResource(R.string.tmux_job, job.name, job.command.lineSequence().firstOrNull().orEmpty())
+            else stringResource(R.string.process_job, job.command.lineSequence().firstOrNull().orEmpty()),
         startedAt = job.startedAt.takeIf { it > 0 },
-        output = { vm.tmuxOutput(job.session, job.name) }, onStop = { vm.stopTmux(job.session, job.name) }, modifier = modifier,
+        output = { vm.jobOutput(job) }, onStop = { vm.stopJob(job) }, modifier = modifier,
     )
 
 @Composable

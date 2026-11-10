@@ -189,7 +189,7 @@ class AgentController(context: Context) {
             if (deleted) { phoneTools.forget(id); creates.remove(id) }
             // Stopped: the model must know what of its work ended with it, or it waits for results that never come.
             if (!deleted) stopNote(id)?.let { sessions.noteForModel(id, it) }
-            _tmuxJobs.update { it - id }
+            _sessionJobs.update { it - id }
             backgroundJobs.removeSession(id)
             scope.launch { termux.cleanUp(id, deleted, files) }
         }
@@ -390,8 +390,8 @@ class AgentController(context: Context) {
             summary = sessions::summary,
             gate = sessions::gate,
             phone = phoneTools::call,
-            // After each command: did it leave a job running in tmux (or end one)? The app shows them (tmuxJobs).
-            bash = { s, c, command, timeout -> termux.run(s, c, command, timeout).also { scope.launch { refreshTmux(s) } } },
+            // After each command: did it leave a job running in tmux (or end one)? The app shows them (sessionJobs).
+            bash = { s, c, command, timeout -> termux.run(s, c, command, timeout).also { scope.launch { refreshJobs(s) } } },
             bashKill = termux::kill,
             bashPeek = termux::peek,
             bashDetached = { s, c, command, timeout -> backgroundJobs.add(BackgroundJob(s, c, command, timeout, System.currentTimeMillis())) },
@@ -697,38 +697,45 @@ class AgentController(context: Context) {
     /** The user stopped a command that goes on in the background: it ends, and its result tells the model so. */
     fun stopBackground(session: String, call: String) { scope.launch { termux.kill(session, call) } }
 
-    private val _tmuxJobs = kotlinx.coroutines.flow.MutableStateFlow<Map<String, List<TmuxJob>>>(emptyMap())
+    private val _sessionJobs = kotlinx.coroutines.flow.MutableStateFlow<Map<String, List<SessionJob>>>(emptyMap())
     /** Each session's jobs in its tmux (what the model left running: a server, a build), as last seen. */
-    val tmuxJobs: kotlinx.coroutines.flow.StateFlow<Map<String, List<TmuxJob>>> = _tmuxJobs
-    private var tmuxWatch: kotlinx.coroutines.Job? = null
+    val sessionJobs: kotlinx.coroutines.flow.StateFlow<Map<String, List<SessionJob>>> = _sessionJobs
+    private var jobsWatch: kotlinx.coroutines.Job? = null
 
     /** Look at session [session]'s tmux jobs again; while any session has some, keep looking (to see them end). */
-    private suspend fun refreshTmux(session: String) {
-        if (sessions.summary(session) == null) { _tmuxJobs.update { it - session }; return }
-        val jobs = termux.tmuxJobs(session) ?: return
-        _tmuxJobs.update { if (jobs.isEmpty()) it - session else it + (session to jobs) }
-        if (_tmuxJobs.value.isNotEmpty() && tmuxWatch?.isActive != true) tmuxWatch = scope.launch {
-            while (_tmuxJobs.value.isNotEmpty()) {
-                kotlinx.coroutines.delay(TMUX_WATCH_MS)
-                _tmuxJobs.value.keys.forEach { refreshTmux(it) }
+    private suspend fun refreshJobs(session: String) {
+        if (sessions.summary(session) == null) { _sessionJobs.update { it - session }; return }
+        val jobs = termux.sessionJobs(session) ?: return
+        _sessionJobs.update { if (jobs.isEmpty()) it - session else it + (session to jobs) }
+        if (_sessionJobs.value.isNotEmpty() && jobsWatch?.isActive != true) jobsWatch = scope.launch {
+            while (_sessionJobs.value.isNotEmpty()) {
+                kotlinx.coroutines.delay(JOBS_WATCH_MS)
+                _sessionJobs.value.keys.forEach { refreshJobs(it) }
             }
         }
     }
 
-    suspend fun tmuxOutput(session: String, name: String): String? = termux.tmuxOutput(session, name)
+    suspend fun jobOutput(job: SessionJob): String? = termux.jobOutput(job)
 
-    /** The user stopped tmux job [name]: it ends, and the model hears so with the next message. */
-    fun stopTmux(session: String, name: String) {
+    /** The user stopped [job] (tmux, or a process a command left running): it ends; the model hears so next message. */
+    fun stopJob(job: SessionJob) {
         scope.launch {
-            termux.tmuxKill(session, name)
-            sessions.noteForModel(session, "The user stopped your tmux job `$name` from the app; it has ended.")
-            refreshTmux(session)
+            termux.killJob(job)
+            // Gone now: off the list at once, not at the next look (which may come before the process has quite ended).
+            _sessionJobs.update { m -> m[job.session]?.let { l -> (l - job).let { if (it.isEmpty()) m - job.session else m + (job.session to it) } } ?: m }
+            sessions.noteForModel(job.session, MessageContext.userStopped(job))
+            refreshJobs(job.session)
         }
     }
 
     /** What Stop ends of session [id]'s work besides the run: its background commands and tmux jobs; null if none. */
     private fun stopNote(id: String): String? {
-        return MessageContext.stopped(backgroundJobs.jobs.value.filter { it.session == id }.map { it.command }, _tmuxJobs.value[id].orEmpty().map { it.name })
+        val jobs = _sessionJobs.value[id].orEmpty()
+        return MessageContext.stopped(
+            backgroundJobs.jobs.value.filter { it.session == id }.map { it.command },
+            jobs.filter { it.pid == null }.map { it.name },
+            jobs.filter { it.pid != null }.map { it.command },
+        )
     }
 
     /** The user closed the app: every session and background task ends. Files and conversations are kept. */
@@ -844,7 +851,7 @@ class AgentController(context: Context) {
     private companion object {
         const val COLLECT_EVERY_MS = 15_000L
         /** How often tmux jobs are looked at while there are some (one Termux call per session that has them). */
-        const val TMUX_WATCH_MS = 15_000L
+        const val JOBS_WATCH_MS = 15_000L
         /** Past its timeout by this much with Termux silent: its result counts as lost. */
         const val COLLECT_GRACE_SEC = 300
         /** The largest file send_file or a file link copies out of Termux (as Telegram's limit). */

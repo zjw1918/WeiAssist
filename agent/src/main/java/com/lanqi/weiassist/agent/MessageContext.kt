@@ -31,15 +31,27 @@ object MessageContext {
             put(JSONObject().put("type", "text").put("text", text(now, notes = notes)))
         }
 
-    /** What Stop ended besides the run ([commands] in the background, [tmux] jobs), for the model; null if nothing. */
-    fun stopped(commands: List<String>, tmux: List<String>): String? {
-        if (commands.isEmpty() && tmux.isEmpty()) return null
-        fun list(things: List<String>) = things.joinToString(", ") { "`${it.lineSequence().first().take(120)}`" }
+    /**
+     * What Stop ended besides the run, for the model: [commands] in the background, [tmux] jobs, and [processes] its
+     * commands left running (cmd &, nohup). Null if nothing.
+     */
+    fun stopped(commands: List<String>, tmux: List<String>, processes: List<String> = emptyList()): String? {
+        if (commands.isEmpty() && tmux.isEmpty() && processes.isEmpty()) return null
+        fun list(things: List<String>) = things.joinToString(", ") { "`${short(it)}`" }
+        fun plural(n: Int) = if (n > 1) "s" else ""
         return buildList {
-            if (commands.isNotEmpty()) add("background command${if (commands.size > 1) "s" else ""} ${list(commands)}")
-            if (tmux.isNotEmpty()) add("tmux job${if (tmux.size > 1) "s" else ""} ${list(tmux)}")
+            if (commands.isNotEmpty()) add("background command${plural(commands.size)} ${list(commands)}")
+            if (tmux.isNotEmpty()) add("tmux job${plural(tmux.size)} ${list(tmux)}")
+            if (processes.isNotEmpty()) add("background process${if (processes.size > 1) "es" else ""} ${list(processes)}")
         }.joinToString(" and ", prefix = "The user pressed Stop, which ended your ", postfix = ". They are not running any more.")
     }
+
+    /** The user stopped [job] from the app, for the model. */
+    fun userStopped(job: SessionJob): String =
+        if (job.pid == null) "The user stopped your tmux job `${job.name}` from the app; it has ended."
+        else "The user stopped your background process `${short(job.command)}` (pid ${job.pid}) from the app; it has ended."
+
+    private fun short(s: String) = s.lineSequence().first().trim().take(120)
 
     /** A message's text as the user typed it: without the context block a core may echo back with it. */
     fun strip(text: String): String = text.replace(BLOCK, "").trim()

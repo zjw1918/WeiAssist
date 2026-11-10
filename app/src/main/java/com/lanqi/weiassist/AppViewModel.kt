@@ -68,12 +68,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun backgroundOutput(session: String, call: String) = controller.value?.backgroundOutput(session, call)
     fun stopBackground(session: String, call: String) { controller.value?.stopBackground(session, call) }
 
-    /** Each session's tmux jobs (see AgentController.tmuxJobs). */
-    val tmuxJobs = controller
-        .flatMapLatest { it?.tmuxJobs ?: flowOf(emptyMap()) }
+    /** What each session's work left running: tmux jobs and background processes (see AgentController.sessionJobs). */
+    val sessionJobs = controller
+        .flatMapLatest { it?.sessionJobs ?: flowOf(emptyMap()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
-    suspend fun tmuxOutput(session: String, name: String) = controller.value?.tmuxOutput(session, name)
-    fun stopTmux(session: String, name: String) { controller.value?.stopTmux(session, name) }
+    suspend fun jobOutput(job: com.lanqi.weiassist.agent.SessionJob) = controller.value?.jobOutput(job)
+    fun stopJob(job: com.lanqi.weiassist.agent.SessionJob) { controller.value?.stopJob(job) }
 
     val coreCommands = controller
         .flatMapLatest { it?.sessions?.commands ?: flowOf(emptyMap()) }
