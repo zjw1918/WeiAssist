@@ -32,6 +32,20 @@ export const SCRIPTS = {
 		{ tool: "ls", args: { path: "/sdcard/Download" } },
 		{ text: "worked with files" },
 	],
+	// The file tools in a session with Termux: the same folder bash works in, both ways.
+	files_termux: [
+		{ tool: "write", args: { path: "proj/main.go", content: "package main\n\n// TODO: greet\nfunc main() {}\n" } },
+		{ tool: "bash", args: { command: "pwd; cat proj/main.go; mkdir -p proj/out && printf 'made by bash\\nTODO: ship\\n' > proj/out/notes.txt" } },
+		{ tool: "read", args: { path: "proj/out/notes.txt" } },
+		{ tool: "edit", args: { path: "proj/main.go", old_string: "func main() {}", new_string: "func main() { println(\"hi\") }" } },
+		{ tool: "bash", args: { command: "cat proj/main.go" } },
+		{ tool: "ls", args: { path: "proj" } },
+		{ tool: "glob", args: { pattern: "*.go" } },
+		{ tool: "grep", args: { pattern: "TODO", path: "proj" } },
+		{ tool: "read", args: { path: "~/.termux/termux.properties", offset: 1, limit: 2 } },
+		{ tool: "read", args: { path: "proj/missing.txt" } },
+		{ text: "worked with files in Termux" },
+	],
 	// web_fetch: a real page, then an address on the phone itself (refused).
 	fetch: [{ tool: "web_fetch", args: { url: "https://example.com" } }, { tool: "web_fetch", args: { url: "http://127.0.0.1:8787/v1/models" } }, { text: "fetched a page" }],
 	// A conversation from Telegram sends a file it made in Termux.
