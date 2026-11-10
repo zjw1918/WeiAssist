@@ -92,7 +92,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        readDebug(intent)
+        // Only on a fresh launch: a recreated activity keeps its first intent, and reading it again would start its task again.
+        if (savedInstanceState == null) readDebug(intent)
         if (savedInstanceState == null) openSession.value = intent.getStringExtra(com.lanqi.weiassist.agent.AgentService.EXTRA_SESSION)
         enableEdgeToEdge()
         setContent { AppTheme { App() } }
