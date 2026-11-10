@@ -382,6 +382,45 @@ class Termux(context: Context) {
         return r.getInt("exitCode", -1) to (r.getString("stdout").orEmpty() + r.getString("stderr").orEmpty())
     }
 
+    /**
+     * Session [session]'s tmux jobs (its own tmux server, see [run]): what the model left running there, a server or a
+     * build. Null if Termux didn't answer (then nothing is known), empty when there are none.
+     */
+    suspend fun tmuxJobs(session: String): List<TmuxJob>? {
+        if (setupProblem() != null || !used(session)) return emptyList()
+        // Tab-separated: name, start (epoch seconds), the command it was started with.
+        val script = TMUX_SOCKET + """
+            [ -S "${'$'}{s}" ] || exit 0
+            tmux -S "${'$'}{s}" ls -F '#{session_name}	#{session_created}	#{pane_start_command}' 2> /dev/null
+            exit 0
+        """.trimIndent()
+        val r = execute(arrayOf("-c", script, "bash", safe(session)), PEEK_SEC) ?: return null
+        if (r.getInt("err", RESULT_OK) != RESULT_OK) return null
+        return parseTmuxJobs(session, r.getString("stdout").orEmpty())
+    }
+
+    /** The end of what tmux job [name] of [session] shows (its pane), or null. */
+    suspend fun tmuxOutput(session: String, name: String): String? {
+        if (setupProblem() != null) return null
+        val script = TMUX_SOCKET + """
+            # "=name:" is the session's (current) pane; the screen's blank lines below the output are dropped.
+            tmux -S "${'$'}{s}" capture-pane -p -J -S -200 -t "=${'$'}{2}:" 2> /dev/null | awk 'NF { n = NR } { l[NR] = ${'$'}0 } END { for (i = 1; i <= n; i++) print l[i] }' | tail -c $PEEK_BYTES
+        """.trimIndent()
+        val r = execute(arrayOf("-c", script, "bash", safe(session), name), PEEK_SEC) ?: return null
+        return r.getString("stdout")?.trimEnd()?.takeIf { r.getInt("err", RESULT_OK) == RESULT_OK }
+    }
+
+    /** End tmux job [name] of [session] (the user stopped it); the phone may sleep again if no job is left. */
+    suspend fun tmuxKill(session: String, name: String) {
+        if (setupProblem() != null) return
+        val script = PRELUDE + TMUX_SOCKET + """
+            tmux -S "${'$'}{s}" kill-session -t "=${'$'}{2}" 2> /dev/null
+            sync_lock > /dev/null 2>&1
+            exit 0
+        """.trimIndent()
+        execute(arrayOf("-c", script, "bash", safe(session), name), 20)
+    }
+
     /** What [inspect] found. [problem]: Termux can't run this app's commands (then the rest is unknown). */
     data class Inspection(
         val problem: String? = null,
@@ -652,6 +691,17 @@ class Termux(context: Context) {
 
         /** Ids go into a path: letters, digits, - and _ only. */
         private fun safe(s: String) = s.replace(Regex("[^A-Za-z0-9_-]"), "_")
+
+        /** $1 = the session's folder name: its tmux server's socket as $s (TMUX_TMPDIR is the session's .tmux, see run). */
+        private const val TMUX_SOCKET = "s=\"\$HOME/sessions/\$1/.tmux/tmux-\$(id -u)/default\"\n"
+
+        /** `tmux ls` lines (name, start in epoch seconds, command; tab-separated) as jobs. Pure, for tests. */
+        internal fun parseTmuxJobs(session: String, out: String): List<TmuxJob> = out.lineSequence().mapNotNull { line ->
+            val parts = line.split('\t')
+            val name = parts.getOrNull(0)?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
+            val started = parts.getOrNull(1)?.trim()?.toLongOrNull()?.times(1000) ?: 0L
+            TmuxJob(session, name, started, parts.drop(2).joinToString("\t").trim().removeSurrounding("\""))
+        }.toList()
 
         /** What the model reads when a command has ended. Pure, for tests. */
         internal fun outcome(code: Int, out: String, err: String, timeoutSec: Int, outLength: Int?, errLength: Int?) = buildString {

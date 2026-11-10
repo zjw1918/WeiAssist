@@ -402,6 +402,9 @@
     <string name="trigger_job">Background job update</string>
     <string name="trigger_background_command">Background command finished</string>
     <string name="background_running">Running in the background</string>
+    <string name="job_stop">Stop it</string>
+    <string name="job_stopping">Stopping…</string>
+    <string name="tmux_job">tmux · %1$s · %2$s</string>
     <string name="background_no_output">No output yet</string>
     <string name="trigger_other">Woken by an update</string>
     <string name="tool_web_fetch">Fetch a page</string>

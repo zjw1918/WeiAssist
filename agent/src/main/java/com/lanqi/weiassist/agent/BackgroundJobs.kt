@@ -34,3 +34,9 @@ class BackgroundJobs {
 
     @Synchronized fun orphaned(): List<BackgroundJob> = _jobs.value.filter { (it.session to it.call) in orphans }
 }
+
+/**
+ * A job the model left running in its session's tmux (a server, a build): [name] is the tmux session, [startedAt]
+ * when tmux started it (ms; 0 if unknown), [command] what it runs.
+ */
+data class TmuxJob(val session: String, val name: String, val startedAt: Long, val command: String)
