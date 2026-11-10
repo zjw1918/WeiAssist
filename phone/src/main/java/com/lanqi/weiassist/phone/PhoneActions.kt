@@ -101,9 +101,12 @@ class PhoneActions(private val context: Context) {
                 else -> "This task runs on a screen of its own, without a home screen or recent apps: use open_app to switch apps."
             }
             "open_app" -> openOnDisplay(svc, t, a.getString("app")).settled(maxMs = 5_000)
-            "screenshot" -> t.io.screenshot(720, 70).let {
-                if (it.isEmpty()) "error: no picture of this screen yet; try again"
-                else Shot.scaled(t.width, t.height, 720).let { (w, h) -> Shot(android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP), t.width, t.height, w, h).pack() }
+            "screenshot" -> Shot.forModel(t.width, t.height).let { (w, h) ->
+                // The helper scales by width: the width that fits the model's size gives that size.
+                t.io.screenshot(w, 70).let {
+                    if (it.isEmpty()) "error: no picture of this screen yet; try again"
+                    else Shot(android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP), t.width, t.height, w, h).pack()
+                }
             }
             "label_at" -> svc.labelAt(a.getInt("x"), a.getInt("y"), d)
             else -> "unknown action"

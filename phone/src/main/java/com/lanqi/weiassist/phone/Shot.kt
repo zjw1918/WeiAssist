@@ -19,11 +19,24 @@ data class Shot(val jpegBase64: String, val screenW: Int, val screenH: Int, val 
     companion object {
         private const val HEADER = "@shot"
 
-        /** [maxWidth] scales the picture down, never up. */
-        fun scaled(screenW: Int, screenH: Int, maxWidth: Int): Pair<Int, Int> {
-            val scale = minOf(1f, maxWidth.toFloat() / screenW)
-            return (screenW * scale).toInt() to (screenH * scale).toInt()
-        }
+        /** The model's picture: short side at most this, so a phone held upright stays 720 wide as before. */
+        const val MAX_SHORT = 720
+        /** And long side at most this: a landscape phone (a game, an editor) gets 1600x720, not 720x324. */
+        const val MAX_LONG = 1600
+
+        /**
+         * The size of the model's picture of a [screenW] x [screenH] screen: within [MAX_SHORT] and [MAX_LONG] in
+         * either orientation (phone, tablet, landscape), scaled down, never up. A fixed width made a landscape
+         * screen so small that a game's score couldn't be read.
+         */
+        fun forModel(screenW: Int, screenH: Int): Pair<Int, Int> =
+            fit(screenW, screenH, minOf(MAX_SHORT.toFloat() / minOf(screenW, screenH), MAX_LONG.toFloat() / maxOf(screenW, screenH)))
+
+        /** [maxWidth] wide at most (previews), scaled down, never up. */
+        fun scaled(screenW: Int, screenH: Int, maxWidth: Int): Pair<Int, Int> = fit(screenW, screenH, maxWidth.toFloat() / screenW)
+
+        private fun fit(w: Int, h: Int, scale: Float): Pair<Int, Int> =
+            minOf(1f, scale).let { s -> (w * s).toInt().coerceAtLeast(1) to (h * s).toInt().coerceAtLeast(1) }
 
         /** A packed shot, or null for anything else (an error or other message for the model). */
         fun parse(s: String): Shot? {
