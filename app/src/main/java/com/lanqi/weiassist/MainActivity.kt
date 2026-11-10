@@ -64,7 +64,8 @@ class MainActivity : ComponentActivity() {
     private fun readDebug(i: android.content.Intent) {
         if (!BuildConfig.DEV_TOOLS) return
         i.getStringExtra("supervise")?.let { debugSupervise.value = it; debugMock = if (i.hasExtra("mock")) i.getBooleanExtra("mock", false) else null }
-        if (i.hasExtra("mainOnly")) debugMainOnly = i.getBooleanExtra("mainOnly", false)
+        // Applied at once too, so it holds for sessions started from the UI (a task's intent applies it again).
+        if (i.hasExtra("mainOnly")) debugMainOnly = i.getBooleanExtra("mainOnly", false).also { viewModels<AppViewModel>().value.debugMainOnly(it) }
         i.getStringExtra("core")?.let { debugCore = it }
         // `--ez noClipboard true|false`: act as if the clipboard were blocked, as on some phones (typing by keyboard).
         if (i.hasExtra("noClipboard")) com.lanqi.weiassist.phone.PhoneActions.debugNoClipboard = i.getBooleanExtra("noClipboard", false)
@@ -114,6 +115,8 @@ fun MainActivity.App(vm: AppViewModel = viewModel()) {
         debugCore?.let(vm::selectCore)
         if (debugRun) { debugRun = false; vm.startTask() }
     }
+    // `--ez mainOnly`: once the agent is there (a cold start has none yet when the intent is read).
+    LaunchedEffect(s.screen) { if (s.screen == Screen.Connected) debugMainOnly?.let(vm::debugMainOnly) }
     LaunchedEffect(debugSupervise.value, s.screen) {
         val text = debugSupervise.value ?: return@LaunchedEffect
         if (s.screen != Screen.Connected) return@LaunchedEffect

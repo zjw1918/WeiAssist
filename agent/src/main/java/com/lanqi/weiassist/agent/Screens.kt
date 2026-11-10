@@ -56,8 +56,13 @@ class DisplayScreenPool(
 
     private fun publish() { _displays.value = leases.mapValues { it.value.target.displayId } }
 
-    /** Debug builds: act as if there were no shell helper, so new sessions use the phone's own screen. */
-    @Volatile var debugMainOnly = false
+    /**
+     * Debug builds: act as if there were no shell helper, so new sessions use the phone's own screen. Kept for the
+     * process, not per instance: a controller made again (the service restarted) would otherwise drop it.
+     */
+    var debugMainOnly: Boolean
+        get() = mainOnly
+        set(v) { mainOnly = v }
 
     /** Whether a session is working now (set by the owner; see [guard]). */
     var isActive: (String) -> Boolean = { true }
@@ -169,5 +174,7 @@ class DisplayScreenPool(
         const val WIDTH = 720
         const val HEIGHT = 1600
         const val DPI = 320
+        /** See debugMainOnly. */
+        @Volatile private var mainOnly = false
     }
 }
