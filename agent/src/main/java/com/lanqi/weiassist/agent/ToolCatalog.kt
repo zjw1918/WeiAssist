@@ -18,13 +18,15 @@ object ToolCatalog {
     fun named(name: String): Entry? = entries.firstOrNull { it.spec.name == name }
 
     /**
-     * The tools of a session: the supervisor's own (it doesn't operate the phone or run commands); phone tools
-     * for a phone session; bash and send_file with Termux (send_file: to the messaging app's chat, or the app's).
+     * The tools of a session: the supervisor's own (it doesn't operate the phone or run commands); web_fetch for
+     * every other session; phone tools for a phone session; bash and send_file with Termux (send_file: to the
+     * messaging app's chat, or the app's). A core that has a tool of the same name keeps its own (dsh's web_fetch).
      */
     fun forSession(s: SessionSummary): List<ToolSpec> {
         val sets = when {
             s.supervisor -> setOf(SUPERVISOR)
             else -> buildSet {
+                add(WEB)
                 if (s.phone) add(PHONE)
                 if (s.termux) add(BASH)
                 if (s.termux) add(SEND_FILE)
@@ -36,6 +38,7 @@ object ToolCatalog {
     const val PHONE = "phone"
     const val BASH = "bash"
     const val SEND_FILE = "send_file"
+    const val WEB = "web"
     const val SUPERVISOR = "supervisor"
 
     private fun load(): String = checkNotNull(ToolCatalog::class.java.getResourceAsStream("tools.json")) { "tools.json is missing" }

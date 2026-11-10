@@ -25,6 +25,7 @@ dependencies {
     api(project(":channels"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.process)
+    implementation(libs.jsoup)
     testImplementation(libs.junit)
     // Android's org.json is a stub in local unit tests; use the real library there.
     testImplementation(libs.org.json)

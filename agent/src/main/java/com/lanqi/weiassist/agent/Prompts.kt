@@ -21,7 +21,7 @@ object Prompts {
 
     /**
      * The sections of a session's prompt, in order. The supervisor manages sessions: its persona only. Others: chat or
-     * phone persona; the Termux bash guide with Termux; the messaging app's, with how files travel when it has Termux.
+     * phone persona; the web guide; the Termux bash guide with Termux; the messaging app's, with how files travel when it has Termux.
      */
     fun forSession(s: SessionSummary, name: String): List<PromptSection> {
         fun section(id: String, joiner: String = "", forTool: String? = null) =
@@ -29,6 +29,7 @@ object Prompts {
         if (s.supervisor) return listOf(section("supervisor"))
         return buildList {
             add(section(if (s.phone) "phone" else "chat"))
+            add(section("web", "\n\n", forTool = "web_fetch"))
             if (s.termux) add(section("bash", "\n\n", forTool = "bash"))
             if (s.channel != null) {
                 add(section("channel", "\n\n"))

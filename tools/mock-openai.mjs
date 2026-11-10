@@ -21,6 +21,8 @@ export const SCRIPTS = {
 	send: [{ tool: "read_screen", args: {} }, { tool: "tap", args: { id: 2 } }, { text: "sent" }],
 	buy_at: [{ tool: "tap_at", args: { x: 900, y: 2200 } }, { text: "ordered" }],
 	shot: [{ tool: "screenshot", args: {} }, { text: "looked" }],
+	// web_fetch: a real page, then an address on the phone itself (refused).
+	fetch: [{ tool: "web_fetch", args: { url: "https://example.com" } }, { tool: "web_fetch", args: { url: "http://127.0.0.1:8787/v1/models" } }, { text: "fetched a page" }],
 	// A conversation from Telegram sends a file it made in Termux.
 	send_file: [{ tool: "send_file", args: { path: "chart.png", caption: "The chart" } }, { text: "sent you the chart" }],
 	screens: [1, 2, 3, 4].map(() => ({ tool: "read_screen", args: {} })).concat([{ text: "read four screens" }]),
